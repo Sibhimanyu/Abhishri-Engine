@@ -25,5 +25,6 @@ const whatsappWebhook = require('./src/whatsapp/webhook');
 
 exports.sendWhatsAppMessage = whatsappSend.sendWhatsAppMessage;
 exports.sendWhatsAppBroadcast = whatsappSend.sendWhatsAppBroadcast;
+exports.fetchTemplates = whatsappSend.fetchTemplates;
 exports.whatsappWebhook = whatsappWebhook.whatsappWebhook;
 

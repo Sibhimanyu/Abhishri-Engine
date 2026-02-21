@@ -13,6 +13,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
+const functions = firebase.functions();
 
 // Design Configuration Constants
 const DOMAIN_GROUPS = {
