@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Abhishri Academy | Smart Campus</title>
+
+  <!-- SEO and PWA -->
+  <meta name="description"
+    content="Abhishri Academy Smart Campus — control lights, fans, manage staff, and send WhatsApp notifications from one unified dashboard.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#12151a">
+  <link rel="icon" type="image/png" href="assets/ENGLISH LOGO-CORAL.png">
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <!-- Lucide Icons (pinned version) -->
+  <script src="https://unpkg.com/lucide@0.475.0/dist/umd/lucide.min.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
+
+  <!-- Application Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/whatsapp_broadcast.css">
+
+</head>
+
+<body>
+  <noscript>
+    <div
+      style="position:fixed;inset:0;background:#12151a;color:#fff;display:flex;align-items:center;justify-content:center;font-family:sans-serif;font-size:1.1rem;text-align:center;z-index:9999;padding:2rem;">
+      JavaScript is required to run Abhishri Smart Campus. Please enable it in your browser settings.
+    </div>
+  </noscript>
+
+  <div id="login-modal" class="hidden">
+    <div class="login-box">
+      <img src="assets/ENGLISH LOGO-CORAL.png" alt="Abhishri Academy" class="login-logo"
+        onerror="this.style.display='none'">
+
+      <h1 class="login-title">Welcome Back</h1>
+      <p class="login-subtitle">Sign in to access the campus dashboard</p>
+
+      <div class="login-actions">
+        <button id="google-login-btn" class="google-btn">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google"
+            class="google-icon">
+          <span>Sign in with Google</span>
+        </button>
+
+        <div class="divider">
+          <span>OR</span>
+        </div>
+
+        <form id="email-auth-form" class="email-form">
+          <div class="form-group">
+            <input type="email" id="email-input" placeholder="Email Address" required>
+          </div>
+          <div class="form-group">
+            <input type="password" id="password-input" placeholder="Password" required>
+            <a href="#" id="forgot-password-link" class="forgot-password">Forgot Password?</a>
+          </div>
+          <button type="submit" id="email-submit-btn" class="btn btn-primary full-width">Sign In</button>
+        </form>
+
+        <div class="auth-toggle">
+          <span id="auth-toggle-text">Don't have an account?</span>
+          <a href="#" id="auth-toggle-link">Sign Up</a>
+        </div>
+      </div>
+      <div id="login-error" class="error-msg"></div>
+    </div>
+  </div>
+
+  <div id="splash-screen">
+    <video id="splash-video" autoplay muted playsinline>
+      <source src="assets/ENGLISH LOGO ANIMATION.mp4" type="video/mp4">
+    </video>
+  </div>
+
+  <!-- UNIVERSAL USER WIDGET -->
+  <div id="user-widget" class="user-widget">
+    <div class="user-pill" onclick="toggleUserDropdown()">
+      <span class="user-email" id="widget-user-email">Loading...</span>
+      <div class="user-avatar" id="widget-user-avatar">
+        <i data-lucide="user"></i>
+      </div>
+      <i data-lucide="chevron-down" style="width: 16px; height: 16px; color: var(--text-dim);"></i>
+    </div>
+    <div class="user-dropdown" id="user-dropdown">
+      <div class="dropdown-item portal-link" onclick="navigateTo('portal')">
+        <i data-lucide="layout-grid"></i> Portal Home
+      </div>
+      <div class="dropdown-item danger" onclick="logout()">
+        <i data-lucide="log-out"></i> Sign Out
+      </div>
+    </div>
+  </div>
+
+  <!-- PORTAL / LANDING PAGE -->
+  <div id="landing-view" class="view">
+    <div class="portal-container">
+      <div class="portal-header">
+        <img src="assets/ENGLISH LOGO-CORAL.png" alt="Abhishri Academy" class="portal-logo"
+          onerror="this.style.display='none'">
+        <p>Select a module to continue</p>
+      </div>
+
+      <div class="portal-grid">
+        <!-- Smart Campus Card -->
+        <div class="portal-card" onclick="navigateTo('smart-campus')" id="card-smart-campus">
+          <div class="portal-icon" style="background: rgba(232, 105, 102, 0.1); color: var(--accent-primary);">
+            <i data-lucide="home"></i>
+          </div>
+          <h2>Smart Campus</h2>
+          <p>Control lights, fans, and monitor campus environment.</p>
+          <div class="lock-overlay"><i data-lucide="lock"></i></div>
+        </div>
+
+        <!-- Student Directory Card -->
+        <div class="portal-card" onclick="navigateTo('students')" id="card-students">
+          <div class="portal-icon" style="background: rgba(115, 199, 200, 0.1); color: var(--accent-secondary);">
+            <i data-lucide="graduation-cap"></i>
+          </div>
+          <h2>Student Directory</h2>
+          <p>Manage student records and attendance.</p>
+          <div class="lock-overlay"><i data-lucide="lock"></i></div>
+        </div>
+
+        <!-- Staff Directory Card -->
+        <div class="portal-card" onclick="navigateTo('staff')" id="card-staff">
+          <div class="portal-icon" style="background: rgba(74, 222, 128, 0.1); color: var(--success);">
+            <i data-lucide="users"></i>
+          </div>
+          <h2>Staff Directory</h2>
+          <p>Manage staff profiles and schedules.</p>
+          <div class="lock-overlay"><i data-lucide="lock"></i></div>
+        </div>
+
+        <!-- Admin Panel Card -->
+        <div class="portal-card" onclick="navigateTo('admin')" id="card-admin">
+          <div class="portal-icon" style="background: rgba(244, 63, 94, 0.1); color: #f43f5e;">
+            <i data-lucide="shield-alert"></i>
+          </div>
+          <h2>Admin Panel</h2>
+          <p>Manage users, permissions, and device visibility.</p>
+          <div class="lock-overlay"><i data-lucide="lock"></i></div>
+        </div>
+
+        <!-- Whatsapp Sender Card -->
+        <div class="portal-card" onclick="navigateTo('whatsapp')" id="card-whatsapp">
+          <div class="portal-icon" style="background: rgba(37, 211, 102, 0.1); color: #25D366;">
+            <i data-lucide="message-circle"></i>
+          </div>
+          <h2>Whatsapp Sender</h2>
+          <p>Send bulk messages and notifications.</p>
+          <div class="lock-overlay"><i data-lucide="lock"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SMART CAMPUS APP WRAPPER -->
+  <div id="smart-campus-app" class="app-wrapper">
+    <aside id="sidebar-smart-campus" class="console-sidebar">
+      <div class="sidebar-header">
+        <div class="logo-container">
+          <img src="assets/ENGLISH LOGO-CORAL.png" alt="Logo" class="logo-img" onerror="this.style.display='none';">
+        </div>
+        <div class="sidebar-title">Abhishri Smart</div>
+      </div>
+
+      <nav id="sidebar-nav">
+        <div class="nav-item" onclick="navigateTo('portal')">
+          <i data-lucide="arrow-left"></i>
+          <span>Back to Portal</span>
+        </div>
+        <div class="nav-item active" onclick="switchView('overview')">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Overview</span>
+        </div>
+
+        <!-- Areas will be injected here -->
+
+      </nav>
+
+
+      <div class="sidebar-footer">
+        <div class="status-indicator">
+          <div id="connection-dot" class="status-dot"></div>
+          <span id="connection-text">Syncing Live</span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="mobile-nav-toggle" onclick="toggleSidebar()">
+      <i data-lucide="menu"></i>
+    </div>
+
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <main class="console-main">
+      <header>
+        <div class="view-title">
+          <h1 id="screen-title">Campus Overview</h1>
+          <p id="screen-subtitle">Monitoring all smart systems</p>
+        </div>
+
+      </header>
+
+      <!-- Overview View -->
+      <div id="view-overview" class="view active">
+        <div class="highlights">
+          <div class="highlight-item">
+            <div class="highlight-icon" style="background: rgba(115, 199, 200, 0.15); color: var(--accent-secondary);">
+              <i data-lucide="layout-grid"></i>
+            </div>
+            <div class="highlight-text">
+              <h3>Active Rooms</h3>
+              <div id="active-rooms-count">0</div>
+            </div>
+          </div>
+          <div class="highlight-item">
+            <div class="highlight-icon" style="background: rgba(232, 105, 102, 0.15); color: var(--accent-primary);">
+              <i data-lucide="zap"></i>
+            </div>
+            <div class="highlight-text">
+              <h3>Total Entities</h3>
+              <div id="total-entities-count">0</div>
+            </div>
+          </div>
+          <div class="highlight-item">
+            <div class="highlight-icon" style="background: rgba(74, 222, 128, 0.15); color: var(--success);">
+              <i data-lucide="activity"></i>
+            </div>
+            <div class="highlight-text">
+              <h3>Current Load</h3>
+              <div id="active-entities-count">0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid" id="rooms-grid">
+          <!-- Area cards will be injected here -->
+        </div>
+      </div>
+
+      <!-- Room View Container -->
+      <div id="view-room" class="view">
+        <div id="room-content">
+          <!-- Area devices will be injected here -->
+        </div>
+      </div>
+
+
+    </main>
+  </div> <!-- End Smart Campus App -->
+
+  <!-- STUDENT DIRECTORY APP WRAPPER -->
+  <div id="student-app" class="app-wrapper">
+    <div style="padding:40px; text-align:center;">
+      <h1>Student Directory</h1>
+      <p style="color:var(--text-dim)">Coming Soon...</p>
+      <button class="btn btn-secondary" onclick="navigateTo('portal')" style="margin: 20px auto;">Back to
+        Portal</button>
+    </div>
+  </div>
+
+  <!-- WHATSAPP SENDER APP WRAPPER -->
+  <div id="whatsapp-app" class="app-wrapper">
+    <aside id="sidebar-whatsapp" class="console-sidebar">
+      <div class="sidebar-header">
+        <div class="logo-container">
+          <img src="assets/ENGLISH LOGO-CORAL.png" alt="Logo" class="logo-img" onerror="this.style.display='none';">
+        </div>
+        <div class="sidebar-title">WhatsApp Sender</div>
+      </div>
+
+      <nav id="sidebar-nav-whatsapp">
+        <div class="nav-item" onclick="navigateTo('portal')">
+          <i data-lucide="arrow-left"></i>
+          <span>Back to Portal</span>
+        </div>
+        <div class="nav-item active" onclick="window.whatsAppSender.switchView('chats')" id="nav-whatsapp-chats">
+          <i data-lucide="message-square"></i>
+          <span>Chats</span>
+        </div>
+        <div class="nav-item" onclick="window.whatsAppSender.switchView('broadcast')" id="nav-whatsapp-broadcast">
+          <i data-lucide="radio"></i>
+          <span>Broadcast</span>
+        </div>
+        <div class="nav-item" onclick="window.whatsAppSender.switchView('lists')" id="nav-whatsapp-lists">
+          <i data-lucide="list"></i>
+          <span>Lists</span>
+        </div>
+
+      </nav>
+    </aside>
+
+    <div class="mobile-nav-toggle" onclick="toggleSidebar()">
+      <i data-lucide="menu"></i>
+    </div>
+
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <main class="console-main">
+      <header>
+        <div class="view-title">
+          <h1 id="whatsapp-screen-title">WhatsApp Sender</h1>
+          <p id="whatsapp-screen-subtitle">Send bulk messages and notifications</p>
+        </div>
+      </header>
+
+      <div id="whatsapp-content" class="view active">
+        <!-- Chats View (Formerly Send/Inbox) -->
+        <div id="whatsapp-view-chats" class="whatsapp-subview active">
+          <div id="whatsapp-content-chats"></div>
+        </div>
+
+        <!-- Broadcast View (Formerly History) -->
+        <div id="whatsapp-view-broadcast" class="whatsapp-subview" style="display:none;">
+          <div id="whatsapp-content-broadcast"></div>
+        </div>
+
+        <!-- Lists View -->
+        <div id="whatsapp-view-lists" class="whatsapp-subview" style="display:none;">
+          <div id="whatsapp-content-lists"></div>
+        </div>
+
+
+      </div>
+    </main>
+  </div>
+
+  <!-- STAFF DIRECTORY APP WRAPPER -->
+  <div id="staff-app" class="app-wrapper">
+    <aside id="sidebar-staff" class="console-sidebar">
+      <div class="sidebar-header">
+        <div class="logo-container">
+          <img src="assets/ENGLISH LOGO-CORAL.png" alt="Logo" class="logo-img" onerror="this.style.display='none';">
+        </div>
+        <div class="sidebar-title">Staff Directory</div>
+      </div>
+
+      <nav id="sidebar-nav-staff">
+        <div class="nav-item" onclick="navigateTo('portal')">
+          <i data-lucide="arrow-left"></i>
+          <span>Back to Portal</span>
+        </div>
+        <div class="nav-item active" onclick="window.staffDirectory.switchView('directory')" id="nav-staff-directory">
+          <i data-lucide="contact"></i>
+          <span>Staff Directory</span>
+        </div>
+        <div class="nav-item" onclick="window.staffDirectory.switchView('manage')" id="nav-staff-manage">
+          <i data-lucide="user-cog"></i>
+          <span>Manage Staff</span>
+        </div>
+        <div class="nav-item" onclick="window.staffDirectory.switchView('attendance')" id="nav-staff-attendance">
+          <i data-lucide="calendar-check"></i>
+          <span>Attendance</span>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="mobile-nav-toggle" onclick="toggleSidebar()">
+      <i data-lucide="menu"></i>
+    </div>
+
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <main class="console-main">
+      <header>
+        <div class="view-title">
+          <h1 id="staff-screen-title">Staff Directory</h1>
+          <p id="staff-screen-subtitle">Loading staff records...</p>
+        </div>
+      </header>
+
+      <div id="staff-toolbar" class="console-toolbar">
+        <!-- Actions will be injected -->
+      </div>
+
+      <div id="staff-content" class="view active">
+        <!-- Directory View (Read Only) -->
+        <div id="staff-view-directory" class="staff-subview active">
+          <div class="dashboard-grid" id="staff-grid-directory"></div>
+        </div>
+
+        <!-- Manage View (Add/Edit) -->
+        <div id="staff-view-manage" class="staff-subview" style="display:none;">
+          <div class="dashboard-grid" id="staff-grid-manage"></div>
+        </div>
+
+        <!-- Attendance View -->
+        <div id="staff-view-attendance" class="staff-subview" style="display:none;">
+          <div class="attendance-container" id="staff-attendance-list"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ADMIN PANEL APP WRAPPER -->
+  <div id="admin-app" class="app-wrapper">
+    <aside id="sidebar-admin" class="console-sidebar">
+      <div class="sidebar-header">
+        <div class="logo-container">
+          <img src="assets/ENGLISH LOGO-CORAL.png" alt="Logo" class="logo-img" onerror="this.style.display='none';">
+        </div>
+        <div class="sidebar-title">Admin Panel</div>
+      </div>
+
+      <nav id="sidebar-nav-admin">
+        <div class="nav-item" onclick="navigateTo('portal')">
+          <i data-lucide="arrow-left"></i>
+          <span>Back to Portal</span>
+        </div>
+        <div class="nav-item active" onclick="switchAdminView('entities')" id="nav-item-entities">
+          <i data-lucide="layout-grid"></i>
+          <span>Entities</span>
+        </div>
+        <div class="nav-item" onclick="switchAdminView('users')" id="nav-item-users">
+          <i data-lucide="users"></i>
+          <span>Users</span>
+        </div>
+        <div class="nav-item" onclick="switchAdminView('whatsapp')" id="nav-item-whatsapp">
+          <i data-lucide="message-circle"></i>
+          <span>WhatsApp Config</span>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="mobile-nav-toggle" onclick="toggleSidebar()">
+      <i data-lucide="menu"></i>
+    </div>
+
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <main class="console-main">
+      <header>
+        <div class="view-title">
+          <h1 id="admin-page-title">Entity Management</h1>
+          <p id="admin-page-subtitle">Manage visibility and control</p>
+        </div>
+      </header>
+
+      <div class="view active" style="display: block;">
+        <!-- Entities Tab -->
+        <div id="admin-content-entities" class="admin-content active">
+          <div class="admin-toolbar">
+            <div class="search-box">
+              <i data-lucide="search" style="color: var(--text-dim); width: 20px;"></i>
+              <input type="text" id="admin-search" placeholder="Search entities..." oninput="filterAdminList()">
+            </div>
+            <div class="admin-actions">
+              <button class="btn btn-secondary" onclick="toggleSelectAll()">
+                <i data-lucide="check-square"></i> Select All
+              </button>
+              <button class="btn btn-primary" onclick="hideSelected()">
+                <i data-lucide="eye-off"></i> Hide
+              </button>
+              <button class="btn btn-secondary" onclick="unhideSelected()">
+                <i data-lucide="eye"></i> Unhide
+              </button>
+            </div>
+          </div>
+          <div id="admin-list" class="admin-list">
+            <!-- Admin items injected here -->
+          </div>
+        </div>
+
+        <!-- WhatsApp Config Tab -->
+        <div id="admin-content-whatsapp" class="admin-content">
+          <div id="admin-whatsapp-config-container"></div>
+        </div>
+
+        <!-- Users Tab -->
+        <div id="admin-content-users" class="admin-content">
+          <!-- Whitelist Management -->
+          <div class="whitelist-section">
+            <h3 style="margin-bottom: 16px; font-size: 1.2rem;">Allowed Users</h3>
+            <div class="whitelist-input-group">
+              <input type="email" id="whitelist-email-input" class="whitelist-input"
+                placeholder="Enter email address...">
+              <button class="btn btn-primary" onclick="addAllowedUser()">
+                <i data-lucide="user-plus"></i> Add User
+              </button>
+            </div>
+            <div id="whitelist-list" class="whitelist-list">
+              <!-- Whitelist items injected here -->
+            </div>
+          </div>
+
+          <!-- Signed In Users -->
+          <h3 style="margin-bottom: 16px; font-size: 1.2rem;">Signed In Users</h3>
+          <table class="user-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Email</th>
+                <th>Last Sign In</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <!-- User rows injected here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- PERMISSION MODAL -->
+  <div id="permission-modal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <div>
+          <h2 id="perm-user-email">User Permissions</h2>
+          <p style="color: var(--text-dim); font-size: 0.9rem;">Configure feature-level access</p>
+        </div>
+        <button class="close-btn" onclick="closePermissionModal()">&times;</button>
+      </div>
+
+      <div class="permission-groups">
+        <!-- Smart Campus -->
+        <div class="perm-group">
+          <div class="perm-group-header">
+            <i data-lucide="home"></i>
+            <span>Smart Campus</span>
+          </div>
+          <div class="perm-options">
+            <label class="perm-option">
+              <input type="checkbox" id="perm-smart_campus-view">
+              <span>View Dashboard</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-smart_campus-control">
+              <span>Control Devices</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Staff Directory -->
+        <div class="perm-group">
+          <div class="perm-group-header">
+            <i data-lucide="users"></i>
+            <span>Staff Directory</span>
+          </div>
+          <div class="perm-options">
+            <label class="perm-option">
+              <input type="checkbox" id="perm-staff_directory-view">
+              <span>View Directory</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-staff_directory-add">
+              <span>Add Staff</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-staff_directory-manage">
+              <span>Edit/Manage Staff</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-staff_directory-delete">
+              <span>Delete Staff</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-staff_directory-attendance">
+              <span>Manage Attendance</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Student Directory -->
+        <div class="perm-group">
+          <div class="perm-group-header">
+            <i data-lucide="graduation-cap"></i>
+            <span>Student Directory</span>
+          </div>
+          <div class="perm-options">
+            <label class="perm-option">
+              <input type="checkbox" id="perm-student_directory-view">
+              <span>View Directory</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-student_directory-manage">
+              <span>Manage Records</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- WhatsApp Sender -->
+        <div class="perm-group">
+          <div class="perm-group-header">
+            <i data-lucide="message-circle"></i>
+            <span>WhatsApp Sender</span>
+          </div>
+          <div class="perm-options">
+            <label class="perm-option">
+              <input type="checkbox" id="perm-whatsapp_sender-access">
+              <span>Access & Send</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-whatsapp_sender-broadcast">
+              <span>Send Broadcasts</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-whatsapp_sender-connect">
+              <span>Manage Connection</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closePermissionModal()">Cancel</button>
+        <button class="btn btn-primary" id="save-permissions-btn">Save Permissions</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/smart-campus.js"></script>
+  <script src="js/staff.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/whatsapp/state.js"></script>
+  <script src="js/whatsapp/api.js"></script>
+  <script src="js/whatsapp/ui.js"></script>
+  <script src="js/whatsapp/main.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>
