@@ -52,7 +52,8 @@ auth.onAuthStateChanged(user => {
         // Hide Splash Screen
         hideSplash();
 
-        window.location.hash = '';
+        // Don't clear hash here, it breaks deep linking and reloads.
+        // It will be cleared if needed in the logout function.
     }
 });
 
@@ -87,7 +88,7 @@ if (emailAuthForm) {
                 .then((userCredential) => {
                     // Send verification email
                     userCredential.user.sendEmailVerification();
-                    alert('Account created! Please check your email for verification before signing in.');
+                    AppDialog.toast('Account created! Please check your email for verification before signing in.', 'success');
                     // Optionally sign them out immediately until verified, but for now we'll let checkUserAccess handle it
                 })
                 .catch(handleAuthError);
@@ -103,13 +104,13 @@ if (forgotPasswordLink) {
         e.preventDefault();
         const email = document.getElementById('email-input').value;
         if (!email) {
-            alert('Please enter your email address first.');
+            AppDialog.toast('Please enter your email address first.', 'warn');
             return;
         }
 
         auth.sendPasswordResetEmail(email)
             .then(() => {
-                alert('Password reset email sent! Please check your inbox.');
+                AppDialog.toast('Password reset email sent! Please check your inbox.', 'success');
             })
             .catch(handleAuthError);
     });
@@ -172,12 +173,12 @@ async function checkUserAccess(user, modal) {
                 .then(() => grantAccess(user, modal, newUserData))
                 .catch(err => {
                     console.error("Error creating user data", err);
-                    alert("System Error: Could not create user profile.");
+                    AppDialog.toast('System Error: Could not create user profile.', 'error');
                     auth.signOut();
                 });
         } else {
             // Not allowed
-            alert('Access Denied: Your email is not authorized.');
+            AppDialog.toast('Access Denied: Your email is not authorized.', 'error');
             auth.signOut();
         }
     });
@@ -226,6 +227,7 @@ function handleRouting() {
 // Logout Handler
 window.logout = () => {
     auth.signOut().then(() => {
+        window.location.hash = '';
         window.location.reload();
     });
 };

@@ -163,7 +163,6 @@ main {
 }
 
 header {
-  max-width: 1200px;
   margin-bottom: 40px;
   display: flex;
   justify-content: space-between;
@@ -216,7 +215,6 @@ header {
   display: none;
   animation: fadeIn 0.4s ease-out;
   width: 100%;
-  max-width: 1200px;
 }
 
 .view.active {
@@ -1298,6 +1296,17 @@ header {
   color: white;
 }
 
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.2);
+}
+
 .btn:hover {
   transform: translateY(-2px);
   filter: brightness(1.1);
@@ -1544,7 +1553,7 @@ header {
 
 /* Portal Styles */
 .portal-container {
-  max-width: 1200px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 40px 20px;
   display: flex;
@@ -1579,7 +1588,7 @@ header {
 
 .portal-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 30px;
   width: 100%;
 }
@@ -2172,7 +2181,6 @@ header {
 }
 
 #staff-app header {
-  max-width: 1200px;
   margin-bottom: 40px;
   display: flex;
   justify-content: space-between;
@@ -2931,4 +2939,120 @@ header {
   min-width: 35px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* ======================================
+   LARGE SCREEN BREAKPOINT (1440px+)
+   ====================================== */
+@media (min-width: 1440px) {
+
+  /* Wider portal container */
+  .portal-container {
+    max-width: 100%;
+    padding: 40px 80px;
+  }
+
+  /* Portal grid: more columns for widescreen */
+  .portal-grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 40px;
+  }
+
+  /* More columns in the dashboard grid */
+  .dashboard-grid {
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 40px;
+  }
+
+  /* 4-column highlights bar on very wide screens */
+  .highlights {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px;
+  }
+
+  /* Room entities: smaller minmax for more columns */
+  .room-entities-group {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 28px;
+  }
+
+  /* Give the main padding more breathing room */
+  main,
+  .console-main {
+    padding: 48px 60px;
+  }
+
+  /* Admin grids expand on wider screens */
+  .admin-list {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+
+  /* Wider sidebar for larger monitors */
+  :root {
+    --sidebar-width: 300px;
+  }
+}
+
+/* ======================================
+   EXTRA LARGE SCREEN (1920px+)
+   ====================================== */
+@media (min-width: 1920px) {
+  .portal-container {
+    padding: 40px 120px;
+  }
+
+  .portal-grid {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  }
+
+  .dashboard-grid {
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    gap: 48px;
+  }
+
+  .highlights {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  main,
+  .console-main {
+    padding: 56px 80px;
+  }
+}
+
+/* ======================================
+   DELIVERY REPORT FILTER & EXPAND STYLES
+   ====================================== */
+.wa-filter-btn {
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.wa-filter-btn:hover {
+  opacity: 1;
+}
+
+.wa-filter-btn.wa-filter-active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.wa-row-expanded>div:first-child i[data-lucide="chevron-down"] {
+  transform: rotate(180deg);
+}
+
+.wa-report-row {
+  transition: box-shadow 0.2s ease;
+}
+
+.wa-report-row:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive: stack donut + stats on mobile */
+@media (max-width: 768px) {
+  .wa-history-page [style*="grid-template-columns: auto 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
 }

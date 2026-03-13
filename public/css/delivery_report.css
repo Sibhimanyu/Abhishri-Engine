@@ -1,0 +1,108 @@
+/* Delivery Report Premium Styles */
+:root {
+    --wa-green: #25d366;
+    --wa-blue: #3b82f6;
+    --wa-cyan: #38bdf8;
+    --wa-failed: #ef4444;
+    --wa-read: #a855f7;
+    --wa-report-surface: rgba(255, 255, 255, 0.04);
+}
+
+.wa-report-container {
+    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Stats Cards */
+.wa-stat-card {
+    background: var(--wa-report-surface);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 20px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.wa-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, transparent 100%);
+    pointer-events: none;
+}
+
+.wa-stat-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* Donut Chart Glow */
+.wa-donut-inner {
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5), 0 0 30px rgba(var(--accent-rgb), 0.1);
+}
+
+/* Recipient Row */
+.wa-report-row {
+    background: var(--wa-report-surface);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 8px;
+    border-radius: 12px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 1;
+    transform: scale(1);
+}
+
+.wa-report-row:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.wa-report-row.wa-row-expanded {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.03);
+}
+
+/* Left Status Stripe */
+.wa-status-stripe {
+    width: 4px;
+    position: absolute;
+    left: 0;
+    top: 12px;
+    bottom: 12px;
+    border-radius: 0 4px 4px 0;
+}
+
+/* Pipeline Stepper */
+.wa-pipeline-step {
+    transition: all 0.3s ease;
+}
+
+.wa-pipeline-step.active .wa-step-circle {
+    box-shadow: 0 0 15px currentColor;
+}
+
+/* Custom Scrollbar for Details */
+.wa-report-details::-webkit-scrollbar {
+    width: 4px;
+}
+
+.wa-report-details::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}

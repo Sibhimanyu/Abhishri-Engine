@@ -44,6 +44,7 @@ window.smartCampus = {
 
             this.areas = newAreas;
             if (this.currentView === 'admin') window.adminPanel.render();
+            if (this.currentView === 'room' && this.activeAreaId) this.renderAreaDetails(this.activeAreaId);
             this.renderDashboard();
         }, error => {
             console.error("DB Error:", error);
@@ -252,7 +253,7 @@ window.toggleDevice = (underscoredId, dotEntityId, domain, currentState) => {
     const canControl = isAdmin || perms === true || perms.control;
 
     if (!canControl) {
-        alert('Access Denied: You do not have permission to control devices.');
+        AppDialog.toast('Access Denied: You do not have permission to control devices.', 'error');
         return;
     }
 
@@ -294,7 +295,7 @@ window.setFanSpeed = (underscoredId, dotEntityId, level) => {
     const canControl = isAdmin || perms === true || perms.control;
 
     if (!canControl) {
-        alert('Access Denied: You do not have permission to control fans.');
+        AppDialog.toast('Access Denied: You do not have permission to control fans.', 'error');
         return;
     }
 

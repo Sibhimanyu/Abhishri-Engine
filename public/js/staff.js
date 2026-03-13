@@ -10,7 +10,7 @@ window.staffDirectory = {
     currentView: 'directory', // directory, manage, attendance
 
     initialize() {
-        console.log("Initializing Staff Directory...");
+
     },
 
     subscribe() {
@@ -39,6 +39,9 @@ window.staffDirectory = {
     switchView(viewName) {
         this.currentView = viewName;
 
+        // Update URL hash to persist state on reload (e.g., #staff/attendance)
+        window.location.hash = `staff/${viewName}`;
+
         // Update Sidebar
         document.querySelectorAll('#sidebar-nav-staff .nav-item').forEach(el => el.classList.remove('active'));
         const activeNav = document.getElementById(`nav-staff-${viewName}`);
@@ -54,7 +57,7 @@ window.staffDirectory = {
     },
 
     render() {
-        if (window.smartCampus.currentView !== 'staff' && window.location.hash !== '#staff') return;
+        if (!window.location.hash.startsWith('#staff')) return;
 
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
@@ -408,18 +411,19 @@ window.staffDirectory = {
             this.closeModal();
         } catch (error) {
             console.error("Error saving staff:", error);
-            alert("Failed to save staff member.");
+            AppDialog.toast('Failed to save staff member.', 'error');
         }
     },
 
     async deleteStaff(id) {
-        if (!confirm("Are you sure you want to delete this staff member?")) return;
+        const confirmed = await AppDialog.confirm('Are you sure you want to delete this staff member?', { danger: true, confirmText: 'Delete', title: 'Delete Staff Member' });
+        if (!confirmed) return;
 
         try {
             await firebase.database().ref(`modules/staff_directory/staff/${id}`).remove();
         } catch (error) {
             console.error("Error deleting staff:", error);
-            alert("Failed to delete staff member.");
+            AppDialog.toast('Failed to delete staff member.', 'error');
         }
     }
 };

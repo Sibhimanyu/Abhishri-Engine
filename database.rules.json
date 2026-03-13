@@ -3,7 +3,7 @@
     "allowedUsers": {
       ".read": "auth != null",
       "$emailKey": {
-        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || (auth.token.email === 'sibhi.gv@gmail.com' && $emailKey === 'sibhi_gv_gmail_com'))"
+        ".write": "auth != null && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true"
       }
     },
     "users": {
@@ -39,7 +39,19 @@
       },
       "whatsapp_sender": {
         ".read": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').child('access').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').val() === true)",
-        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').child('access').val() === true)"
+        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').child('access').val() === true)",
+        "conversations": {
+          "$recipientId": {
+            "messages": {
+              ".indexOn": ["messageId"]
+            }
+          }
+        },
+        "message_lookup": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          ".indexOn": ["timestamp"]
+        }
       }
     }
   }

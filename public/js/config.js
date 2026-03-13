@@ -1,4 +1,8 @@
 // Firebase Configuration and Initialization
+// NOTE: The Firebase web config below (apiKey, appId, etc.) is intentionally public.
+// Per Firebase's design, the web API key is NOT a secret — it identifies the Firebase
+// project to the SDK. All access control is enforced by Firebase Auth and RTDB Security Rules.
+// See: https://firebase.google.com/docs/projects/api-keys
 const firebaseConfig = {
     apiKey: "AIzaSyCkhTwa6sG7mCx-RW1E2FWhKqB--yDRUmk",
     authDomain: "abhishri-academy.firebaseapp.com",
@@ -14,6 +18,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 const functions = firebase.functions();
+const storage = firebase.storage();
 
 // Design Configuration Constants
 const DOMAIN_GROUPS = {

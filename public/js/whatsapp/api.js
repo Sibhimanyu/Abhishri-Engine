@@ -36,7 +36,7 @@ if (!window.whatsAppSender) {
             }
 
             this.templates = templatesArray;
-            console.log("Templates fetched successfully:", this.templates.length);
+
 
             // If currently on broadcast view, re-render to show templates
             if (this.currentView === 'broadcast' && typeof this.renderBroadcastView === 'function') {
@@ -67,17 +67,22 @@ if (!window.whatsAppSender) {
 
     /**
      * Send Broadcast Template via Callable Cloud Function
-     * @param {string} templateName - The name of the template from API
-     * @param {string[]} numbers - Array of E.164 phone numbers
-     * @param {string[]} variables - Array of variable values mapping to {{1}}, {{2}}...
+     * @param {object} options - Options object
+     * @param {string} options.templateName - The name of the template from API
+     * @param {string[]} options.recipients - Array of E.164 phone numbers
+     * @param {string[]} options.variables - Array of variable values mapping to {{1}}, {{2}}...
+     * @param {string} [options.broadcastId] - Optional unique ID for this broadcast campaign
+     * @param {string} [options.headerImageUrl] - Optional direct URL for an image header
      * @returns {Promise<object>} - API Response
      */
-    window.whatsAppSender.sendBroadcastAPI = async function (templateName, numbers, variables = []) {
+    window.whatsAppSender.sendBroadcastAPI = async function ({ templateName, recipients, variables = [], broadcastId = null, headerImageUrl = null }) {
         const sendBroadcastCallable = firebase.functions().httpsCallable('sendWhatsAppBroadcast');
         const result = await sendBroadcastCallable({
             templateName: templateName,
-            numbers: numbers,
-            variables: variables
+            numbers: recipients,
+            variables: variables,
+            broadcastId: broadcastId,
+            headerImageUrl: headerImageUrl
         });
 
         return result.data;

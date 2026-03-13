@@ -91,7 +91,8 @@ window.adminPanel = {
 
         db.ref().update(updates)
             .then(() => {
-                console.log('Visibility Updated');
+                // Visibility Updated
+
                 this.selectedItems.clear();
                 this.render();
             })
@@ -365,12 +366,12 @@ window.addAllowedUser = () => {
     const email = input.value.trim().toLowerCase();
 
     if (!email) {
-        alert('Please enter an email address');
+        AppDialog.toast('Please enter an email address', 'warn');
         return;
     }
 
     if (!email.includes('@')) {
-        alert('Please enter a valid email address');
+        AppDialog.toast('Please enter a valid email address', 'warn');
         return;
     }
 
@@ -379,7 +380,7 @@ window.addAllowedUser = () => {
 
     db.ref(`allowedUsers/${emailKey}`).once('value', snap => {
         if (snap.exists()) {
-            alert('This email is already in the allowed list');
+            AppDialog.toast('This email is already in the allowed list', 'warn');
             return;
         }
 
@@ -397,10 +398,10 @@ window.addAllowedUser = () => {
         }).then(() => {
             input.value = '';
             window.adminPanel.renderWhitelist();
-            alert(`${email} has been added to the allowed users list`);
+            AppDialog.toast(`${email} has been added to the allowed users list`, 'success');
         }).catch(err => {
             console.error(err);
-            alert('Failed to add user: ' + err.message);
+            AppDialog.toast('Failed to add user: ' + err.message, 'error');
         });
     });
 };
@@ -453,6 +454,8 @@ window.openPermissionModal = (emailKey) => {
     setCheck('perm-whatsapp_sender-access', perms.whatsapp_sender?.access || (perms.whatsapp_sender === true));
     setCheck('perm-whatsapp_sender-broadcast', perms.whatsapp_sender?.broadcast || (perms.whatsapp_sender === true));
     setCheck('perm-whatsapp_sender-connect', perms.whatsapp_sender?.connect || (perms.whatsapp_sender === true));
+    setCheck('perm-whatsapp_sender-lists', perms.whatsapp_sender?.lists || (perms.whatsapp_sender === true));
+    setCheck('perm-whatsapp_sender-history', perms.whatsapp_sender?.history || (perms.whatsapp_sender === true));
 
     document.getElementById('permission-modal').style.display = 'flex';
     lucide.createIcons();
@@ -486,36 +489,39 @@ document.getElementById('save-permissions-btn').onclick = () => {
         whatsapp_sender: {
             access: getVal('perm-whatsapp_sender-access'),
             broadcast: getVal('perm-whatsapp_sender-broadcast'),
-            connect: getVal('perm-whatsapp_sender-connect')
+            connect: getVal('perm-whatsapp_sender-connect'),
+            lists: getVal('perm-whatsapp_sender-lists'),
+            history: getVal('perm-whatsapp_sender-history')
         }
     };
 
     db.ref(`allowedUsers/${currentEditingEmailKey}/permissions`).set(updatedPerms)
         .then(() => {
-            alert('Permissions updated successfully');
+            AppDialog.toast('Permissions updated successfully', 'success');
             closePermissionModal();
             window.adminPanel.renderWhitelist();
         })
         .catch(err => {
             console.error(err);
-            alert('Failed to save permissions: ' + err.message);
+            AppDialog.toast('Failed to save permissions: ' + err.message, 'error');
         });
 };
 
 
-window.removeAllowedUser = (emailKey) => {
+window.removeAllowedUser = async (emailKey) => {
     const userData = window.adminPanel.allowedUsersData[emailKey];
     if (!userData) return;
 
-    if (confirm(`Remove ${userData.email} from allowed users?`)) {
+    const confirmed = await AppDialog.confirm(`Remove ${userData.email} from allowed users?`, { danger: true, confirmText: 'Remove', title: 'Remove User' });
+    if (confirmed) {
         db.ref(`allowedUsers/${emailKey}`).remove()
             .then(() => {
                 window.adminPanel.renderWhitelist();
-                alert(`${userData.email} has been removed from the allowed list`);
+                AppDialog.toast(`${userData.email} has been removed from the allowed list`, 'success');
             })
             .catch(err => {
                 console.error(err);
-                alert('Failed to remove user: ' + err.message);
+                AppDialog.toast('Failed to remove user: ' + err.message, 'error');
             });
     }
 };
@@ -530,10 +536,10 @@ window.handleSaveWhatsAppConfig = async (e) => {
     try {
         const configRef = firebase.database().ref('modules/whatsapp_sender/config');
         await configRef.set({ apiKey, wabaId, phoneNumberId, phoneNumber, updatedAt: firebase.database.ServerValue.TIMESTAMP });
-        alert("Configuration Saved!");
+        AppDialog.toast('Configuration saved successfully', 'success');
         window.adminPanel.renderWhatsAppConfig();
     } catch (error) {
         console.error("Error saving WhatsApp config:", error);
-        alert("Failed to save configuration: " + error.message);
+        AppDialog.toast('Failed to save configuration: ' + error.message, 'error');
     }
 };

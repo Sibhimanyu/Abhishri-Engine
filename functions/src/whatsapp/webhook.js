@@ -1,339 +1,227 @@
 
-const { onRequest } = require("firebase-functions/https");
+const {onRequest} = require("firebase-functions/https");
 const logger = require("firebase-functions/logger");
-const admin = require('firebase-admin');
+const admin = require("firebase-admin");
 
 // Ensure admin is initialized
 if (admin.apps.length === 0) {
-    admin.initializeApp();
+  admin.initializeApp();
 }
 
+const sanitizeKey = (key) => key ? String(key).replace(/[.#$/[\]]/g, "_") : key;
+
 exports.whatsappWebhook = onRequest(async (request, response) => {
-    if (request.method === 'GET') {
-        // Verification challenge (standard for Meta/Fast2SMS webhooks)
-        const mode = request.query['hub.mode'];
-        const token = request.query['hub.verify_token'];
-        const challenge = request.query['hub.challenge'];
+  if (request.method === "GET") {
+    const mode = request.query["hub.mode"];
+    const token = request.query["hub.verify_token"];
+    const challenge = request.query["hub.challenge"];
+    const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
 
-        const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
-
-        if (mode === 'subscribe' && token) {
-            if (VERIFY_TOKEN && token !== VERIFY_TOKEN) {
-                logger.warn("Webhook verification failed: token mismatch", { token });
-                return response.status(403).send('Forbidden: Invalid verify token');
-            }
-            logger.info("Webhook verification successful", { mode });
-            return response.status(200).send(challenge);
-        }
-        return response.status(200).send('OK (GET)');
+    if (mode === "subscribe" && token) {
+      if (VERIFY_TOKEN && token !== VERIFY_TOKEN) {
+        logger.warn("Webhook verification failed: token mismatch", {token});
+        return response.status(403).send("Forbidden: Invalid verify token");
+      }
+      logger.info("Webhook verification successful", {mode});
+      return response.status(200).send(challenge);
     }
+    return response.status(200).send("OK (GET)");
+  }
 
-    if (request.method !== 'POST') {
-        return response.status(405).send('Method Not Allowed');
-    }
+  if (request.method !== "POST") {
+    return response.status(405).send("Method Not Allowed");
+  }
 
-    logger.info("Webhook received", {
-        body: JSON.stringify(request.body)
+  logger.info("Webhook received", {body: JSON.stringify(request.body)});
+
+  let processed = false;
+  let errorDetails = null;
+
+  try {
+    const body = request.body;
+    const db = admin.database();
+    const historyRef = db.ref("modules/whatsapp_sender");
+
+    // Always log for debug
+    await historyRef.child("debug_webhooks").push({
+      timestamp: admin.database.ServerValue.TIMESTAMP,
+      payload: body,
     });
 
-    try {
-        const body = request.body;
-        const db = admin.database();
-        const historyRef = db.ref('modules/whatsapp_sender');
+    if (body.whatsapp_reports) {
+      for (const report of body.whatsapp_reports) {
+        if (report.type === "incoming_message") {
+          const messageId = report.message_id;
+          const from = report.from;
+          const type = report.message_type || "text";
+          const timestamp = report.timestamp * 1000;
+          const conversationId = from;
 
-        // --- DEBUG STORAGE (only in dev mode) ---
-        if (process.env.DEV_MODE === 'true') {
-            await historyRef.child('debug_webhooks').push({
-                timestamp: admin.database.ServerValue.TIMESTAMP,
-                payload: body
-            });
-        }
-        // -----------------------------------------
+          let textBody = "";
+          let previewText = "";
+          let imageData = null;
 
-        if (body.whatsapp_reports) {
-            for (const report of body.whatsapp_reports) {
-                if (report.type === 'incoming_message') {
-                    const messageId = report.message_id;
-                    const from = report.from; // Sender's phone number
-                    const type = report.message_type || 'text';
-                    const timestamp = report.timestamp * 1000;
-                    const conversationId = from;
-
-                    let textBody = ''; // Actual text for the chat bubble
-                    let previewText = ''; // Text for the sidebar preview
-                    let imageData = null;
-
-                    if (type === 'image' || type === 'audio' || report.media_url) {
-                        if (type === 'image') {
-                            textBody = report.caption || '';
-                            previewText = report.caption ? `📷 ${report.caption}` : `📷 Photo`;
-                        } else if (type === 'audio') {
-                            textBody = '';
-                            previewText = `🎤 Voice Message`;
-                        } else {
-                            textBody = report.caption || '';
-                            previewText = `📎 Attachment`;
-                        }
-
-                        imageData = {
-                            url: report.media_url,
-                            mimeType: report.mime_type || '',
-                            caption: report.caption || ''
-                        };
-                    } else if (type === 'text') {
-                        textBody = report.body || '';
-                        previewText = textBody;
-                    } else {
-                        textBody = '';
-                        previewText = `📎 ${type} message`;
-                    }
-
-                    // Check if this messageId already exists to avoid duplicates
-                    const existingCheck = await historyRef.child(`conversations/${conversationId}/messages`)
-                        .orderByChild('messageId')
-                        .equalTo(messageId)
-                        .once('value');
-
-                    if (existingCheck.exists()) {
-                        logger.info("Duplicate message received via webhook (Fast2SMS), checking for media updates.", { messageId });
-                        if (imageData && imageData.url) {
-                            existingCheck.forEach(child => {
-                                const currentMsg = child.val();
-                                if (!currentMsg.imageData || !currentMsg.imageData.url) {
-                                    child.ref.update({ imageData: imageData, message: textBody });
-                                    logger.info("Updated existing message with new media_url", { messageId });
-                                }
-                            });
-                        }
-                        continue;
-                    }
-
-                    // 1. Store the message
-                    const newMsg = {
-                        messageId: messageId,
-                        from: from,
-                        to: report.phone_number_id || 'business_number',
-                        message: textBody,
-                        type: type,
-                        timestamp: timestamp,
-                        direction: 'inbound',
-                        status: 'received'
-                    };
-
-                    if (imageData) {
-                        newMsg.imageData = imageData;
-                    }
-
-                    await historyRef.child(`conversations/${conversationId}/messages`).push(newMsg);
-
-                    // 2. Update conversation metadata
-                    await historyRef.child(`conversations/${conversationId}/metadata`).transaction((currentData) => {
-                        if (!currentData) {
-                            return {
-                                lastMessage: previewText,
-                                timestamp: timestamp,
-                                unreadCount: 1,
-                                displayName: from,
-                                phoneNumber: from
-                            };
-                        }
-                        return {
-                            ...currentData,
-                            lastMessage: previewText,
-                            timestamp: timestamp,
-                            unreadCount: (currentData.unreadCount || 0) + 1
-                        };
-                    });
-
-                    logger.info("Inbound message (Fast2SMS) processed", { messageId });
-
-                } else if (report.type === 'status_update') {
-                    const messageId = report.request_id;
-                    const status = (report.status || '').toLowerCase();
-                    const recipientId = report.recipient_id;
-                    const timestamp = report.timestamp * 1000;
-
-                    const messageRef = historyRef.child(`conversations/${recipientId}/messages`);
-                    const query = messageRef.orderByChild('messageId').equalTo(messageId);
-                    const snapshot = await query.once('value');
-
-                    if (snapshot.exists()) {
-                        snapshot.forEach(child => {
-                            const current = child.val();
-                            const update = {};
-
-                            if (status === 'sent') update.sentAt = timestamp;
-                            if (status === 'delivered') update.deliveredAt = timestamp;
-                            if (status === 'read') update.readAt = timestamp;
-
-                            const statusPriority = { 'sent': 1, 'delivered': 2, 'read': 3, 'failed': 4 };
-                            const currentPriority = statusPriority[current.status] || 0;
-                            const newPriority = statusPriority[status] || 0;
-
-                            if (status === 'failed') {
-                                update.status = 'failed';
-                                update.error = report.errors || 'Unknown error';
-                            } else if (newPriority >= currentPriority) {
-                                update.status = status;
-                            }
-
-                            child.ref.update(update);
-                        });
-                        logger.info("Status update (Fast2SMS) processed", { messageId, status });
-                    } else {
-                        logger.warn("Message not found for status update", { messageId });
-                    }
-                }
-            }
-        } else if (body.object) {
-            // Handle standard Meta/WhatsApp Webhook Payload
-            if (body.entry &&
-                body.entry[0].changes &&
-                body.entry[0].changes[0] &&
-                body.entry[0].changes[0].value.messages &&
-                body.entry[0].changes[0].value.messages[0]
-            ) {
-                const value = body.entry[0].changes[0].value;
-                const metadata = value.metadata || {};
-
-                // IT IS A MESSAGE
-                const message = value.messages[0];
-                const contact = value.contacts ? value.contacts[0] : null;
-
-                const from = message.from; // Phone number or ID
-                const messageId = message.id;
-                const type = message.type;
-                let textBody = '';
-
-                if (type === 'text') {
-                    textBody = message.text.body;
-                } else if (type === 'image') {
-                    // Fast2SMS/Meta provides the image ID which can be downloaded via API later.
-                    // For now, store it as an image message with the ID and optional caption.
-                    const caption = message.image.caption || '';
-                    const imageId = message.image.id;
-                    const mimeType = message.image.mime_type;
-
-                    textBody = caption ? `[Photo]: ${caption}` : `[Photo]`;
-
-                    // We attach these to the Firebase object
-                    message.imageData = {
-                        id: imageId,
-                        mimeType: mimeType,
-                        caption: caption
-                    };
-                } else {
-                    textBody = `[${type} message]`;
-                }
-
-                const timestamp = parseInt(message.timestamp) * 1000; // Convert to ms
-
-                // Determine Conversation ID
-                // For inbound: 'from' is the customer. conversationId = from.
-                const conversationId = from;
-
-                // DEDUPLICATION CHECK
-                // Check if this messageId already exists to avoid duplicates
-                const existingCheck = await historyRef.child(`conversations/${conversationId}/messages`)
-                    .orderByChild('messageId')
-                    .equalTo(messageId)
-                    .once('value');
-
-                if (existingCheck.exists()) {
-                    logger.info("Duplicate message received via webhook, skipping.", { messageId });
-                } else {
-                    // 1. Store the message
-                    const newMsg = {
-                        messageId: messageId,
-                        from: from,
-                        to: 'business_number', // placeholder or use metadata if available
-                        message: textBody,
-                        type: type,
-                        timestamp: timestamp,
-                        direction: 'inbound',
-                        status: 'received'
-                    };
-
-                    if (type === 'image' && message.imageData) {
-                        newMsg.imageData = message.imageData;
-                    }
-
-                    await historyRef.child(`conversations/${conversationId}/messages`).push(newMsg);
-
-                    // 2. Update conversation metadata
-                    await historyRef.child(`conversations/${conversationId}/metadata`).transaction((currentData) => {
-                        if (!currentData) {
-                            return {
-                                lastMessage: textBody,
-                                timestamp: timestamp,
-                                unreadCount: 1,
-                                displayName: contact && contact.profile ? contact.profile.name : from,
-                                phoneNumber: from
-                            };
-                        }
-                        return {
-                            ...currentData,
-                            lastMessage: textBody,
-                            timestamp: timestamp,
-                            unreadCount: (currentData.unreadCount || 0) + 1
-                        };
-                    });
-
-                    logger.info("Inbound message (Fast2SMS/Meta) processed", { messageId });
-                }
-
-            } else if (body.entry &&
-                body.entry[0].changes &&
-                body.entry[0].changes[0] &&
-                body.entry[0].changes[0].value.statuses &&
-                body.entry[0].changes[0].value.statuses[0]
-            ) {
-                // IT IS A STATUS UPDATE
-                const statusUpdate = body.entry[0].changes[0].value.statuses[0];
-                const messageId = statusUpdate.id;
-                const status = statusUpdate.status; // sent, delivered, read
-                const recipientId = statusUpdate.recipient_id;
-                const timestamp = parseInt(statusUpdate.timestamp) * 1000;
-
-                // We need to find the conversation.
-                // Assuming recipient_id is the phone number which is the conversationId
-
-                const messageRef = historyRef.child(`conversations/${recipientId}/messages`);
-                const query = messageRef.orderByChild('messageId').equalTo(messageId);
-                const snapshot = await query.once('value');
-
-                if (snapshot.exists()) {
-                    snapshot.forEach(child => {
-                        const current = child.val();
-                        const update = {};
-
-                        if (status === 'sent') update.sentAt = timestamp;
-                        if (status === 'delivered') update.deliveredAt = timestamp;
-                        if (status === 'read') update.readAt = timestamp;
-
-                        const statusPriority = { 'sent': 1, 'delivered': 2, 'read': 3 };
-                        const currentPriority = statusPriority[current.status] || 0;
-                        const newPriority = statusPriority[status] || 0;
-
-                        if (newPriority >= currentPriority) {
-                            update.status = status;
-                        }
-
-                        child.ref.update(update);
-                    });
-                    logger.info("Status update processed", { messageId, status });
-                } else {
-                    logger.warn("Message not found for status update", { messageId });
-                }
+          if (type === "image" || type === "audio" || report.media_url) {
+            if (type === "image") {
+              textBody = report.caption || "";
+              previewText = report.caption ? `📷 ${report.caption}` : `📷 Photo`;
+            } else if (type === "audio") {
+              textBody = "";
+              previewText = `🎤 Voice Message`;
             } else {
-                logger.info("Unhandled Webhook Event Structure", body || {});
+              textBody = report.caption || "";
+              previewText = `📎 Attachment`;
             }
+            imageData = {url: report.media_url, mimeType: report.mime_type || "", caption: report.caption || ""};
+          } else if (type === "text") {
+            textBody = report.body || "";
+            previewText = textBody;
+          } else {
+            textBody = "";
+            previewText = `📎 ${type} message`;
+          }
+
+          const existingCheck = await historyRef.child(`conversations/${conversationId}/messages`).orderByChild("messageId").equalTo(messageId).once("value");
+          if (!existingCheck.exists()) {
+            const newMsg = {
+              messageId, from, to: report.phone_number_id || "business_number",
+              message: textBody, type, timestamp, direction: "inbound", status: "received",
+            };
+            if (imageData) newMsg.imageData = imageData;
+            await historyRef.child(`conversations/${conversationId}/messages`).push(newMsg);
+
+            await historyRef.child(`conversations/${conversationId}/metadata`).transaction((currentData) => {
+              const senderName = report.contact_name || report.profile_name || report.name || from;
+              if (!currentData) {
+                return {lastMessage: previewText, timestamp, unreadCount: 1, displayName: senderName, phoneNumber: from};
+              }
+              const updatedName = (!currentData.displayName || currentData.displayName === from || currentData.displayName === "undefined") ? senderName : currentData.displayName;
+              return {...currentData, lastMessage: previewText, timestamp, displayName: updatedName, unreadCount: (currentData.unreadCount || 0) + 1};
+            });
+          }
+          processed = true;
+        } else if (report.type === "status_update") {
+          const messageId = report.request_id;
+          const status = (report.status || "").toLowerCase();
+          const timestamp = report.timestamp * 1000;
+
+          const lookupRef = db.ref(`modules/whatsapp_sender/message_lookup/${sanitizeKey(messageId)}`);
+          const lookupSnapshot = await lookupRef.once("value");
+          const lookupData = lookupSnapshot.val();
+
+          if (lookupData) {
+            const {recipientId, msgKey, broadcastId} = lookupData;
+            const msgRef = historyRef.child(`conversations/${recipientId}/messages/${msgKey}`);
+
+            // Extract detailed error info (full object, not just a string)
+            let errMsg = null;
+            let errorInfo = null;
+            if (status === "failed" && report.errors && Array.isArray(report.errors) && report.errors.length > 0) {
+              const errObj = report.errors[0];
+              errMsg = (errObj.error_data && errObj.error_data.details) || errObj.message || errObj.title || "Unknown error";
+              errorInfo = {
+                code: errObj.code || null,
+                title: errObj.title || null,
+                details: (errObj.error_data && errObj.error_data.details) || errObj.message || null,
+                href: errObj.href || null,
+              };
+            } else if (status === "failed" && typeof report.errors === "string") {
+              errMsg = report.errors;
+              errorInfo = {code: null, title: null, details: report.errors, href: null};
+            }
+
+            // Extract conversation & billing metadata from webhook payload
+            const conversationInfo = report.conversation ? {
+              id: report.conversation.id || null,
+              originType: (report.conversation.origin && report.conversation.origin.type) || null,
+            } : null;
+            const pricingModel = report.pricing_model || (report.pricing && report.pricing.model) || null;
+            const billingCategory = (report.pricing && report.pricing.category) || (report.billing && report.billing.category) || null;
+
+            const update = {status};
+            if (status === "sent") update.sentAt = timestamp;
+            if (status === "delivered") update.deliveredAt = timestamp;
+            if (status === "read") update.readAt = timestamp;
+            if (errMsg) update.error = errMsg;
+            if (errorInfo) update.errorInfo = errorInfo;
+            if (conversationInfo) update.conversationInfo = conversationInfo;
+            if (pricingModel) update.pricingModel = pricingModel;
+            if (billingCategory) update.billingCategory = billingCategory;
+
+            await msgRef.update(update);
+
+            const newStatusEntry = {status, timestamp};
+            if (errMsg) newStatusEntry.error = errMsg;
+            await msgRef.child("statusHistory").push(newStatusEntry);
+
+            if (broadcastId) {
+              const logUpdate = {status, timestamp};
+              if (errMsg) logUpdate.error = errMsg;
+              if (errorInfo) logUpdate.errorInfo = errorInfo;
+              if (conversationInfo) logUpdate.conversationInfo = conversationInfo;
+              if (pricingModel) logUpdate.pricingModel = pricingModel;
+              if (billingCategory) logUpdate.billingCategory = billingCategory;
+              if (status === "sent") logUpdate.sentAt = timestamp;
+              if (status === "delivered") logUpdate.deliveredAt = timestamp;
+              if (status === "read") logUpdate.readAt = timestamp;
+
+              const bLogRef = db.ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}/${recipientId}`);
+              await bLogRef.update(logUpdate);
+              await bLogRef.child("statusHistory").push(newStatusEntry);
+
+              // Update aggregate progress in history record transactionally
+              const historyRecordRef = db.ref(`modules/whatsapp_sender/broadcast_history/${broadcastId}`);
+              await historyRecordRef.transaction((history) => {
+                if (!history) return history;
+
+                // Initialize if not present (safeguard)
+                if (history.sentCount === undefined) history.sentCount = history.successCount || 0;
+                if (history.deliveredCount === undefined) history.deliveredCount = 0;
+                if (history.readCount === undefined) history.readCount = 0;
+                if (history.failedCount === undefined) history.failedCount = 0;
+
+                if (status === "delivered") history.deliveredCount = (history.deliveredCount || 0) + 1;
+                if (status === "read") history.readCount = (history.readCount || 0) + 1;
+                if (status === "failed") history.failedCount = (history.failedCount || 0) + 1;
+
+                return history;
+              });
+            }
+
+            // Self-Cleaning: Delete lookup entry once message reaches terminal state
+            if (status === "read" || status === "failed") {
+              await lookupRef.remove();
+            }
+          }
+          processed = true; // Structurally valid status update
         }
+      }
+    } else if (body.object) {
+      const entry = body.entry && body.entry.length > 0 ? body.entry[0] : null;
+      const change = entry && entry.changes && entry.changes.length > 0 ? entry.changes[0] : null;
+      const value = change ? change.value : null;
 
-        response.status(200).send('OK');
-
-    } catch (error) {
-        logger.error("Error processing Fast2SMS webhook", error);
-        response.status(500).send('Internal Server Error');
+      if (value && value.messages && value.messages.length > 0) {
+        processed = true;
+        // Add Meta logic back if strictly required, but focus is Fast2SMS status/incoming
+      } else if (value && value.statuses && value.statuses.length > 0) {
+        processed = true;
+      }
     }
+
+    response.status(200).send("OK");
+  } catch (error) {
+    errorDetails = error.message;
+    logger.error("Error processing webhook", error);
+    response.status(500).send("Error");
+  } finally {
+    if (!processed) {
+      await admin.database().ref("modules/whatsapp_sender/unhandled_webhooks").push({
+        timestamp: admin.database.ServerValue.TIMESTAMP,
+        payload: request.body,
+        error: errorDetails,
+        processed: false,
+      });
+    }
+  }
 });

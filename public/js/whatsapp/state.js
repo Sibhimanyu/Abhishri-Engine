@@ -25,4 +25,4 @@ window.whatsAppSender = {
     currentMessageListener: null
 };
 
-console.log("WhatsApp Module State Initialized");
+

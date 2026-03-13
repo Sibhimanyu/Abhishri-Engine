@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Logs
 logs
 *.log
@@ -62,8 +65,19 @@ node_modules/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
+# dotenv environment variables files
 .env
+.env.local
+.env.*.local
 
 # dataconnect generated files
 .dataconnect
+
+# OS Metadata
+.DS_Store
+
+# Debug/Misc
+functions/test_broadcast.js
+functions/get_local_webhook.js
+firebase-debug.log
+

@@ -18,6 +18,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
   <!-- Lucide Icons (pinned version) -->
   <script src="https://unpkg.com/lucide@0.475.0/dist/umd/lucide.min.js"></script>
@@ -31,6 +32,7 @@
   <!-- Application Styles -->
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/whatsapp_broadcast.css">
+  <link rel="stylesheet" href="css/delivery_report.css">
 
 </head>
 
@@ -298,6 +300,10 @@
           <i data-lucide="radio"></i>
           <span>Broadcast</span>
         </div>
+        <div class="nav-item" onclick="window.whatsAppSender.switchView('history')" id="nav-whatsapp-history">
+          <i data-lucide="history"></i>
+          <span>History</span>
+        </div>
         <div class="nav-item" onclick="window.whatsAppSender.switchView('lists')" id="nav-whatsapp-lists">
           <i data-lucide="list"></i>
           <span>Lists</span>
@@ -329,6 +335,11 @@
         <!-- Broadcast View (Formerly History) -->
         <div id="whatsapp-view-broadcast" class="whatsapp-subview" style="display:none;">
           <div id="whatsapp-content-broadcast"></div>
+        </div>
+
+        <!-- History View -->
+        <div id="whatsapp-view-history" class="whatsapp-subview" style="display:none;">
+          <div id="whatsapp-content-history"></div>
         </div>
 
         <!-- Lists View -->
@@ -615,6 +626,14 @@
             <label class="perm-option">
               <input type="checkbox" id="perm-whatsapp_sender-connect">
               <span>Manage Connection</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-whatsapp_sender-lists">
+              <span>Manage Contact Lists</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-whatsapp_sender-history">
+              <span>View Broadcast History</span>
             </label>
           </div>
         </div>
