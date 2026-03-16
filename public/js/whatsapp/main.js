@@ -193,6 +193,11 @@ if (!window.whatsAppSender) {
         const campaignNameValue = document.getElementById('wa-campaign-name')?.value?.trim() || templateName;
 
         const audienceVal = audienceSelect.value;
+        if (!audienceVal || audienceVal === 'none') {
+            AppDialog.toast('Please select an audience.', 'warn');
+            return;
+        }
+
         const variables = Array.from(inputs)
             .filter(inp => inp.id !== 'wa-header-media-url') // Exclude header media from standard variables
             .map(inp => inp.value);
@@ -370,6 +375,12 @@ if (!window.whatsAppSender) {
 
         AppDialog.toast(`Broadcast initiated. You can track progress in the History tab.`, 'success');
         
+        // Flag the list as used if it's a custom list
+        if (audienceVal && audienceVal.startsWith('list_')) {
+            const listKey = audienceVal.replace('list_', '');
+            firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listKey}/used`).set(true);
+        }
+
         // Switch to history view so they can watch live progress
         if (typeof this.switchView === 'function') {
             this.switchView('history');
@@ -982,6 +993,13 @@ if (!window.whatsAppSender) {
     };
 
     window.whatsAppSender.deleteList = async function (listId) {
+        // Enforce server-side restriction before even prompting
+        const listSnap = await firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/used`).once('value');
+        if (listSnap.val() === true) {
+            AppDialog.toast('This list has been used in a broadcast and cannot be deleted.', 'error');
+            return;
+        }
+
         const confirmed = await AppDialog.confirm('Delete this entire list? This action cannot be undone.', { danger: true, confirmText: 'Delete List', title: 'Delete List' });
         if (!confirmed) return;
         firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}`).remove();

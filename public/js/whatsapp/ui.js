@@ -511,6 +511,7 @@ if (!window.whatsAppSender) {
                                 <i data-lucide="users" style="width:14px;height:14px;"></i> Audience
                             </label>
                             <select class="wa-input" id="wa-broadcast-audience" onchange="window.whatsAppSender.updateRecipientCount()">
+                                <option value="none" disabled selected>-- Choose Audience --</option>
                                 <option value="all">All Contacts</option>
                                 <option value="staff">Staff Members</option>
                                 <option value="students">Students</option>
@@ -1410,15 +1411,21 @@ if (!window.whatsAppSender) {
                     </div>
                 </div>
 
-                <!-- Filters -->
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <!-- Filters and Search -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
                     <div style="display:flex; gap:10px;" id="wa-report-filters">
                         <button class="btn btn-secondary wa-filter-btn wa-filter-active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')" style="padding:6px 16px; border-radius:30px;">All</button>
                         <button class="btn btn-secondary wa-filter-btn" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')" style="padding:6px 16px; border-radius:30px; border-color:rgba(168,85,247,0.3); color:#a855f7;">Read</button>
                         <button class="btn btn-secondary wa-filter-btn" data-filter="delivered" onclick="window.whatsAppSender._filterReportRows('delivered')" style="padding:6px 16px; border-radius:30px; border-color:rgba(59,130,246,0.3); color:#3b82f6;">Delivered</button>
                         <button class="btn btn-secondary wa-filter-btn" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')" style="padding:6px 16px; border-radius:30px; border-color:rgba(239,68,68,0.3); color:#ef4444;">Failed</button>
                     </div>
-                    <div style="font-size:0.85rem; color:var(--text-dim); font-weight:500;">Showing ${total} Recipients</div>
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <div style="position:relative;">
+                            <i data-lucide="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--text-dim);"></i>
+                            <input type="text" id="wa-report-search" placeholder="Search phone number..." oninput="window.whatsAppSender._applyReportFilters()" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:8px 16px 8px 36px; color:var(--text-main); font-size:0.85rem; outline:none; width:220px; transition:border-color 0.3s;" onfocus="this.style.borderColor='rgba(255,255,255,0.3)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+                        </div>
+                        <div style="font-size:0.85rem; color:var(--text-dim); font-weight:500;" id="wa-report-count">Showing ${total} Recipients</div>
+                    </div>
                 </div>
 
                 <!-- Recipient Detail Cards -->
@@ -1441,7 +1448,10 @@ if (!window.whatsAppSender) {
                         </div>
 
                         <div style="flex:1;">
-                            <div style="font-weight:700; font-family:monospace; font-size:1.05rem; color:var(--text-main); letter-spacing:0.5px;">+${m.phone.replace(/\D/g, '')}</div>
+                            <div class="wa-phone-number" style="font-weight:700; font-family:monospace; font-size:1.05rem; color:var(--text-main); letter-spacing:0.5px;">+${m.phone.replace(/\D/g, '')}</div>
+                            <button class="btn btn-secondary" style="margin-top:6px; padding:4px 10px; font-size:0.7rem; border-radius:12px; opacity:0.8; height:auto; line-height:1;" onclick="event.stopPropagation(); window.whatsAppSender.lookupNameInLists('${m.phone.replace(/\D/g, '')}', this)">
+                                <i data-lucide="search" style="width:12px;height:12px;margin-right:4px;display:inline-block;vertical-align:middle;"></i><span style="vertical-align:middle;">Lookup Name</span>
+                            </button>
                         </div>
 
                         <div style="text-align:right;">
@@ -1497,19 +1507,49 @@ if (!window.whatsAppSender) {
         if (window.lucide) window.lucide.createIcons();
     };
 
-    // Filter helper for delivery report
+    // Set active filter button, then apply filters
     window.whatsAppSender._filterReportRows = function (status) {
+        document.querySelectorAll('.wa-filter-btn').forEach(btn => {
+            if (btn.getAttribute('data-filter') === status) {
+                btn.classList.add('wa-filter-active');
+            } else {
+                btn.classList.remove('wa-filter-active');
+            }
+        });
+        window.whatsAppSender._applyReportFilters();
+    };
+
+    // Apply both status and search filters
+    window.whatsAppSender._applyReportFilters = function () {
+        const activeBtn = document.querySelector('.wa-filter-btn.wa-filter-active');
+        const status = activeBtn ? activeBtn.getAttribute('data-filter') : 'all';
+        const searchInput = document.getElementById('wa-report-search');
+        const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        
         const rows = document.querySelectorAll('.wa-report-row');
+        let visibleCount = 0;
+
         rows.forEach(row => {
             const rowStatus = row.getAttribute('data-status');
-            let isVisible = status === 'all' || rowStatus === status;
+            const phoneEl = row.querySelector('.wa-phone-number');
+            const phoneText = phoneEl ? phoneEl.textContent.trim().toLowerCase() : '';
             
-            // Cumulative filtering logic
-            if (status === 'delivered' && rowStatus === 'read') isVisible = true;
-            if (status === 'sent' && (rowStatus === 'delivered' || rowStatus === 'read')) isVisible = true;
-            if (status === 'failed' && rowStatus === 'error') isVisible = true;
+            // 1. Status Check
+            let statusMatch = status === 'all' || rowStatus === status;
+            if (status === 'delivered' && rowStatus === 'read') statusMatch = true;
+            if (status === 'sent' && (rowStatus === 'delivered' || rowStatus === 'read')) statusMatch = true;
+            if (status === 'failed' && rowStatus === 'error') statusMatch = true;
+
+            // 2. Search Check
+            let searchMatch = true;
+            if (searchTerm) {
+                searchMatch = phoneText.includes(searchTerm);
+            }
+
+            const isVisible = statusMatch && searchMatch;
 
             if (isVisible) {
+                visibleCount++;
                 row.style.display = 'block';
                 setTimeout(() => {
                     row.style.opacity = '1';
@@ -1523,15 +1563,75 @@ if (!window.whatsAppSender) {
                 }, 200);
             }
         });
+        
+        const countEl = document.getElementById('wa-report-count');
+        if (countEl) {
+            countEl.textContent = `Showing ${visibleCount} Recipients`;
+        }
+    };
 
-        // Update active button state
-        document.querySelectorAll('.wa-filter-btn').forEach(btn => {
-            if (btn.getAttribute('data-filter') === status) {
-                btn.classList.add('wa-filter-active');
-            } else {
-                btn.classList.remove('wa-filter-active');
+    // Lookup recipient name by phone across all custom lists
+    window.whatsAppSender.lookupNameInLists = async function (phoneStr, btnElement) {
+        if (!phoneStr) return;
+        const cleanTargetPhone = phoneStr.replace(/\D/g, '');
+        
+        // Update UI to searching state
+        const originalHtml = btnElement.innerHTML;
+        btnElement.innerHTML = `<i data-lucide="loader" style="width:12px;height:12px;animation:spin 1s linear infinite;margin-right:4px;display:inline-block;vertical-align:middle;"></i><span style="vertical-align:middle;">Searching...</span>`;
+        if (window.lucide) window.lucide.createIcons();
+        btnElement.disabled = true;
+
+        try {
+            const listsSnapshot = await firebase.database().ref('modules/whatsapp_sender/custom_lists').once('value');
+            const listsData = listsSnapshot.val() || {};
+            
+            let foundName = null;
+            let foundListName = null;
+            
+            for (const [listId, list] of Object.entries(listsData)) {
+                if (!list.members) continue;
+                for (const member of Object.values(list.members)) {
+                    if (!member.phone) continue;
+                    const cleanMemberPhone = String(member.phone).replace(/\D/g, '');
+                    // Check if member phone contains target phone or vice versa (ignoring country code occasionally)
+                    if (cleanMemberPhone.endsWith(cleanTargetPhone) || cleanTargetPhone.endsWith(cleanMemberPhone)) {
+                        foundName = member.name;
+                        foundListName = list.name;
+                        break;
+                    }
+                }
+                if (foundName) break;
             }
-        });
+
+            if (foundName) {
+                // Return badge with name
+                const badge = document.createElement('span');
+                badge.style.display = 'inline-block';
+                badge.style.marginTop = '6px';
+                badge.style.padding = '4px 10px';
+                badge.style.fontSize = '0.75rem';
+                badge.style.borderRadius = '12px';
+                badge.style.background = 'rgba(56, 189, 248, 0.1)';
+                badge.style.color = '#38bdf8';
+                badge.style.border = '1px solid rgba(56, 189, 248, 0.2)';
+                badge.innerHTML = `<i data-lucide="user" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"></i><span style="vertical-align:middle;font-weight:600;">${foundName}</span> <span style="opacity:0.6;font-size:0.65rem;margin-left:4px;">(in ${foundListName})</span>`;
+                btnElement.replaceWith(badge);
+                if (window.lucide) window.lucide.createIcons();
+            } else {
+                // Not found state
+                btnElement.innerHTML = `<i data-lucide="user-x" style="width:12px;height:12px;margin-right:4px;display:inline-block;vertical-align:middle;"></i><span style="vertical-align:middle;">Not found</span>`;
+                btnElement.style.color = 'var(--text-dim)';
+                btnElement.style.borderColor = 'transparent';
+                btnElement.style.background = 'rgba(255,255,255,0.05)';
+                if (window.lucide) window.lucide.createIcons();
+            }
+        } catch (e) {
+            console.error(e);
+            btnElement.innerHTML = originalHtml;
+            btnElement.disabled = false;
+            if (window.lucide) window.lucide.createIcons();
+            AppDialog.toast('Failed to lookup name.', 'danger');
+        }
     };
 
     // --- Lists View ---
@@ -1551,9 +1651,14 @@ if (!window.whatsAppSender) {
                         <span>Contact Lists</span>
                     </div>
                     ${canManageLists ? `
-                    <button class="btn btn-primary" onclick="window.whatsAppSender.createListModal()">
-                        <i data-lucide="plus" style="width:15px;height:15px;"></i> New List
-                    </button>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn btn-secondary" onclick="window.whatsAppSender.scanListDuplicates(this)" style="border-radius:12px; padding:8px 16px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1);">
+                            <i data-lucide="scan-search" style="width:15px;height:15px;color:var(--text-main);"></i> Scan for Duplicates
+                        </button>
+                        <button class="btn btn-primary" onclick="window.whatsAppSender.createListModal()" style="border-radius:12px; padding:8px 16px;">
+                            <i data-lucide="plus" style="width:15px;height:15px;"></i> New List
+                        </button>
+                    </div>
                     ` : ''}
                 </div>
                 <div id="wa-lists-container" class="wa-lists-body">
@@ -1566,6 +1671,109 @@ if (!window.whatsAppSender) {
         `;
         if (window.lucide) window.lucide.createIcons();
         this.loadLists();
+    };
+
+    window.whatsAppSender.scanListDuplicates = function (btnElement) {
+        if (!this.lists || Object.keys(this.lists).length === 0) {
+            AppDialog.toast('No custom lists found to scan.', 'info');
+            return;
+        }
+
+        const originalHtml = btnElement.innerHTML;
+        btnElement.innerHTML = `<i data-lucide="loader" style="width:15px;height:15px;animation:spin 1s linear infinite;"></i> Scanning...`;
+        btnElement.disabled = true;
+        if (window.lucide) window.lucide.createIcons();
+
+        setTimeout(() => {
+            const phoneMap = new Map(); // Map base integers to array of objects {listName, name}
+
+            // Phase 1: Aggregation
+            Object.values(this.lists).forEach(list => {
+                if (!list.members) return;
+                Object.values(list.members).forEach(member => {
+                    if (!member.phone) return;
+                    // Strip to base digits
+                    const cleanPhone = String(member.phone).replace(/\D/g, '');
+                    if (!cleanPhone) return;
+
+                    // Standardize local comparison logic by matching endings (ignoring varying country tags 91 vs +91)
+                    // We'll normalize by keeping the last 10 digits as the unique identifier if length > 10
+                    let normalizedId = cleanPhone;
+                    if (cleanPhone.length > 10) {
+                        normalizedId = cleanPhone.slice(-10);
+                    }
+
+                    const entry = { listName: list.name, name: member.name || 'Unknown' };
+                    if (phoneMap.has(normalizedId)) {
+                        const existing = phoneMap.get(normalizedId);
+                        existing.push(entry);
+                    } else {
+                        phoneMap.set(normalizedId, [entry]);
+                    }
+                });
+            });
+
+            // Phase 2: Filtering
+            const duplicates = [];
+            for (const [id, occurrences] of phoneMap.entries()) {
+                if (occurrences.length > 1) {
+                    duplicates.push({ id, occurrences });
+                }
+            }
+
+            // Phase 3: Reporting View
+            btnElement.innerHTML = originalHtml;
+            btnElement.disabled = false;
+            if (window.lucide) window.lucide.createIcons();
+
+            if (duplicates.length === 0) {
+                AppDialog.toast('Great! No duplicates found.', 'success');
+                return;
+            }
+
+            let reportHtml = `
+                <div style="margin-bottom:16px; font-size:0.9rem; color:var(--text-dim);">
+                    Found <strong>${duplicates.length}</strong> duplicated phone numbers.
+                </div>
+                <div style="max-height: 400px; overflow-y:auto; border-radius:12px; border:1px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.2);">
+            `;
+
+            duplicates.forEach(dup => {
+                reportHtml += `
+                    <div style="padding:16px; border-bottom:1px solid rgba(255,255,255,0.05);">
+                        <div style="font-weight:700; font-family:monospace; color:var(--text-main); font-size:1.1rem; margin-bottom:8px; display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="alert-triangle" style="width:16px;height:16px;color:#f59e0b;"></i> +xxxxxx${dup.id.slice(-4)}
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:6px; padding-left:24px;">
+                `;
+                
+                dup.occurrences.forEach(occ => {
+                    reportHtml += `
+                        <div style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
+                            <div style="width:6px;height:6px;border-radius:50%;background:var(--accent);"></div>
+                            <span style="color:var(--text-dim); width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${occ.listName}</span>
+                            <span style="color:var(--text-main); font-weight:600;">${occ.name}</span>
+                        </div>
+                    `;
+                });
+                
+                reportHtml += `
+                        </div>
+                    </div>
+                `;
+            });
+
+            reportHtml += `</div>`;
+
+            AppDialog.confirm(reportHtml, {
+                title: 'Cross-List Duplicates Detected',
+                isHtml: true,
+                confirmText: 'Acknowledge',
+                cancelText: 'Close',
+                width: '500px'
+            });
+
+        }, 500); // Small UI defer
     };
 
     window.whatsAppSender.renderLists = function () {
@@ -1596,27 +1804,63 @@ if (!window.whatsAppSender) {
             return;
         }
 
+        const newLists = lists.filter(l => l.used !== true);
+        const usedLists = lists.filter(l => l.used === true);
+
         const colors = ['#25d366', '#f97316', '#a78bfa', '#38bdf8', '#fb7185', '#4ade80'];
-        container.innerHTML = `
+        
+        let htmlStr = '';
+
+        if (newLists.length > 0) {
+            htmlStr += `
+                <div style="font-size:0.9rem; font-weight:600; color:var(--text-dim); margin-bottom:12px; margin-top:4px;">Active Lists</div>
                 <div class="wa-lists-grid">
-                    ${lists.map((list, i) => {
-            const color = colors[i % colors.length];
-            const initials = (list.name || '?').substring(0, 2).toUpperCase();
-            const count = list.count || 0;
-            return `
-                    <div class="wa-list-row" onclick="window.whatsAppSender.viewListDetails('${list.id}')">
-                        <div class="wa-list-avatar" style="background:${color}22;color:${color};">${initials}</div>
-                        <div class="wa-list-info">
-                            <div class="wa-list-name">${list.name}</div>
-                            <div class="wa-list-sub">${count} contact${count !== 1 ? 's' : ''}</div>
+                    ${newLists.map((list, i) => {
+                const color = colors[i % colors.length];
+                const initials = (list.name || '?').substring(0, 2).toUpperCase();
+                const count = list.count || 0;
+                return `
+                        <div class="wa-list-row" onclick="window.whatsAppSender.viewListDetails('${list.id}')">
+                            <div class="wa-list-avatar" style="background:${color}22;color:${color};">${initials}</div>
+                            <div class="wa-list-info">
+                                <div class="wa-list-name">${list.name}</div>
+                                <div class="wa-list-sub">${count} contact${count !== 1 ? 's' : ''}</div>
+                            </div>
+                            <div class="wa-list-badge">${count}</div>
+                            <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-dim);flex-shrink:0;"></i>
                         </div>
-                        <div class="wa-list-badge">${count}</div>
-                        <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-dim);flex-shrink:0;"></i>
-                    </div>
-                `}).join('')
-            }
-            </div>
-                `;
+                    `}).join('')}
+                </div>
+            `;
+        }
+
+        if (usedLists.length > 0) {
+            htmlStr += `
+                <div style="font-size:0.9rem; font-weight:600; color:#ef4444; margin-bottom:12px; margin-top:24px; display:flex; gap:6px; align-items:center;">
+                    <i data-lucide="lock" style="width:14px;height:14px;"></i> Locked / Used Lists
+                </div>
+                <div style="font-size:0.8rem; color:var(--text-dim); margin-bottom:12px;">These lists have been used in past broadcasts and are permanently locked to preserve analytics.</div>
+                <div class="wa-lists-grid">
+                    ${usedLists.map((list, i) => {
+                const color = colors[i % colors.length];
+                const initials = (list.name || '?').substring(0, 2).toUpperCase();
+                const count = list.count || 0;
+                return `
+                        <div class="wa-list-row" onclick="window.whatsAppSender.viewListDetails('${list.id}')" style="opacity: 0.7; background: rgba(0,0,0,0.15);">
+                            <div class="wa-list-avatar" style="background:${color}22;color:${color};">${initials}</div>
+                            <div class="wa-list-info">
+                                <div class="wa-list-name">${list.name}</div>
+                                <div class="wa-list-sub">${count} contact${count !== 1 ? 's' : ''}</div>
+                            </div>
+                            <div class="wa-list-badge" style="background:rgba(255,255,255,0.05);color:var(--text-dim);">${count}</div>
+                            <i data-lucide="lock" style="width:14px;height:14px;color:rgba(239,68,68,0.8);flex-shrink:0;"></i>
+                        </div>
+                    `}).join('')}
+                </div>
+            `;
+        }
+
+        container.innerHTML = htmlStr;
         if (window.lucide) window.lucide.createIcons();
     };
 
@@ -1660,9 +1904,15 @@ if (!window.whatsAppSender) {
                         <button class="btn btn-primary" onclick="window.whatsAppSender.addContactModal('${listId}')">
                             <i data-lucide="user-plus" style="width:14px;height:14px;"></i> Add Contact
                         </button>
+                        ${list.used === true ? `
+                        <button class="btn-icon" style="color:#ef4444; opacity:0.7; cursor:not-allowed;" title="List locked (used in broadcast)" disabled>
+                            <i data-lucide="lock" style="width:16px;height:16px;"></i>
+                        </button>
+                        ` : `
                         <button class="btn-icon danger" onclick="window.whatsAppSender.deleteList('${listId}')" title="Delete list">
                             <i data-lucide="trash-2" style="width:16px;height:16px;"></i>
                         </button>
+                        `}
                         ` : ''}
                     </div>
                 </div>

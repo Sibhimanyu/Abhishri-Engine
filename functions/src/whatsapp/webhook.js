@@ -38,7 +38,10 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
   let errorDetails = null;
 
   try {
-    const body = request.body;
+    let body = request.body;
+    if (typeof body === 'string') {
+        try { body = JSON.parse(body); } catch (e) { /* ignore, use string */ }
+    }
     const db = admin.database();
     const historyRef = db.ref("modules/whatsapp_sender");
 
@@ -101,7 +104,7 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
           }
           processed = true;
         } else if (report.type === "status_update") {
-          const messageId = report.request_id;
+          const messageId = report.request_id || report.message_id || report.id;
           const status = (report.status || "").toLowerCase();
           const timestamp = report.timestamp * 1000;
 
@@ -110,6 +113,16 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
           const lookupData = lookupSnapshot.val();
 
           if (lookupData) {
+            const currentStatus = lookupData.lastStatus || "sent";
+            const STATUS_RANK = { "failed": 4, "read": 3, "delivered": 2, "sent": 1, "pending": 0 };
+            const newRank = STATUS_RANK[status] || 0;
+            const currentRank = STATUS_RANK[currentStatus] || 0;
+
+            if (newRank <= currentRank && status !== "failed") {
+              console.log(`Ignoring duplicate or delayed webhook. Current: ${currentStatus}, Received: ${status} for Msg: ${messageId}`);
+              continue; // Skip further processing for this report but continue the loop
+            }
+
             const {recipientId, msgKey, broadcastId} = lookupData;
             const msgRef = historyRef.child(`conversations/${recipientId}/messages/${msgKey}`);
 
@@ -148,11 +161,13 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
             if (pricingModel) update.pricingModel = pricingModel;
             if (billingCategory) update.billingCategory = billingCategory;
 
-            await msgRef.update(update);
+            const updatePromises = [];
+
+            updatePromises.push(msgRef.update(update));
 
             const newStatusEntry = {status, timestamp};
             if (errMsg) newStatusEntry.error = errMsg;
-            await msgRef.child("statusHistory").push(newStatusEntry);
+            updatePromises.push(msgRef.child("statusHistory").push(newStatusEntry));
 
             if (broadcastId) {
               const logUpdate = {status, timestamp};
@@ -166,12 +181,12 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
               if (status === "read") logUpdate.readAt = timestamp;
 
               const bLogRef = db.ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}/${recipientId}`);
-              await bLogRef.update(logUpdate);
-              await bLogRef.child("statusHistory").push(newStatusEntry);
+              updatePromises.push(bLogRef.update(logUpdate));
+              updatePromises.push(bLogRef.child("statusHistory").push(newStatusEntry));
 
               // Update aggregate progress in history record transactionally
               const historyRecordRef = db.ref(`modules/whatsapp_sender/broadcast_history/${broadcastId}`);
-              await historyRecordRef.transaction((history) => {
+              updatePromises.push(historyRecordRef.transaction((history) => {
                 if (!history) return history;
 
                 // Initialize if not present (safeguard)
@@ -185,13 +200,30 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
                 if (status === "failed") history.failedCount = (history.failedCount || 0) + 1;
 
                 return history;
-              });
+              }));
             }
 
             // Self-Cleaning: Delete lookup entry once message reaches terminal state
             if (status === "read" || status === "failed") {
-              await lookupRef.remove();
+              updatePromises.push(lookupRef.remove());
+              if (lookupData.alternateMessageId && lookupData.alternateMessageId !== lookupRef.key) {
+                updatePromises.push(db.ref(`modules/whatsapp_sender/message_lookup/${lookupData.alternateMessageId}`).remove());
+              }
+              if (lookupData.messageId && lookupData.messageId !== lookupRef.key) {
+                updatePromises.push(db.ref(`modules/whatsapp_sender/message_lookup/${lookupData.messageId}`).remove());
+              }
+            } else {
+              updatePromises.push(lookupRef.update({ lastStatus: status }));
+              if (lookupData.alternateMessageId && lookupData.alternateMessageId !== lookupRef.key) {
+                updatePromises.push(db.ref(`modules/whatsapp_sender/message_lookup/${lookupData.alternateMessageId}`).update({ lastStatus: status }));
+              }
+              if (lookupData.messageId && lookupData.messageId !== lookupRef.key) {
+                updatePromises.push(db.ref(`modules/whatsapp_sender/message_lookup/${lookupData.messageId}`).update({ lastStatus: status }));
+              }
             }
+
+            // Execute all writes in parallel for maximum precision and speed
+            await Promise.all(updatePromises);
           }
           processed = true; // Structurally valid status update
         }

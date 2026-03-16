@@ -232,10 +232,19 @@ exports.sendWhatsAppBroadcast = onCall(async (request) => {
 
       // Fetch messageId robustly depending on Fast2SMS or Meta response format
       let messageId = null;
-      if (responseData.messages && responseData.messages.length > 0 && responseData.messages[0].id) {
-        messageId = responseData.messages[0].id;
-      } else if (responseData.request_id) {
+      let alternateMessageId = null;
+
+      // Extract request_id natively from Fast2SMS
+      if (responseData.request_id) {
         messageId = responseData.request_id;
+        // Meta wamid usually sits in messages array
+        if (responseData.messages && responseData.messages.length > 0 && responseData.messages[0].id) {
+          alternateMessageId = responseData.messages[0].id;
+        }
+      } 
+      // Fallbacks if only Meta format is provided
+      else if (responseData.messages && responseData.messages.length > 0 && responseData.messages[0].id) {
+        messageId = responseData.messages[0].id;
       } else if (responseData.id) {
         messageId = responseData.id;
       }
@@ -262,13 +271,20 @@ exports.sendWhatsAppBroadcast = onCall(async (request) => {
         const msgKey = msgRef.key;
         await msgRef.set(msgRecord);
 
-        // Store lookup mapping for O(1) webhook correlation
-        await db.ref(`modules/whatsapp_sender/message_lookup/${sanitizeKey(messageId)}`).set({
+        // Store lookup mapping for O(1) webhook correlation (save both message IDs to ensure webhooks catch it)
+        const lookupPayload = {
           recipientId: number,
           broadcastId: request.data.broadcastId || null,
           msgKey: msgKey,
           timestamp: timestamp,
-        });
+          messageId: sanitizeKey(messageId),
+          alternateMessageId: alternateMessageId ? sanitizeKey(alternateMessageId) : null,
+        };
+        await db.ref(`modules/whatsapp_sender/message_lookup/${sanitizeKey(messageId)}`).set(lookupPayload);
+
+        if (alternateMessageId && alternateMessageId !== messageId) {
+          await db.ref(`modules/whatsapp_sender/message_lookup/${sanitizeKey(alternateMessageId)}`).set(lookupPayload);
+        }
 
         // Also log to a dedicated broadcast logs path for easier grouping in UI
         if (request.data.broadcastId) {

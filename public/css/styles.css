@@ -591,7 +591,7 @@ header {
 }
 
 /* Mobile Phone Breakpoint */
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   :root {
     --sidebar-width: 260px;
   }
@@ -629,19 +629,29 @@ header {
 
   main,
   .console-main {
-    padding: 20px 16px 100px 16px;
+    padding: 20px 16px 140px 16px;
     /* Extra bottom padding for floating button */
   }
 
   header {
     margin-bottom: 24px;
+    margin-top: 50px;
   }
 
   .view-title h1 {
     font-size: 1.8rem;
     margin-bottom: 6px;
-    padding-top: 60px;
-    /* Avoid overlap with user widget */
+    padding-top: 0;
+  }
+  
+  /* Ensure all scrolling list containers clear the bottom floating button */
+  .admin-content, 
+  .admin-list, 
+  .whatsapp-subview,
+  .wa-lists-body,
+  .dashboard-grid,
+  .room-entities-group {
+    padding-bottom: 80px !important;
   }
 
   .view-title p {
@@ -775,6 +785,7 @@ header {
     padding: 10px 16px;
     font-size: 0.9rem;
     white-space: nowrap;
+    width: 100%;
   }
 
   .admin-list {
@@ -828,6 +839,15 @@ header {
   .whitelist-section {
     padding: 16px;
     border-radius: 12px;
+  }
+
+  .portal-container {
+    padding-top: 80px;
+  }
+
+  .portal-logo {
+    height: 90px;
+    margin-top: 0;
   }
 
   .whitelist-input-group {
@@ -1027,7 +1047,7 @@ header {
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   .login-box {
     padding: 24px;
     margin: 16px;
@@ -1821,7 +1841,7 @@ header {
 }
 
 /* Mobile Responsiveness for User Widget */
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   .user-widget {
     top: 16px;
     right: 16px;
@@ -3054,5 +3074,34 @@ header {
 @media (max-width: 768px) {
   .wa-history-page [style*="grid-template-columns: auto 1fr"] {
     grid-template-columns: 1fr !important;
+  }
+}
+/* FINAL MOBILE OVERRIDES */
+@media (max-width: 600px) {
+  /* Move User Widget to Bottom Right to avoid top title overlaps */
+  .user-widget {
+    top: auto !important;
+    bottom: 24px !important;
+    right: 24px !important;
+  }
+  .user-dropdown {
+    top: auto !important;
+    bottom: calc(100% + 8px) !important;
+  }
+
+  /* Shrink Portal Logo */
+  .portal-logo {
+    height: 90px !important;
+    margin-top: 0 !important;
+  }
+
+  /* Add heavy padding-bottom to lists for floating button clearance */
+  main, .console-main {
+    padding-bottom: 180px !important;
+  }
+
+  .whatsapp-subview, .wa-lists-body, .admin-list, #whatsapp-content-chats {
+    padding-bottom: 200px !important;
+    padding-top: 10px !important;
   }
 }
