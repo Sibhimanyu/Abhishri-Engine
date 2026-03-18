@@ -386,13 +386,20 @@ if (!window.whatsAppSender) {
                 if (val) customFields.push(val);
             });
 
-            overlay.remove();
-            const listRef = firebase.database().ref('modules/whatsapp_sender/custom_lists').push();
+            // Create list in Firestore
+            const listRef = firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc();
             listRef.set({
                 name,
                 customFields: customFields.length > 0 ? customFields : null,
-                createdAt: firebase.database.ServerValue.TIMESTAMP,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 count: 0
+            }).then(() => {
+                overlay.remove();
+                AppDialog.toast('List created successfully.', 'success');
+                // Auto open the new list
+                setTimeout(() => this.viewListDetails(listRef.id), 500);
+            }).catch(e => {
+                AppDialog.toast('Failed to create list: ' + e.message, 'error');
             });
         });
 
@@ -425,8 +432,8 @@ if (!window.whatsAppSender) {
 
     window.whatsAppSender.addContactModal = async function (listId) {
         // Fetch the list schema so we know which custom fields to show
-        const listSnap = await firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}`).once('value');
-        const listData = listSnap.val() || {};
+        const listSnap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).get();
+        const listData = listSnap.data() || {};
         const customFields = listData.customFields || [];
 
         const customFieldsHTML = customFields.map(field => `
@@ -474,23 +481,24 @@ if (!window.whatsAppSender) {
             });
 
             overlay.remove();
-            const listRef = firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}`);
-            listRef.child('members').push(entry)
-                .then(() => listRef.child('count').transaction(count => (count || 0) + 1));
+            const listRef = firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId);
+            listRef.collection('members').add(entry)
+                .then(() => this.recalculateListCounts(listId));
         });
         if (window.lucide) window.lucide.createIcons();
     };
 
 
     window.whatsAppSender.editMemberModal = async function (listId, memberKey) {
-        // Fetch the list schema and the member data
+        // Fetch the list schema and the member data from Firestore
+        const listRef = firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId);
         const [listSnap, memberSnap] = await Promise.all([
-            firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}`).once('value'),
-            firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/members/${memberKey}`).once('value')
+            listRef.get(),
+            listRef.collection('members').doc(memberKey).get()
         ]);
 
-        const listData = listSnap.val();
-        const memberData = memberSnap.val();
+        const listData = listSnap.data();
+        const memberData = memberSnap.data();
         if (!listData || !memberData) {
             AppDialog.toast('Could not load member data.', 'error');
             return;
@@ -551,16 +559,20 @@ if (!window.whatsAppSender) {
                 updates[key] = inp.value;
             });
 
-            firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/members/${memberKey}`).update(updates);
+            listRef.collection('members').doc(memberKey).update(updates).then(() => {
+                AppDialog.toast('Contact updated.', 'success');
+                this.recalculateListCounts(listId);
+            });
             overlay.remove();
         });
         if (window.lucide) window.lucide.createIcons();
     };
 
     window.whatsAppSender.uploadCsvModal = async function (listId) {
-        // Pre-fetch list schema to know what fields to ask for
-        const listSnap = await firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}`).once('value');
-        const listData = listSnap.val();
+        // Pre-fetch list schema to know what fields to ask for from Firestore
+        const listRef = firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId);
+        const listSnap = await listRef.get();
+        const listData = listSnap.data();
         if (!listData) {
             AppDialog.toast('List not found.', 'error');
             return;
@@ -757,7 +769,7 @@ if (!window.whatsAppSender) {
         });
 
         // --- Step 2 Final Upload logic ---
-        uploadBtn.addEventListener('click', () => {
+        uploadBtn.addEventListener('click', async () => {
             const phoneIdx = parseInt(phoneSelect.value);
             const nameIdx = parseInt(nameSelect.value);
 
@@ -782,10 +794,11 @@ if (!window.whatsAppSender) {
             uploadBtn.disabled = true;
             if (window.lucide) window.lucide.createIcons({ root: uploadBtn });
 
-            const listRef = firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}`);
-            const timestamp = firebase.database.ServerValue.TIMESTAMP;
+            const timestamp = firebase.firestore.FieldValue.serverTimestamp();
             let addedCount = 0;
-            let updates = {};
+            const membersColl = listRef.collection('members');
+            let batch = firestore.batch();
+            let batchCount = 0;
 
             for (let i = 1; i < parsedRows.length; i++) {
                 const rowText = parsedRows[i].trim();
@@ -829,29 +842,27 @@ if (!window.whatsAppSender) {
                 mappedCustomFields.forEach(mapping => {
                     const cellValue = row[mapping.colIdx];
                     if (cellValue !== undefined && cellValue !== "") {
-                        // Apply sanitization to the key just in case, though it comes from defined field
-                        let safeKey = mapping.fieldName;
-                        const forbidden = ['.', '#', '$', '/', '[', ']'];
-                        for (let c of forbidden) { safeKey = safeKey.split(c).join(''); }
-
-                        memberData[safeKey] = cellValue;
+                        memberData[mapping.fieldName] = cellValue;
                     }
                 });
 
-                const newKey = listRef.child('members').push().key;
-                updates[`members/${newKey}`] = memberData;
+                const newMemberRef = membersColl.doc();
+                batch.set(newMemberRef, memberData);
                 addedCount++;
+                batchCount++;
+
+                if (batchCount >= 450) { // Limit per batch is 500
+                    await batch.commit();
+                    batch = firestore.batch();
+                    batchCount = 0;
+                }
             }
 
             if (addedCount > 0) {
-                listRef.update(updates).then(() => {
-                    listRef.child('count').transaction(count => (count || 0) + addedCount);
-                    overlay.remove();
-                    AppDialog.toast(`Successfully mapped and added ${addedCount} contacts.`, 'success');
-                }).catch(err => {
-                    AppDialog.toast('Failed to upload: ' + err.message, 'error');
-                    overlay.remove();
-                });
+                if (batchCount > 0) await batch.commit();
+                this.recalculateListCounts(listId);
+                overlay.remove();
+                AppDialog.toast(`Successfully mapped and added ${addedCount} contacts.`, 'success');
             } else {
                 AppDialog.toast("No valid contacts found to add. Ensure Name and Phone aren't empty.", 'warn');
                 uploadBtn.innerHTML = '<i data-lucide="upload" style="width:14px;height:14px;"></i> Upload';
@@ -865,11 +876,13 @@ if (!window.whatsAppSender) {
         const confirmed = await AppDialog.confirm('Remove this contact from the list?', { danger: true, confirmText: 'Remove', title: 'Remove Contact' });
         if (!confirmed) return;
 
-        const memberRef = firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/members/${memberKey}`);
-        await memberRef.remove();
-        firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/count`)
-            .transaction(count => Math.max(0, (count || 1) - 1));
-        this.recalculateListCounts(listId);
+        try {
+            await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).collection('members').doc(memberKey).delete();
+            this.recalculateListCounts(listId);
+            AppDialog.toast('Contact removed.', 'success');
+        } catch (e) {
+            AppDialog.toast('Failed to remove contact: ' + e.message, 'error');
+        }
     };
 
     window.whatsAppSender.deleteList = async function (listId) {

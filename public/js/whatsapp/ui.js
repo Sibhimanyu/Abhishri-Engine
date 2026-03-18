@@ -1122,25 +1122,30 @@ if (!window.whatsAppSender) {
                     const rowOpacity = isDispatching ? '1' : '0.8';
 
                     const statusHTML = `
-                        <div style="display:flex; flex-direction:column; gap:4px; min-width:140px;">
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <span title="Sent (Total processed)" style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:0.7rem; background:rgba(59, 130, 246, 0.1); color:#3b82f6; border:1px solid rgba(59,130,246,0.2);">
-                                    <i data-lucide="send" style="width:10px;height:10px;"></i> ${displaySent}
-                                </span>
-                                ${displayDelivered > 0 ? `
-                                <span title="Delivered (Received by device)" style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:0.7rem; background:rgba(37, 211, 102, 0.1); color:#25D366; border:1px solid rgba(37,211,102,0.2);">
-                                    <i data-lucide="check" style="width:10px;height:10px;"></i> ${displayDelivered}
-                                </span>` : ''}
+                        <div style="display:flex; flex-direction:column; gap:6px; min-width:180px;">
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+                                <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(59, 130, 246, 0.08); border:1px solid rgba(59,130,246,0.15); color:#3b82f6;" title="Sent (Total processed)">
+                                    <i data-lucide="send" style="width:12px;height:12px; opacity:0.8;"></i>
+                                    <span style="font-size:0.7rem; font-weight:700;">SENT</span>
+                                    <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displaySent}</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(37, 211, 102, 0.08); border:1px solid rgba(37,211,102,0.15); color:#25D366; opacity:${displayDelivered > 0 ? '1' : '0.4'};" title="Delivered (Received by device)">
+                                    <i data-lucide="check" style="width:12px;height:12px; opacity:0.8;"></i>
+                                    <span style="font-size:0.7rem; font-weight:700;">DELIV</span>
+                                    <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayDelivered}</span>
+                                </div>
                             </div>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                ${displayRead > 0 ? `
-                                <span title="Read (Opened)" style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:0.7rem; background:rgba(168, 85, 247, 0.1); color:#a855f7; border:1px solid rgba(168,85,247,0.2);">
-                                    <i data-lucide="check-check" style="width:10px;height:10px;"></i> ${displayRead}
-                                </span>` : ''}
-                                ${displayFailed > 0 ? `
-                                <span title="Failed" style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:0.7rem; background:rgba(239, 68, 68, 0.1); color:#ef4444; border:1px solid rgba(239,68,68,0.2);">
-                                    <i data-lucide="alert-circle" style="width:10px;height:10px;"></i> ${displayFailed}
-                                </span>` : ''}
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+                                <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(168, 85, 247, 0.08); border:1px solid rgba(168,85,247,0.15); color:#a855f7; opacity:${displayRead > 0 ? '1' : '0.4'};" title="Read (Opened)">
+                                    <i data-lucide="check-check" style="width:12px;height:12px; opacity:0.8;"></i>
+                                    <span style="font-size:0.7rem; font-weight:700;">READ</span>
+                                    <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayRead}</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239,68,68,0.15); color:#ef4444; opacity:${displayFailed > 0 ? '1' : '0.4'};" title="Failed">
+                                    <i data-lucide="alert-circle" style="width:12px;height:12px; opacity:0.8;"></i>
+                                    <span style="font-size:0.7rem; font-weight:700;">FAIL</span>
+                                    <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayFailed}</span>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -1257,7 +1262,7 @@ if (!window.whatsAppSender) {
     window.whatsAppSender.lookupNameInLists = async function (phoneStr, btnElement) {
         if (!phoneStr) return;
         const cleanTargetPhone = phoneStr.replace(/\D/g, '');
-        
+
         // Update UI to searching state
         const originalHtml = btnElement.innerHTML;
         btnElement.innerHTML = `<i data-lucide="loader" style="width:12px;height:12px;animation:spin 1s linear infinite;margin-right:4px;display:inline-block;vertical-align:middle;"></i><span style="vertical-align:middle;">Searching...</span>`;
@@ -1265,18 +1270,21 @@ if (!window.whatsAppSender) {
         btnElement.disabled = true;
 
         try {
-            const listsSnapshot = await firebase.database().ref('modules/whatsapp_sender/custom_lists').once('value');
-            const listsData = listsSnapshot.val() || {};
-            
+            // In Firestore, we have to iterate through the lists and then search members
+            // This can be optimized but for now we follow the same logic as before but with Firestore
+            const listsSnap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').get();
+
             let foundName = null;
             let foundListName = null;
-            
-            for (const [listId, list] of Object.entries(listsData)) {
-                if (!list.members) continue;
-                for (const member of Object.values(list.members)) {
+
+            for (const listDoc of listsSnap.docs) {
+                const list = listDoc.data();
+                const membersSnap = await listDoc.ref.collection('members').get();
+
+                for (const memberDoc of membersSnap.docs) {
+                    const member = memberDoc.data();
                     if (!member.phone) continue;
                     const cleanMemberPhone = String(member.phone).replace(/\D/g, '');
-                    // Check if member phone contains target phone or vice versa (ignoring country code occasionally)
                     if (cleanMemberPhone.endsWith(cleanTargetPhone) || cleanTargetPhone.endsWith(cleanMemberPhone)) {
                         foundName = member.name;
                         foundListName = list.name;
@@ -1289,6 +1297,7 @@ if (!window.whatsAppSender) {
             if (foundName) {
                 // Return badge with name
                 const badge = document.createElement('span');
+                badge.className = 'wa-name-badge';
                 badge.style.display = 'inline-block';
                 badge.style.marginTop = '6px';
                 badge.style.padding = '4px 10px';
@@ -1316,7 +1325,6 @@ if (!window.whatsAppSender) {
             AppDialog.toast('Failed to lookup name.', 'danger');
         }
     };
-
     // --- Lists View ---
 
     window.whatsAppSender.renderListsView = function () {
@@ -1503,15 +1511,23 @@ if (!window.whatsAppSender) {
                     ${newLists.map((list, i) => {
                 const color = colors[i % colors.length];
                 const initials = (list.name || '?').substring(0, 2).toUpperCase();
-                const count = list.count || 0;
+                const count = list.contactsCount || list.count || 0;
+                const numbersCount = list.numbersCount || count;
+                const dateStr = list.createdAt ? (list.createdAt.toDate ? list.createdAt.toDate() : new Date(list.createdAt)).toLocaleDateString() : 'N/A';
+                
                 return `
                         <div class="wa-list-row" onclick="window.whatsAppSender.viewListDetails('${list.id}')">
                             <div class="wa-list-avatar" style="background:${color}22;color:${color};">${initials}</div>
                             <div class="wa-list-info">
                                 <div class="wa-list-name">${list.name}</div>
-                                <div class="wa-list-sub">${count} contact${count !== 1 ? 's' : ''}</div>
+                                <div class="wa-list-sub" style="display:flex; flex-direction:column; gap:2px;">
+                                    <span>${count} contact${count !== 1 ? 's' : ''} • ${numbersCount} unique number${numbersCount !== 1 ? 's' : ''}</span>
+                                    <span style="font-size:0.7rem; opacity:0.6; display:flex; align-items:center; gap:4px;">
+                                        <i data-lucide="calendar" style="width:10px;height:10px;"></i> Created ${dateStr}
+                                    </span>
+                                </div>
                             </div>
-                            <div class="wa-list-badge">${count}</div>
+                            <div class="wa-list-badge" title="Unique Numbers">${numbersCount}</div>
                             <i data-lucide="chevron-right" style="width:16px;height:16px;color:var(--text-dim);flex-shrink:0;"></i>
                         </div>
                     `}).join('')}
@@ -1529,15 +1545,21 @@ if (!window.whatsAppSender) {
                     ${usedLists.map((list, i) => {
                 const color = colors[i % colors.length];
                 const initials = (list.name || '?').substring(0, 2).toUpperCase();
-                const count = list.count || 0;
+                const count = list.contactsCount || list.count || 0;
+                const numbersCount = list.numbersCount || count;
+                const dateStr = list.createdAt ? (list.createdAt.toDate ? list.createdAt.toDate() : new Date(list.createdAt)).toLocaleDateString() : 'N/A';
+
                 return `
                         <div class="wa-list-row" onclick="window.whatsAppSender.viewListDetails('${list.id}')" style="opacity: 0.7; background: rgba(0,0,0,0.15);">
                             <div class="wa-list-avatar" style="background:${color}22;color:${color};">${initials}</div>
                             <div class="wa-list-info">
                                 <div class="wa-list-name">${list.name}</div>
-                                <div class="wa-list-sub">${count} contact${count !== 1 ? 's' : ''}</div>
+                                <div class="wa-list-sub" style="display:flex; flex-direction:column; gap:2px;">
+                                    <span>${count} contact${count !== 1 ? 's' : ''} • ${numbersCount} unique number${numbersCount !== 1 ? 's' : ''}</span>
+                                    <span style="font-size:0.7rem; opacity:0.6;">Created ${dateStr}</span>
+                                </div>
                             </div>
-                            <div class="wa-list-badge" style="background:rgba(255,255,255,0.05);color:var(--text-dim);">${count}</div>
+                            <div class="wa-list-badge" style="background:rgba(255,255,255,0.05);color:var(--text-dim);">${numbersCount}</div>
                             <i data-lucide="lock" style="width:14px;height:14px;color:rgba(239,68,68,0.8);flex-shrink:0;"></i>
                         </div>
                     `}).join('')}
@@ -1578,7 +1600,13 @@ if (!window.whatsAppSender) {
                                 </button>
                                 ` : ''}
                             </div>
-                            <div style="font-size:0.78rem;color:var(--text-dim);" id="wa-detail-count">${list.count || 0} contacts</div>
+                            <div style="font-size:0.75rem;color:var(--text-dim); display:flex; flex-direction:column; gap:2px;" id="wa-detail-count">
+                                <div>${list.contactsCount || list.count || 0} contacts • ${list.numbersCount || list.count || 0} unique numbers</div>
+                                <div style="font-size:0.65rem; opacity:0.7; display:flex; align-items:center; gap:4px;">
+                                    <i data-lucide="calendar" style="width:10px;height:10px;"></i>
+                                    Created ${list.createdAt ? (list.createdAt.toDate ? list.createdAt.toDate() : new Date(list.createdAt)).toLocaleDateString() : 'N/A'}
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div style="display:flex;gap:8px;align-items:center;">
@@ -1616,11 +1644,18 @@ if (!window.whatsAppSender) {
 
         if (window.lucide) window.lucide.createIcons();
 
-        // Subscribe to members
-        const membersRef = firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/members`);
-        membersRef.on('value', (snapshot) => {
-            const members = snapshot.val() || {};
+        // Subscribe to members in Firestore
+        const membersRef = firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).collection('members');
+        if (this._membersUnsubscribe) this._membersUnsubscribe();
+        this._membersUnsubscribe = membersRef.onSnapshot((querySnapshot) => {
+            const members = {};
+            querySnapshot.forEach(doc => {
+                members[doc.id] = doc.data();
+            });
             this.renderListMembers(listId, list, members);
+        }, (error) => {
+            console.error("Error loading members:", error);
+            AppDialog.toast('Failed to load members.', 'error');
         });
     };
 
@@ -1639,7 +1674,7 @@ if (!window.whatsAppSender) {
         const save = () => {
             const newName = input.value.trim();
             if (newName && newName !== currentName) {
-                firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/name`).set(newName);
+                firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).update({ name: newName });
             }
             displayEl.innerHTML = `<span style="cursor:pointer;" onclick="window.whatsAppSender.editListNameInline('${listId}')">${newName || currentName}</span>`;
         };
