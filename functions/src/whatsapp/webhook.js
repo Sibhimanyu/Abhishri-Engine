@@ -82,8 +82,9 @@ async function processStatus(db, fs, report) {
   const logData = logSnap.val();
 
   if (logData) {
-    const currentStatus = logData.status || "pending";
-    const STATUS_RANK = { "failed": 0, "pending": 1, "sent": 2, "delivered": 3, "read": 4 };
+    const currentStatus = (logData.status || "pending").toLowerCase();
+    // Rank: processing(1) -> sent(2) -> delivered(3) -> read(4). failed(0) is a special terminal state.
+    const STATUS_RANK = { "failed": 0, "processing": 1, "sent": 2, "delivered": 3, "read": 4 };
     const newRank = STATUS_RANK[status] || 0;
     const currentRank = STATUS_RANK[currentStatus] || 0;
 
@@ -97,7 +98,11 @@ async function processStatus(db, fs, report) {
       errMsg = (errObj.error_data && errObj.error_data.details) || errObj.message || errObj.title || "Unknown error";
     }
 
-    const shouldUpdateMain = (newRank > currentRank) || (currentStatus === "failed" && status !== "failed");
+    // Always update if it's a failure (to capture error) or if the new rank is higher
+    const isNewFailure = (status === "failed" && currentStatus !== "failed");
+    const isRankUpgrade = (newRank > currentRank);
+    const shouldUpdateMain = isNewFailure || isRankUpgrade;
+
     const statusEntry = { status, timestamp, serverTime: Date.now() };
     if (errMsg) statusEntry.error = errMsg;
 
@@ -112,6 +117,7 @@ async function processStatus(db, fs, report) {
       updatePromises.push(logRef.update(rtdbUpdate));
     }
 
+    // Update in conversation too
     const messagesRef = db.ref(`modules/whatsapp_sender/conversations/${recipientKey}/messages`);
     const msgQuery = await messagesRef.orderByChild("messageId").equalTo(messageId).once("value");
     
@@ -126,26 +132,28 @@ async function processStatus(db, fs, report) {
       });
     }
 
+    // Update aggregated stats in Firestore history
     if (broadcastId && broadcastId !== "adhoc" && shouldUpdateMain) {
       const historyRecordRef = fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId);
       const historyUpdate = {};
       
-      if (status === "delivered" && (currentStatus === "sent" || currentStatus === "pending")) {
-        historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1);
+      // Incremental transitions
+      if (status === "sent" && currentStatus === "processing") {
+          historyUpdate.sentCount = admin.firestore.FieldValue.increment(1);
+      } else if (status === "delivered") {
+          if (currentStatus === "processing") historyUpdate.sentCount = admin.firestore.FieldValue.increment(1);
+          if (currentStatus === "processing" || currentStatus === "sent") {
+              historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1);
+          }
       } else if (status === "read") {
-        historyUpdate.readCount = admin.firestore.FieldValue.increment(1);
-        if (currentStatus === "sent" || currentStatus === "pending") {
-            historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1);
-        }
-      }
-      
-      if (currentStatus === "failed" && status !== "failed") {
-        historyUpdate.failedCount = admin.firestore.FieldValue.increment(-1);
-        if (status === "sent") historyUpdate.sentCount = admin.firestore.FieldValue.increment(1);
-        if (status === "delivered") { historyUpdate.sentCount = admin.firestore.FieldValue.increment(1); historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1); }
-        if (status === "read") { historyUpdate.sentCount = admin.firestore.FieldValue.increment(1); historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1); historyUpdate.readCount = admin.firestore.FieldValue.increment(1); }
+          if (currentStatus === "processing") historyUpdate.sentCount = admin.firestore.FieldValue.increment(1);
+          if (currentStatus === "processing" || currentStatus === "sent") historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1);
+          historyUpdate.readCount = admin.firestore.FieldValue.increment(1);
       } else if (status === "failed" && currentStatus !== "failed") {
-        historyUpdate.failedCount = admin.firestore.FieldValue.increment(1);
+          historyUpdate.failedCount = admin.firestore.FieldValue.increment(1);
+          // If it was already confirmed as sent/delivered/read, we usually don't decrement those 
+          // because Meta doesn't typically move backwards from 'read' to 'failed'.
+          // However, if it was just 'processing', we just increment failed.
       }
       
       if (Object.keys(historyUpdate).length > 0) {

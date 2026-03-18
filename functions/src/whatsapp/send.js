@@ -95,12 +95,21 @@ exports.sendWhatsAppBroadcast = onCall(async (request) => {
   const excludedSet = new Set((excludedNumbers || []).map(num => String(num).replace(/[^\d]/g, "")));
   const url = `https://www.fast2sms.com/dev/whatsapp/v24.0/${config.phoneNumberId}/messages`;
   const parameters = (variables || []).map((val) => ({ type: "text", text: String(val) }));
-  let sentCount = 0, processedContactsCount = 0, lastContactName = null;
+  
+  let dispatchedCount = 0, failedCount = 0, excludedCount = 0;
+  let processedContactsCount = 0, lastContactName = null;
   const db = admin.database(), fs = admin.firestore();
 
   const updateProgress = async (isFinal = false, statusOverride = null, currentName = null) => {
     if (!broadcastId) return;
-    const update = { sentCount, processedNumbersCount: sentCount, processedContactsCount, currentContactName: currentName || "" };
+    const update = { 
+        dispatchedCount, 
+        failedCount, 
+        excludedCount,
+        processedNumbersCount: dispatchedCount + failedCount + excludedCount, 
+        processedContactsCount, 
+        currentContactName: currentName || "" 
+    };
     if (statusOverride) update.status = statusOverride;
     else if (isFinal) { update.status = "dispatched"; update.currentContactName = ""; }
     await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).update(update);
@@ -116,7 +125,7 @@ exports.sendWhatsAppBroadcast = onCall(async (request) => {
         await db.ref(`modules/whatsapp_sender/broadcast_logs/excluded_${broadcastId}_${number}`).set({
           broadcastId, recipientId: recipient.phone, name, status: "excluded", timestamp: ts, sentAt: ts, message: "Skipped (Recent)"
         });
-        sentCount++; continue;
+        excludedCount++; continue;
     }
 
     const stopSnap = await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).get();
@@ -137,15 +146,18 @@ exports.sendWhatsAppBroadcast = onCall(async (request) => {
         await db.ref(`modules/whatsapp_sender/broadcast_logs/${docId}`).set({
           broadcastId, recipientId: recipient.phone, name, status: "processing", timestamp: ts, messageId
         });
+        dispatchedCount++;
+      } else {
+          failedCount++;
       }
-      sentCount++;
     } catch (error) {
       const ts = Date.now();
       await db.ref(`modules/whatsapp_sender/broadcast_logs/fail_${broadcastId}_${number}`).set({
           broadcastId, recipientId: recipient.phone, name, status: "failed", timestamp: ts, error: error.message
       });
+      failedCount++;
     }
   }
   await updateProgress(true);
-  return {success: true, sentCount};
+  return {success: true, dispatchedCount};
 });

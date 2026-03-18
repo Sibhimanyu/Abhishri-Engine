@@ -177,6 +177,7 @@ if (!window.whatsAppSender) {
         const audienceSelect = document.getElementById('wa-broadcast-audience');
         const inputs = document.querySelectorAll('.wa-var-input');
         const isSimulation = document.getElementById('wa-broadcast-simulate')?.checked || false;
+        const sendBtn = document.getElementById('wa-broadcast-send-btn');
 
         if (!select || !select.value) {
             AppDialog.toast('Please select a template first.', 'warn');
@@ -194,89 +195,157 @@ if (!window.whatsAppSender) {
             return;
         }
 
-        const variables = Array.from(inputs)
-            .filter(inp => inp.id !== 'wa-header-media-url')
-            .map(inp => inp.value);
+        // Show loading state on button
+        const originalBtnHtml = sendBtn ? sendBtn.innerHTML : '';
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = `<i data-lucide="loader" class="animation-spin" style="width:16px;height:16px;margin-right:8px;"></i> Calculating Bill...`;
+            if (window.lucide) window.lucide.createIcons({ root: sendBtn });
+        }
+
+        try {
+            const variables = Array.from(inputs)
+                .filter(inp => inp.id !== 'wa-header-media-url')
+                .map(inp => inp.value);
+                
+            const customMediaUrl = document.getElementById('wa-header-media-url')?.value;
+            const headerImageUrl = customMediaUrl || selectedOption.getAttribute('data-header-image') || null;
+
+            if (variables.some(v => v.trim() === '')) {
+                const proceed = await AppDialog.confirm('Some template variables are empty. Do you want to proceed?', { title: 'Empty Variables', confirmText: 'Proceed Anyway' });
+                if (!proceed) {
+                    if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = originalBtnHtml; if (window.lucide) window.lucide.createIcons({ root: sendBtn }); }
+                    return;
+                }
+            }
+
+            const recipients = await this._getCurrentlySelectedRecipients();
+            if (recipients.length === 0) {
+                AppDialog.toast('No recipients found for this audience.', 'warn');
+                if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = originalBtnHtml; if (window.lucide) window.lucide.createIcons({ root: sendBtn }); }
+                return;
+            }
+
+            const excluded = this.excludedNumbers || [];
+            const excludedSet = new Set(excluded.map(n => n.replace(/[^\d]/g, "")));
+            const activeRecipients = recipients.filter(r => !excludedSet.has(r.phone.replace(/[^\d]/g, "")));
             
-        const customMediaUrl = document.getElementById('wa-header-media-url')?.value;
-        const headerImageUrl = customMediaUrl || selectedOption.getAttribute('data-header-image') || null;
+            let ratePerMsg = 0.95;
+            let rateType = 'Marketing Rate';
+            if (templateCategory.toUpperCase() === 'UTILITY') {
+                ratePerMsg = 0.25;
+                rateType = 'Utility Rate';
+            }
+            const totalCostEst = activeRecipients.length * ratePerMsg;
+            const contactsCount = [...new Set(recipients.map(r => r.name))].length;
 
-        if (variables.some(v => v.trim() === '')) {
-            const proceed = await AppDialog.confirm('Some template variables are empty. Do you want to proceed?', { title: 'Empty Variables', confirmText: 'Proceed Anyway' });
-            if (!proceed) return;
-        }
-
-        const recipients = await this._getCurrentlySelectedRecipients();
-        if (recipients.length === 0) {
-            AppDialog.toast('No recipients found for this audience.', 'warn');
-            return;
-        }
-
-        const excluded = this.excludedNumbers || [];
-        const excludedSet = new Set(excluded.map(n => n.replace(/[^\d]/g, "")));
-        const activeRecipients = recipients.filter(r => !excludedSet.has(r.phone.replace(/[^\d]/g, "")));
-        
-        let ratePerMsg = 0.95;
-        if (templateCategory.toUpperCase() === 'UTILITY') ratePerMsg = 0.25;
-        const totalCostEst = activeRecipients.length * ratePerMsg;
-        const contactsCount = [...new Set(recipients.map(r => r.name))].length;
-
-        const dialogHtml = `
-            <div style="text-align:left; margin-top: 10px;">
-                <p style="color:var(--text-dim); margin-bottom: 20px;">Review the broadcast billing summary before dispatching.</p>
-                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
-                        <span style="color:var(--text-dim);">Recipients (Total)</span>
-                        <strong>${recipients.length}</strong>
+            const dialogHtml = `
+                <div style="text-align:left; margin-top: 10px;">
+                    <p style="color:var(--text-dim); margin-bottom: 24px; font-size:0.95rem; line-height:1.5;">You are about to launch a broadcast campaign. Please review the billing summary and recipient breakdown below.</p>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:24px;">
+                        <div style="background:rgba(var(--accent-rgb), 0.05); border:1px solid rgba(var(--accent-rgb), 0.1); border-radius:16px; padding:16px;">
+                            <div style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; font-weight:700;">Campaign</div>
+                            <div style="font-weight:800; color:var(--text-main); font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${campaignNameValue}</div>
+                        </div>
+                        <div style="background:rgba(59, 130, 246, 0.05); border:1px solid rgba(59, 130, 246, 0.1); border-radius:16px; padding:16px;">
+                            <div style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; font-weight:700;">Template</div>
+                            <div style="font-weight:800; color:#3b82f6; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${templateName}</div>
+                        </div>
                     </div>
-                    ${excluded.length > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:12px; color:#94a3b8;"><span>- Excluded</span><strong>-${excluded.length}</strong></div>` : ''}
-                    <div style="height:1px; background:var(--card-border); margin: 12px 0;"></div>
-                    <div style="display:flex; justify-content:space-between; font-size:1.1rem;">
-                        <span>To Bill</span>
-                        <strong>${activeRecipients.length} Msgs</strong>
+
+                    <div style="background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 20px; margin-bottom: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                            <span style="color:var(--text-dim); font-weight:600; display:flex; align-items:center; gap:8px;">
+                                <i data-lucide="users" style="width:16px;height:16px;opacity:0.7;"></i> Target Recipients
+                            </span>
+                            <strong style="color:var(--text-main); font-size:1.1rem;">${recipients.length}</strong>
+                        </div>
+                        
+                        ${excluded.length > 0 ? `
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; color:#ef4444;">
+                            <span style="font-weight:600; display:flex; align-items:center; gap:8px;">
+                                <i data-lucide="user-minus" style="width:16px;height:16px;opacity:0.7;"></i> Smart-Excluded
+                            </span>
+                            <strong style="font-size:1.1rem;">-${excluded.length}</strong>
+                        </div>
+                        ` : ''}
+
+                        <div style="height:1px; background:var(--border); margin: 16px 0; opacity:0.5;"></div>
+                        
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                            <span style="color:var(--text-dim); font-weight:600;">Billable Messages</span>
+                            <strong style="color:var(--text-main); font-size:1.2rem;">${activeRecipients.length}</strong>
+                        </div>
+
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                            <span style="color:var(--text-dim); font-weight:600;">
+                                Unit Price <span style="font-size:0.7rem; font-weight:800; background:rgba(245, 158, 11, 0.1); color:#f59e0b; padding:2px 6px; border-radius:4px; margin-left:4px; text-transform:uppercase;">${rateType}</span>
+                            </span>
+                            <strong style="color:var(--text-main);">₹${ratePerMsg.toFixed(2)}</strong>
+                        </div>
+
+                        <div style="background:rgba(37, 211, 102, 0.08); border:1px solid rgba(37, 211, 102, 0.2); border-radius:12px; padding:16px; display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color:#25D366; font-weight:800; font-size:0.9rem; text-transform:uppercase; letter-spacing:0.02em;">Estimated Cost</span>
+                            <strong style="color:#25D366; font-size:1.6rem; font-weight:900;">₹${totalCostEst.toFixed(2)}</strong>
+                        </div>
                     </div>
-                    <div style="display:flex; justify-content:space-between; font-size:1.1rem; margin-top:8px;">
-                        <span>Est. Cost</span>
-                        <strong>₹${totalCostEst.toFixed(2)}</strong>
+
+                    <div style="background:rgba(245, 158, 11, 0.05); border-left:4px solid #f59e0b; padding:12px 16px; border-radius:4px 12px 12px 4px; display:flex; gap:12px; align-items:center;">
+                        <i data-lucide="info" style="width:20px;height:20px;color:#f59e0b;flex-shrink:0;"></i>
+                        <p style="font-size:0.8rem; color:var(--text-dim); margin:0;">Costs are estimated based on WABA categories. Final billing may vary based on conversation windows.</p>
                     </div>
-                </div>
-            </div>`;
+                </div>`;
 
-        const confirmed = await AppDialog.confirm(dialogHtml, { title: 'Confirm Broadcast', confirmText: `Send (${activeRecipients.length})`, isHtml: true });
-        if (!confirmed) return;
+            // Reset button state before showing confirmation
+            if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = originalBtnHtml; if (window.lucide) window.lucide.createIcons({ root: sendBtn }); }
 
-        const broadcastRef = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc();
-        const broadcastId = broadcastRef.id;
-
-        await broadcastRef.set({
-            template: templateName,
-            campaignName: campaignNameValue,
-            listName: audienceSelect.options[audienceSelect.selectedIndex].text,
-            recipientsCount: recipients.length,
-            contactsCount: contactsCount,
-            sentCount: 0, deliveredCount: 0, readCount: 0, failedCount: 0,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-            status: 'dispatching',
-            broadcastId: broadcastId
-        });
-
-        if (!isSimulation && audienceVal.startsWith('list:')) {
-            firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(audienceVal.split(':')[1]).update({ used: true });
-        }
-
-        AppDialog.toast('Broadcast initiated. Opening report...', 'success');
-        this.viewBroadcastDetails(broadcastId, broadcastRef.id);
-
-        if (isSimulation) {
-            this.startLocalSimulation(broadcastId, recipients);
-        } else {
-            this.sendBroadcastAPI({
-                templateName, recipients, variables, broadcastId, headerImageUrl, contactsCount, excludedNumbers: excluded
-            }).then(() => {
-                this.excludedNumbers = [];
-            }).catch(e => {
-                AppDialog.toast('Broadcast failed: ' + e.message, 'error');
+            const confirmed = await AppDialog.confirm(dialogHtml, { 
+                title: 'Launch Broadcast', 
+                confirmText: `Launch Campaign`, 
+                confirmButtonClass: 'btn-primary',
+                isHtml: true,
+                width: '500px'
             });
+            if (!confirmed) return;
+
+            const broadcastRef = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc();
+            const broadcastId = broadcastRef.id;
+
+            await broadcastRef.set({
+                template: templateName,
+                campaignName: campaignNameValue,
+                listName: audienceSelect.options[audienceSelect.selectedIndex].text,
+                recipientsCount: recipients.length,
+                contactsCount: contactsCount,
+                sentCount: 0, deliveredCount: 0, readCount: 0, failedCount: 0,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                status: 'dispatching',
+                broadcastId: broadcastId
+            });
+
+            if (!isSimulation && audienceVal.startsWith('list:')) {
+                firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(audienceVal.split(':')[1]).update({ used: true });
+            }
+
+            AppDialog.toast('Broadcast initiated. Opening report...', 'success');
+            this.viewBroadcastDetails(broadcastId, broadcastRef.id);
+
+            if (isSimulation) {
+                this.startLocalSimulation(broadcastId, recipients);
+            } else {
+                this.sendBroadcastAPI({
+                    templateName, recipients, variables, broadcastId, headerImageUrl, contactsCount, excludedNumbers: excluded
+                }).then(() => {
+                    this.excludedNumbers = [];
+                }).catch(e => {
+                    AppDialog.toast('Broadcast failed: ' + e.message, 'error');
+                });
+            }
+        } catch (error) {
+            console.error("Preparation Failed:", error);
+            AppDialog.toast('Failed to prepare broadcast: ' + error.message, 'error');
+            if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = originalBtnHtml; if (window.lucide) window.lucide.createIcons({ root: sendBtn }); }
         }
     };
 

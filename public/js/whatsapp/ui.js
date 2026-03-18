@@ -8,6 +8,15 @@ if (!window.whatsAppSender) {
     console.error("WhatsApp Handler: State not initialized. Load state.js first.");
 } else {
 
+    window.whatsAppSender.render = function () {
+        switch (this.currentView) {
+            case 'chats': if (this.renderConversationList) this.renderConversationList(); break;
+            case 'broadcast': if (this.renderBroadcastView) this.renderBroadcastView(); break;
+            case 'history': if (this.renderHistoryView) this.renderHistoryView(); break;
+            case 'lists': if (this.renderListsView) this.renderListsView(); break;
+        }
+    };
+
     /**
      * Format WhatsApp/Meta specific Markdown (bold, italic, strikethrough, monospace)
      * @param {string} text - Raw message text
@@ -556,7 +565,7 @@ if (!window.whatsAppSender) {
                     <!-- Send Button pinned at bottom -->
                     <div class="broadcast-form-footer">
                         ${canBroadcast ? `
-                        <button class="btn btn-primary full-width" onclick="window.whatsAppSender.prepareBroadcast()">
+                        <button id="wa-broadcast-send-btn" class="btn btn-primary full-width" onclick="window.whatsAppSender.prepareBroadcast()">
                             <i data-lucide="send"></i> Send Broadcast
                         </button>
                         ` : `
@@ -995,30 +1004,36 @@ if (!window.whatsAppSender) {
             <div class="wa-history-page">
                 <div class="wa-history-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
                     <div style="display:flex; align-items:center; gap:8px;">
-                        <i data-lucide="history" style="width:20px;height:20px;color:var(--accent);"></i>
-                        <span style="font-size:1.2rem; font-weight:600;">Broadcast Logs</span>
+                        <div style="width:40px; height:40px; background:var(--accent-faint); border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--accent);">
+                            <i data-lucide="history" style="width:22px;height:22px;"></i>
+                        </div>
+                        <div>
+                            <h2 style="margin:0; font-size:1.3rem; font-weight:800; color:var(--text-main);">Broadcast History</h2>
+                            <p style="margin:0; font-size:0.8rem; color:var(--text-dim);">Track and analyze your campaign performance</p>
+                        </div>
                     </div>
                     <button class="btn btn-secondary" onclick="window.whatsAppSender.loadHistory()">
-                        <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Refresh
+                        <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Sync Logs
                     </button>
                 </div>
                 
-                <div class="table-responsive">
-                    <table class="table" style="width:100%; border-collapse:collapse; background:var(--surface); border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.05);">
-                        <thead style="background:var(--bg-color); border-bottom:1px solid var(--border);">
+                <div class="table-responsive" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; overflow:hidden;">
+                    <table class="table" style="width:100%; border-collapse:collapse;">
+                        <thead style="background:rgba(255,255,255,0.02); border-bottom:1px solid var(--border);">
                             <tr>
-                                <th style="padding:16px; text-align:left; color:var(--text-dim); font-weight:500;">Date</th>
-                                <th style="padding:16px; text-align:left; color:var(--text-dim); font-weight:500;">Campaign</th>
-                                <th style="padding:16px; text-align:left; color:var(--text-dim); font-weight:500;">Template</th>
-                                <th style="padding:16px; text-align:left; color:var(--text-dim); font-weight:500;">Audience</th>
-                                <th style="padding:16px; text-align:left; color:var(--text-dim); font-weight:500;">Recipients</th>
-                                <th style="padding:16px; text-align:left; color:var(--text-dim); font-weight:500;">Status</th>
+                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Launch Date</th>
+                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Campaign & Template</th>
+                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Audience</th>
+                                <th style="padding:18px 20px; text-align:center; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Size</th>
+                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Performance Metrics</th>
+                                <th style="padding:18px 20px; text-align:right; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="wa-history-tbody">
                             <tr>
-                                <td colspan="6" style="padding:40px; text-align:center; color:var(--text-dim);">
-                                    <i data-lucide="loader" style="animation:spin 1s linear infinite;"></i> Loading logs...
+                                <td colspan="6" style="padding:60px; text-align:center; color:var(--text-dim);">
+                                    <i data-lucide="loader" style="width:32px;height:32px;animation:spin 1s linear infinite;margin-bottom:12px;opacity:0.5;"></i>
+                                    <p style="font-weight:600;">Connecting to log server...</p>
                                 </td>
                             </tr>
                         </tbody>
@@ -1034,16 +1049,6 @@ if (!window.whatsAppSender) {
         const tbody = document.getElementById('wa-history-tbody');
         if (!tbody) return;
 
-        // Show loading state
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" style="padding:40px; text-align:center; color:var(--text-dim);">
-                    <i data-lucide="loader" style="animation:spin 1s linear infinite;"></i> Loading logs...
-                </td>
-            </tr>
-        `;
-        if (window.lucide) window.lucide.createIcons();
-
         // Unsubscribe any existing listener
         if (window.whatsAppSender._historyUnsubscribe) {
             window.whatsAppSender._historyUnsubscribe();
@@ -1052,16 +1057,19 @@ if (!window.whatsAppSender) {
         window.whatsAppSender._historyUnsubscribe = firestore
             .collection('modules').doc('whatsapp_sender').collection('history')
             .orderBy('timestamp', 'desc')
-            .limit(100)
-            .onSnapshot(async snapshot => {
+            .limit(50)
+            .onSnapshot(snapshot => {
                 const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
                 if (logs.length === 0) {
                     tbody.innerHTML = `
                         <tr>
-                            <td colspan="6" style="padding:40px; text-align:center; color:var(--text-dim);">
-                                <i data-lucide="inbox" style="width:32px;height:32px;opacity:0.5;margin-bottom:12px;"></i>
-                                <p>No broadcast history found.</p>
+                            <td colspan="6" style="padding:80px; text-align:center; color:var(--text-dim);">
+                                <div style="width:64px; height:64px; background:rgba(255,255,255,0.03); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 20px;">
+                                    <i data-lucide="inbox" style="width:32px;height:32px;opacity:0.3;"></i>
+                                </div>
+                                <h3 style="color:var(--text-main); margin-bottom:8px;">No Broadcasts Yet</h3>
+                                <p style="margin:0;">Your campaign history will appear here once you launch your first broadcast.</p>
                             </td>
                         </tr>
                     `;
@@ -1069,57 +1077,25 @@ if (!window.whatsAppSender) {
                     return;
                 }
 
-                // Fetch broadcast logs for each history entry to compute actual status counts
-                // (Optimized: we only fetch deep logs if not actively dispatching to save bandwidth)
-                const logsWithStatusCounts = await Promise.all(logs.map(async log => {
-                    let sent = 0, delivered = 0, read = 0, failed = 0, total = 0;
-
-                    if (log.broadcastId && log.status !== 'dispatching') {
-                        try {
-                            const broadcastLogSnapshot = await firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${log.broadcastId}`).once('value');
-                            const recipients = broadcastLogSnapshot.val() || {};
-                            total = Object.keys(recipients).length;
-
-                            Object.values(recipients).forEach(data => {
-                                const status = (data.status || 'unknown').toLowerCase();
-                                if (status === 'failed' || status === 'error') failed++;
-                                else if (status === 'read') read++;
-                                else if (status === 'delivered') delivered++;
-                                else if (status === 'sent') sent++;
-                            });
-                        } catch (e) {
-                            console.error('Failed to fetch broadcast logs:', e);
-                        }
-                    }
-
-                    // Fall back to stored values if no broadcast logs or if actively dispatching
-                    if (total === 0 || log.status === 'dispatching') {
-                        total = log.recipientsCount || log.successCount || 0;
-                        sent = log.sentCount || 0;
-                        delivered = log.deliveredCount || 0;
-                        read = log.readCount || 0;
-                        failed = log.failedCount || 0;
-                    }
-
-                    return { ...log, sent, delivered, read, failed, total };
-                }));
-
-                tbody.innerHTML = logsWithStatusCounts.map(log => {
+                tbody.innerHTML = logs.map(log => {
                     const ts = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
-                    const date = ts.toLocaleString();
-                    const audience = log.listName || log.listId || 'Unknown List';
-                    const campaignName = log.campaignName || 'Untitled Broadcast';
-                    const templateName = log.template || log.message || '—';
-
-                    // Compute cumulative counts for intuitive display
-                    const displayRead = log.read;
-                    const displayDelivered = log.delivered + log.read;
-                    const displaySent = log.sent + log.delivered + log.read;
-                    const displayFailed = log.failed;
-                    const total = log.total;
+                    const date = ts.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                    const time = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     
-                    const isDispatching = log.status === 'dispatching';
-                    const rowOpacity = isDispatching ? '1' : '0.8';
+                    const audience = log.listName || log.listId || 'Custom List';
+                    const campaignName = log.campaignName || 'Untitled Campaign';
+                    const templateName = log.template || '—';
+
+                    const displayRead = log.readCount || 0;
+                    const displayDelivered = log.deliveredCount || 0;
+                    const displaySent = log.sentCount || 0;
+                    const displayFailed = log.failedCount || 0;
+                    const total = log.recipientsCount || 0;
+                    
+                    const now = Date.now();
+                    const ageMinutes = (now - ts.getTime()) / (1000 * 60);
+                    const isDispatching = log.status === 'dispatching' || log.status === 'dispatching_meta';
+                    const isStuck = isDispatching && ageMinutes > 30;
 
                     const statusHTML = `
                         <div style="display:flex; flex-direction:column; gap:6px; min-width:180px;">
@@ -1151,40 +1127,50 @@ if (!window.whatsAppSender) {
                     `;
 
                     return `
-                        <tr style="border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.15s; opacity: ${rowOpacity}; ${isDispatching ? 'background:rgba(59,130,246,0.05);' : ''}"
-                            onmouseenter="this.style.background='rgba(255,255,255,0.03)'" onmouseleave="this.style.background='${isDispatching ? 'rgba(59,130,246,0.05)' : ''}'"
-                            onclick="window.whatsAppSender.viewBroadcastDetails('${log.broadcastId || ''}', '${log.id}')">
-                            <td style="padding:16px; font-size:0.8rem; color:var(--text-dim); border-left: ${isDispatching ? '3px solid #3b82f6' : '3px solid transparent'};">
-                                ${date}
-                                ${isDispatching ? `
-                                    <div style="color:#3b82f6; font-size:0.7rem; font-weight:600; margin-top:4px; display:flex; align-items:center; gap:8px;">
-                                        <div style="display:flex; align-items:center; gap:4px;">
-                                            <i data-lucide="loader" style="width:10px;height:10px;animation:spin 1s linear infinite;"></i> Sending...
-                                        </div>
-                                        <button class="btn-stop" onclick="event.stopPropagation(); window.whatsAppSender.stopBroadcast('${log.id}')" 
-                                            style="background:#fee2e2; color:#ef4444; border:none; padding:2px 6px; border-radius:4px; font-size:0.65rem; cursor:pointer; display:flex; align-items:center; gap:3px;">
-                                            <i data-lucide="square" style="width:8px;height:8px;fill:currentColor;"></i> STOP
-                                        </button>
-                                    </div>
-                                ` : ''}
-                                ${log.status === 'stopped' ? '<div style="color:#ef4444; font-size:0.7rem; font-weight:600; margin-top:4px;">Stopped by user</div>' : ''}
+                        <tr style="border-bottom:1px solid var(--border); transition:background 0.2s;"
+                            onmouseenter="this.style.background='rgba(255,255,255,0.02)'" onmouseleave="this.style.background=''">
+                            <td style="padding:20px;">
+                                <div style="font-weight:700; color:var(--text-main); font-size:0.95rem;">${date}</div>
+                                <div style="font-size:0.75rem; color:var(--text-dim); margin-top:2px;">${time}</div>
                             </td>
-                            <td style="padding:16px;">
-                                <div style="font-weight:700; color:var(--text-main); font-size:0.95rem; margin-bottom:2px;">${campaignName}</div>
-                            </td>
-                            <td style="padding:16px;">
-                                <div style="font-size:0.8rem; color:var(--accent); font-family:monospace; background:rgba(var(--accent-rgb),0.1); padding:2px 6px; border-radius:4px; display:inline-block;">
-                                    ${templateName}
+                            <td style="padding:20px;">
+                                <div style="font-weight:800; color:var(--text-main); font-size:1rem; margin-bottom:6px;">${campaignName}</div>
+                                <div style="display:inline-flex; align-items:center; gap:6px; font-size:0.7rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.1); padding:4px 10px; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
+                                    <i data-lucide="layout-template" style="width:12px;height:12px;"></i> ${templateName}
                                 </div>
                             </td>
-                            <td style="padding:16px;">
-                                <div style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-main);">
-                                    <i data-lucide="users" style="width:12px;height:12px;color:var(--text-dim);"></i> ${audience}
+                            <td style="padding:20px;">
+                                <div style="display:flex; align-items:center; gap:8px; font-size:0.9rem; color:var(--text-main); font-weight:600;">
+                                    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);"></div>
+                                    ${audience}
                                 </div>
                             </td>
-                            <td style="padding:16px; font-weight:600; font-size:0.95rem; text-align:center; color:var(--text-main);">${total}</td>
-                            <td style="padding:16px;">
+                            <td style="padding:20px; text-align:center;">
+                                <div style="font-weight:800; font-size:1.1rem; color:var(--text-main);">${total}</div>
+                                <div style="font-size:0.65rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; font-weight:700;">Targets</div>
+                            </td>
+                            <td style="padding:20px;">
                                 ${statusHTML}
+                            </td>
+                            <td style="padding:20px; text-align:right;">
+                                <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
+                                    ${isDispatching ? `
+                                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                                            <div style="font-size:0.7rem; color:${isStuck ? '#ef4444' : '#3b82f6'}; font-weight:800; text-transform:uppercase; display:flex; align-items:center; gap:4px;">
+                                                <div class="wa-status-pulse" style="width:8px;height:8px;background:currentColor;border-radius:50%;"></div>
+                                                ${isStuck ? 'Likely Stuck' : 'Sending...'}
+                                            </div>
+                                            <button class="btn btn-danger" onclick="event.stopPropagation(); window.whatsAppSender.stopBroadcast('${log.id}')" 
+                                                style="padding:4px 8px; font-size:0.65rem; border-radius:6px; height:auto;">
+                                                STOP
+                                            </button>
+                                        </div>
+                                    ` : ''}
+                                    <button class="btn btn-primary" style="padding:8px 16px; border-radius:10px; font-size:0.8rem; font-weight:700; gap:6px;" 
+                                        onclick="window.whatsAppSender.viewBroadcastDetails('${log.broadcastId || ''}', '${log.id}')">
+                                        <i data-lucide="bar-chart-3" style="width:14px;height:14px;"></i> View Report
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     `;
@@ -1192,7 +1178,9 @@ if (!window.whatsAppSender) {
 
                 if (window.lucide) window.lucide.createIcons();
             }, err => {
-                tbody.innerHTML = `<tr><td colspan="6" style="padding:20px; color:var(--danger); text-align:center;">Failed to load history: ${err.message}</td></tr>`;
+                console.error("History sync error:", err);
+                tbody.innerHTML = `<tr><td colspan="6" style="padding:40px; color:var(--danger); text-align:center; font-weight:600;"><i data-lucide="alert-triangle" style="vertical-align:middle;margin-right:8px;"></i> Failed to sync logs: ${err.message}</td></tr>`;
+                if (window.lucide) window.lucide.createIcons();
             });
     };
 
@@ -1801,6 +1789,22 @@ if (!window.whatsAppSender) {
         this._logsDetailsUnsubscribe = () => query.off('value', listener);
     };
 
+    window.whatsAppSender._getEffectiveStatus = function (m) {
+        let status = (m.status || 'unknown').toLowerCase();
+        let error = m.error || null;
+
+        // Check statusHistory for hidden failures if top-level is processing
+        if (status === 'processing' && m.statusHistory) {
+            const history = Object.values(m.statusHistory);
+            const failure = history.find(h => h.status === 'failed' || h.status === 'error');
+            if (failure) {
+                status = 'failed';
+                error = failure.error || 'Unknown error in history';
+            }
+        }
+        return { status, error };
+    };
+
     window.whatsAppSender.renderBroadcastDetails = function (broadcastId, logId, meta, recipients) {
         const container = document.getElementById('whatsapp-content-history');
         if (!container) return;
@@ -1811,23 +1815,23 @@ if (!window.whatsAppSender) {
         }
 
         const recipientsArray = Object.values(recipients).sort((a,b) => (a.timestamp||0)-(b.timestamp||0));
-        let sent = 0, read = 0, deliv = 0, fail = 0, total = recipientsArray.length;
-        let dTimes = [], rTimes = [];
-        const baseTs = meta.timestamp?.toMillis ? meta.timestamp.toMillis() : (typeof meta.timestamp === 'number' ? meta.timestamp : null);
-
+        let processing = 0, sent = 0, read = 0, deliv = 0, fail = 0, excluded = 0, total = recipientsArray.length;
+        
         recipientsArray.forEach(m => {
-            const status = (m.status || 'unknown').toLowerCase();
-            if (status === 'failed' || status === 'error') fail++;
+            const { status } = this._getEffectiveStatus(m);
+            if (status === 'processing') processing++;
+            else if (status === 'failed' || status === 'error') fail++;
             else if (status === 'read') read++;
             else if (status === 'delivered') deliv++;
             else if (status === 'sent') sent++;
-
-            if (baseTs && m.timestamp && !['sent','failed','pending','excluded'].includes(status)) dTimes.push(m.timestamp - baseTs);
-            if (baseTs && m.timestamp && status === 'read') rTimes.push(m.timestamp - baseTs);
+            else if (status === 'excluded') excluded++;
         });
 
+        // The 'TOTAL SENT' metric should include everything that reached 'sent', 'delivered' or 'read'
+        const totalSentReached = sent + deliv + read;
+
         this._updateReportLiveProgress(meta);
-        this._updateReportStatsDashboard(total, sent, deliv, read, fail, dTimes, rTimes);
+        this._updateReportStatsDashboard(total, processing, totalSentReached, deliv, read, fail, excluded);
         this._updateRecipientRowsList(recipientsArray);
 
         if (window.lucide) window.lucide.createIcons({ root: container });
@@ -1837,30 +1841,44 @@ if (!window.whatsAppSender) {
         const dateStr = meta.timestamp ? (meta.timestamp.toDate ? meta.timestamp.toDate() : new Date(meta.timestamp)).toLocaleString() : '—';
         container.innerHTML = `
             <div class="wa-report-container" style="padding:24px;">
-                <div class="wa-lists-header" style="margin-bottom:24px; border-bottom:1px solid var(--border); padding-bottom:16px;">
+                <div class="wa-lists-header" style="margin-bottom:24px; border-bottom:1px solid var(--border); padding-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
                     <div style="display:flex; align-items:center; gap:12px;">
-                        <button class="btn-icon" onclick="window.whatsAppSender.renderHistoryView()"><i data-lucide="arrow-left"></i></button>
+                        <button class="btn-icon" onclick="window.whatsAppSender.renderHistoryView()" title="Back"><i data-lucide="arrow-left"></i></button>
                         <div>
-                            <h2 id="wa-report-title" style="margin:0; font-size:1.4rem; color:var(--text-main);">${meta.campaignName || 'Report'}</h2>
-                            <div style="font-size:0.85rem; color:var(--text-dim); margin-top:4px;">${dateStr} • ${meta.listName || 'Audience'}</div>
+                            <h2 id="wa-report-title" style="margin:0; font-size:1.4rem; color:var(--text-main);">${meta.campaignName || 'Broadcast Report'}</h2>
+                            <div style="font-size:0.85rem; color:var(--text-dim); margin-top:4px;">
+                                <i data-lucide="calendar" style="width:12px;height:12px;margin-right:4px;"></i>${dateStr} • 
+                                <i data-lucide="users" style="width:12px;height:12px;margin-right:4px;margin-left:8px;"></i>${meta.listName || 'Custom List'}
+                            </div>
                         </div>
                     </div>
-                    <button class="btn btn-secondary" onclick="window.whatsAppSender.viewBroadcastDetails('${broadcastId}', '${logId}')"><i data-lucide="refresh-cw" style="width:14px;height:14px;margin-right:6px;"></i> Refresh</button>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-secondary" onclick="window.whatsAppSender.viewBroadcastDetails('${broadcastId}', '${logId}')"><i data-lucide="refresh-cw" style="width:14px;height:14px;margin-right:6px;"></i> Refresh</button>
+                    </div>
                 </div>
+
                 <div id="wa-live-progress-mount"></div>
                 <div id="wa-report-dashboard-mount"></div>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                    <div style="display:flex; gap:10px;">
-                        <button class="btn btn-secondary wa-filter-btn wa-filter-active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')">All</button>
-                        <button class="btn btn-secondary wa-filter-btn" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')">Read</button>
-                        <button class="btn btn-secondary wa-filter-btn" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')">Failed</button>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:16px;">
-                        <input type="text" id="wa-report-search" placeholder="Search phone..." oninput="window.whatsAppSender._applyReportFilters()" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:6px 16px; color:var(--text-main); font-size:0.85rem; outline:none; width:180px;">
-                        <div id="wa-report-count" style="font-size:0.85rem; color:var(--text-dim);"></div>
+
+                <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:24px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                        <div style="display:flex; gap:8px;" id="wa-report-filters">
+                            <button class="btn btn-secondary wa-filter-btn wa-filter-active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')" style="border-radius:20px; padding:6px 16px;">All</button>
+                            <button class="btn btn-secondary wa-filter-btn" data-filter="processing" onclick="window.whatsAppSender._filterReportRows('processing')" style="border-radius:20px; padding:6px 16px;">Processing</button>
+                            <button class="btn btn-secondary wa-filter-btn" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')" style="border-radius:20px; padding:6px 16px;">Read</button>
+                            <button class="btn btn-secondary wa-filter-btn" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')" style="border-radius:20px; padding:6px 16px;">Failed</button>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:280px; justify-content:flex-end;">
+                            <div style="position:relative; flex:1; max-width:300px;">
+                                <i data-lucide="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-dim);"></i>
+                                <input type="text" id="wa-report-search" placeholder="Search phone or name..." oninput="window.whatsAppSender._applyReportFilters()" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:8px 16px 8px 34px; color:var(--text-main); font-size:0.85rem; outline:none; width:100%;">
+                            </div>
+                            <div id="wa-report-count" style="font-size:0.85rem; color:var(--text-dim); font-weight:600; white-space:nowrap;"></div>
+                        </div>
                     </div>
                 </div>
-                <div id="wa-report-recipients-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:20px;"></div>
+
+                <div id="wa-report-recipients-grid" style="display:flex; flex-direction:column; gap:12px;"></div>
             </div>`;
     };
 
@@ -1868,100 +1886,203 @@ if (!window.whatsAppSender) {
         const mount = document.getElementById('wa-live-progress-mount');
         if (!mount) return;
         if (meta.status !== 'dispatching') { mount.innerHTML = ''; return; }
+        
         const cPct = Math.round(((meta.processedContactsCount || 0) / (meta.contactsCount || 1)) * 100);
         const nPct = Math.round(((meta.processedNumbersCount || 0) / (meta.recipientsCount || 1)) * 100);
+        
         mount.innerHTML = `
-            <div style="background:rgba(59,130,246,0.05); border:1px solid rgba(59,130,246,0.2); border-radius:16px; padding:20px; margin-bottom:32px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <div>
-                        <div style="font-weight:700; color:#3b82f6; display:flex; align-items:center; gap:8px;"><i data-lucide="radio" class="animation-pulse"></i> Actively Dispatching...</div>
-                        <div style="font-size:0.8rem; color:var(--text-dim); margin-top:4px;">Current: <strong style="color:var(--text-main);">${meta.currentContactName || '...'}</strong></div>
+            <div style="background:linear-gradient(135deg, rgba(59,130,246,0.1) 0%, rgba(37,211,102,0.05) 100%); border:1px solid rgba(59,130,246,0.2); border-radius:20px; padding:24px; margin-bottom:32px; box-shadow:0 10px 30px rgba(0,0,0,0.1);">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px;">
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <div class="wa-status-pulse" style="width:48px; height:48px; background:#3b82f6; border-radius:14px; display:flex; align-items:center; justify-content:center; color:white; box-shadow:0 0 20px rgba(59,130,246,0.4);">
+                            <i data-lucide="send" style="width:24px;height:24px;"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight:800; color:#3b82f6; font-size:1.1rem; letter-spacing:-0.01em;">Actively Sending Messages</div>
+                            <div style="font-size:0.85rem; color:var(--text-dim); margin-top:2px;">Targeting: <strong style="color:var(--text-main);">${meta.currentContactName || 'Calculating...'}</strong></div>
+                        </div>
                     </div>
-                    <button class="btn btn-danger btn-sm" onclick="window.whatsAppSender.stopBroadcast('${meta.broadcastId}')">Stop</button>
+                    <button class="btn btn-danger" style="border-radius:12px; padding:8px 20px; font-weight:700;" onclick="window.whatsAppSender.stopBroadcast('${meta.broadcastId}')">
+                        <i data-lucide="square" style="width:14px;height:14px;margin-right:6px;"></i> Stop Broadcast
+                    </button>
                 </div>
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:32px;">
                     <div>
-                        <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:4px; text-transform:uppercase;">Contacts Reached</div>
-                        <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;"><div style="height:100%; background:#3b82f6; width:${cPct}%;"></div></div>
-                        <div style="font-size:0.7rem; margin-top:4px;">${meta.processedContactsCount || 0}/${meta.contactsCount || 0}</div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                            <span style="font-size:0.75rem; color:var(--text-dim); font-weight:700; text-transform:uppercase;">Contacts Reached</span>
+                            <span style="font-size:0.75rem; color:var(--text-main); font-weight:800;">${cPct}%</span>
+                        </div>
+                        <div style="height:10px; background:rgba(255,255,255,0.05); border-radius:5px; overflow:hidden;">
+                            <div style="height:100%; background:linear-gradient(90deg, #3b82f6, #60a5fa); width:${cPct}%; transition:width 0.5s ease; box-shadow:0 0 10px rgba(59,130,246,0.5);"></div>
+                        </div>
+                        <div style="font-size:0.75rem; margin-top:8px; color:var(--text-dim);">${meta.processedContactsCount || 0} of ${meta.contactsCount || 0} unique contacts</div>
                     </div>
                     <div>
-                        <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:4px; text-transform:uppercase;">Numbers Processed</div>
-                        <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;"><div style="height:100%; background:#38bdf8; width:${nPct}%;"></div></div>
-                        <div style="font-size:0.7rem; margin-top:4px;">${meta.processedNumbersCount || 0}/${meta.recipientsCount || 0}</div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                            <span style="font-size:0.75rem; color:var(--text-dim); font-weight:700; text-transform:uppercase;">Messages Delivered</span>
+                            <span style="font-size:0.75rem; color:var(--text-main); font-weight:800;">${nPct}%</span>
+                        </div>
+                        <div style="height:10px; background:rgba(255,255,255,0.05); border-radius:5px; overflow:hidden;">
+                            <div style="height:100%; background:linear-gradient(90deg, #38bdf8, #7dd3fc); width:${nPct}%; transition:width 0.5s ease; box-shadow:0 0 10px rgba(56,189,248,0.5);"></div>
+                        </div>
+                        <div style="font-size:0.75rem; margin-top:8px; color:var(--text-dim);">${meta.processedNumbersCount || 0} of ${meta.recipientsCount || 0} total phone numbers</div>
                     </div>
                 </div>
             </div>`;
     };
 
-    window.whatsAppSender._updateReportStatsDashboard = function (total, sent, deliv, read, fail, dTimes, rTimes) {
+    window.whatsAppSender._updateReportStatsDashboard = function (total, processing, sent, deliv, read, fail, excluded) {
         const mount = document.getElementById('wa-report-dashboard-mount');
         if (!mount) return;
-        const readPct = total > 0 ? Math.round((read/total)*100) : 0;
-        const delivPct = total > 0 ? Math.round(((deliv+read)/total)*100) : 0;
+        
+        const billable = total - excluded;
+        const readPct = billable > 0 ? Math.round((read/billable)*100) : 0;
+        const delivPct = billable > 0 ? Math.round(((deliv+read)/billable)*100) : 0;
+        const failPct = billable > 0 ? Math.round((fail/billable)*100) : 0;
+
         mount.innerHTML = `
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:32px;">
-                <div class="wa-stat-card"><div style="color:#a855f7; font-size:0.7rem; font-weight:800; text-transform:uppercase;">OPEN RATE</div><div style="font-size:1.8rem; font-weight:800; color:var(--text-main);">${readPct}%</div></div>
-                <div class="wa-stat-card"><div style="color:#3b82f6; font-size:0.7rem; font-weight:800; text-transform:uppercase;">DELIVERY</div><div style="font-size:1.8rem; font-weight:800; color:var(--text-main);">${delivPct}%</div></div>
-                <div class="wa-stat-card"><div style="color:#38bdf8; font-size:0.7rem; font-weight:800; text-transform:uppercase;">TOTAL SENT</div><div style="font-size:1.8rem; font-weight:800; color:var(--text-main);">${sent+deliv+read}</div></div>
-                <div class="wa-stat-card"><div style="color:#ef4444; font-size:0.7rem; font-weight:800; text-transform:uppercase;">FAILED</div><div style="font-size:1.8rem; font-weight:800; color:${fail>0?'#ef4444':'var(--text-main)'};">${fail}</div></div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:20px; margin-bottom:32px;">
+                <div class="wa-stat-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
+                    <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="eye" style="width:48px;height:48px;color:#a855f7;"></i></div>
+                    <div style="color:#a855f7; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Open Rate</div>
+                    <div style="font-size:2.4rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${readPct}%</div>
+                    <div style="font-size:0.85rem; color:var(--text-dim);">${read} messages read</div>
+                </div>
+                <div class="wa-stat-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
+                    <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="check-check" style="width:48px;height:48px;color:#3b82f6;"></i></div>
+                    <div style="color:#3b82f6; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Delivery Rate</div>
+                    <div style="font-size:2.4rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${delivPct}%</div>
+                    <div style="font-size:0.85rem; color:var(--text-dim);">${deliv + read} delivered</div>
+                </div>
+                <div class="wa-stat-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
+                    <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="loader" style="width:48px;height:48px;color:#f59e0b;"></i></div>
+                    <div style="color:#f59e0b; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Processing</div>
+                    <div style="font-size:2.4rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${processing}</div>
+                    <div style="font-size:0.85rem; color:var(--text-dim);">Awaiting confirmation</div>
+                </div>
+                <div class="wa-stat-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
+                    <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="alert-circle" style="width:48px;height:48px;color:#ef4444;"></i></div>
+                    <div style="color:#ef4444; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Failed</div>
+                    <div style="font-size:2.4rem; font-weight:900; color:${fail > 0 ? '#ef4444' : 'var(--text-main)'}; line-height:1; margin-bottom:4px;">${fail}</div>
+                    <div style="font-size:0.85rem; color:var(--text-dim);">${excluded > 0 ? `${excluded} excluded • ` : ''}${failPct}% error rate</div>
+                </div>
             </div>`;
+
         const countEl = document.getElementById('wa-report-count');
-        if (countEl) countEl.innerText = `Detailed Log: ${total} entries`;
+        if (countEl) countEl.innerText = `${total} Recipients`;
     };
 
     window.whatsAppSender._updateRecipientRowsList = function (recipients) {
         const grid = document.getElementById('wa-report-recipients-grid');
         if (!grid) return;
-        const colors = { read: '#a855f7', delivered: '#3b82f6', sent: '#38bdf8', pending: '#94a3b8', failed: '#ef4444', error: '#ef4444', excluded: '#94a3b8' };
+        
+        const statusConfig = {
+            processing: { color: '#f59e0b', icon: 'loader', label: 'Processing', bg: 'rgba(245,158,11,0.1)' },
+            sent: { color: '#38bdf8', icon: 'send', label: 'Sent', bg: 'rgba(56,189,248,0.1)' },
+            delivered: { color: '#3b82f6', icon: 'check', label: 'Delivered', bg: 'rgba(59,130,246,0.1)' },
+            read: { color: '#a855f7', icon: 'eye', label: 'Read', bg: 'rgba(168,85,247,0.1)' },
+            failed: { color: '#ef4444', icon: 'alert-circle', label: 'Failed', bg: 'rgba(239,68,68,0.1)' },
+            error: { color: '#ef4444', icon: 'alert-circle', label: 'Failed', bg: 'rgba(239,68,68,0.1)' },
+            excluded: { color: '#94a3b8', icon: 'slash', label: 'Excluded', bg: 'rgba(148,163,184,0.1)' }
+        };
         
         recipients.forEach(m => {
+            const { status, error } = this._getEffectiveStatus(m);
             const cleanPhone = String(m.phone || m.recipientId || '').replace(/\D/g, '');
             const rowId = `wa-row-${m.messageId ? m.messageId.replace(/[.#$/[\]]/g, "_") : cleanPhone}`;
             let row = document.getElementById(rowId);
+            
             if (!row) {
                 row = document.createElement('div');
                 row.id = rowId;
                 row.className = 'wa-report-item';
                 grid.appendChild(row);
             }
-            if (row.getAttribute('data-status') === m.status && row.getAttribute('data-updated') === String(m.timestamp)) return;
-            row.setAttribute('data-status', m.status);
+            
+            // Optimization: Only re-render if status, error, or timestamp changed
+            const currentStatus = row.getAttribute('data-status');
+            const currentError = row.getAttribute('data-error');
+            const currentUpdated = row.getAttribute('data-updated');
+            
+            if (currentStatus === status && currentError === String(error) && currentUpdated === String(m.timestamp)) return;
+            
+            const isExpanded = row.classList.contains('expanded');
+            row.setAttribute('data-status', status);
+            row.setAttribute('data-error', String(error));
             row.setAttribute('data-updated', String(m.timestamp));
-            const color = colors[m.status] || 'gray';
+            
+            const conf = statusConfig[status] || { color: '#94a3b8', icon: 'circle', label: status, bg: 'rgba(148,163,184,0.1)' };
             
             row.innerHTML = `
-                <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; padding:20px; position:relative; overflow:hidden;">
-                    <div style="position:absolute; top:0; left:0; width:4px; height:100%; background:${color};"></div>
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                <div class="wa-status-stripe" style="background:${conf.color};"></div>
+                
+                <div class="wa-report-tab-header" onclick="window.whatsAppSender.toggleRecipientExpansion('${rowId}')">
+                    <div style="display:flex; align-items:center; gap:16px; flex:1;">
+                        <div style="width:36px; height:36px; border-radius:10px; background:${conf.bg}; color:${conf.color}; display:flex; align-items:center; justify-content:center;">
+                            <i data-lucide="${conf.icon}" style="width:18px;height:18px;"></i>
+                        </div>
                         <div>
-                            <div style="font-weight:700; color:var(--text-main); font-size:1rem;">${m.name || 'Unknown'}</div>
+                            <div style="font-weight:700; color:var(--text-main); font-size:0.95rem;">${m.name || 'Unknown Recipient'}</div>
                             <div style="font-size:0.8rem; color:var(--text-dim); font-family:monospace;">+${cleanPhone}</div>
                         </div>
-                        <div style="background:${color}; color:white; font-size:0.65rem; font-weight:800; padding:4px 10px; border-radius:8px; text-transform:uppercase;">${m.status}</div>
                     </div>
-                    ${m.statusHistory ? `
-                        <div style="margin-bottom:16px; display:flex; flex-direction:column; gap:6px;">
-                            ${Object.values(m.statusHistory).map(h => h.error ? `<div style="font-size:0.75rem; color:#fca5a5; padding:8px 12px; background:rgba(239,68,68,0.1); border-radius:8px; border:1px solid rgba(239,68,68,0.2); display:flex; align-items:center; gap:8px;"><i data-lucide="alert-circle" style="width:12px;height:12px;"></i> <span>[${h.status.toUpperCase()}]: ${h.error}</span></div>` : '').join('')}
-                        </div>` : (m.error ? `<div style="color:#ef4444; font-size:0.75rem; padding:8px 12px; background:rgba(239,68,68,0.08); border-radius:8px; border:1px solid rgba(239,68,68,0.15); margin-bottom:16px;">${m.error}</div>` : '')}
                     
-                    <div style="display:flex; align-items:flex-start; gap:0; padding-top:16px; margin-top:16px; border-top:1px solid rgba(255,255,255,0.03);">
-                        ${['sent', 'delivered', 'read'].map((step, si) => {
-                            const ts = step === 'sent' ? m.sentAt : step === 'delivered' ? m.deliveredAt : m.readAt;
-                            const active = !!ts;
-                            const stepColor = active ? colors[step] : 'var(--border)';
-                            return `
-                                <div class="wa-pipeline-step" style="flex:1; display:flex; flex-direction:column; align-items:center; color:${stepColor}; opacity: ${active ? '1' : '0.3'}">
-                                    <div style="width:8px; height:8px; border-radius:50%; background:${active ? 'currentColor' : 'transparent'}; border:1px solid ${active ? 'currentColor' : 'var(--border)'};"></div>
-                                    <span style="font-size:0.6rem; font-weight:700; margin-top:6px; text-transform:uppercase;">${step}</span>
-                                    <span style="font-size:0.55rem; margin-top:2px;">${ts ? new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
-                                </div>
-                                ${si < 2 ? `<div style="flex:1; height:1px; background:var(--border); margin-top:4px; opacity:0.1;"></div>` : ''}
-                            `;
-                        }).join('')}
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <div style="background:${conf.bg}; color:${conf.color}; font-size:0.65rem; font-weight:800; padding:4px 10px; border-radius:8px; text-transform:uppercase; letter-spacing:0.02em; border:1px solid ${conf.color}22;">
+                            ${conf.label}
+                        </div>
+                        <i data-lucide="chevron-down" class="wa-chevron" style="width:16px;height:16px;"></i>
                     </div>
-                </div>`;
+                </div>
+
+                <div class="wa-report-tab-content">
+                    ${error ? `
+                        <div style="color:#ef4444; font-size:0.8rem; padding:12px 16px; background:rgba(239,68,68,0.06); border-radius:12px; border:1px solid rgba(239,68,68,0.15); margin-bottom:20px; line-height:1.4;">
+                            <div style="font-weight:700; display:flex; align-items:center; gap:6px; margin-bottom:4px;"><i data-lucide="alert-triangle" style="width:14px;height:14px;"></i> Delivery Error</div>
+                            ${error}
+                        </div>
+                    ` : ''}
+                    
+                    <div class="wa-pipeline-container">
+                        <div style="display:flex; justify-content:space-between; align-items:center; position:relative; padding:0 4px;">
+                            <div style="position:absolute; top:6px; left:12px; right:12px; height:2px; background:rgba(255,255,255,0.05); z-index:0;"></div>
+                            
+                            ${['sent', 'delivered', 'read'].map((step, si) => {
+                                const ts = step === 'sent' ? m.sentAt : step === 'delivered' ? m.deliveredAt : m.readAt;
+                                const active = !!ts;
+                                const stepColor = active ? statusConfig[step].color : 'var(--border)';
+                                
+                                return `
+                                    <div class="wa-pipeline-step ${active ? 'active' : ''}" style="color:${active ? stepColor : 'var(--text-dim)'}">
+                                        <div class="wa-step-circle" style="background:${active ? stepColor : 'var(--card-bg)'}; border:2px solid ${active ? stepColor : 'rgba(255,255,255,0.1)'};"></div>
+                                        <span style="font-size:0.6rem; font-weight:700; text-transform:uppercase;">${step}</span>
+                                        <span style="font-size:0.55rem; opacity:0.8;">${ts ? new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            if (isExpanded) row.classList.add('expanded');
         });
+        
+        if (window.lucide) window.lucide.createIcons({ root: grid });
+    };
+
+    window.whatsAppSender.toggleRecipientExpansion = function (rowId) {
+        const row = document.getElementById(rowId);
+        if (!row) return;
+        
+        const isExpanding = !row.classList.contains('expanded');
+        
+        // Optional: Close others
+        // document.querySelectorAll('.wa-report-item.expanded').forEach(el => {
+        //     if (el !== row) el.classList.remove('expanded');
+        // });
+        
+        row.classList.toggle('expanded');
     };
 
     window.whatsAppSender.stopBroadcast = async function (logId) {
