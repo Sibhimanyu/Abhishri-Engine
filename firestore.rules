@@ -1,0 +1,60 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Rules for the new modular structure
+    match /modules/whatsapp_sender {
+      match /config/{configId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+      
+      match /lists/{listId} {
+        allow read, write: if isAuthenticated();
+        
+        match /members/{memberId} {
+          allow read, write: if isAuthenticated();
+        }
+      }
+      
+      match /history/{historyId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      match /templates/{templateId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+
+    match /modules/directory {
+      match /students/{studentId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    match /modules/smart_campus {
+      match /areas/{areaId} {
+        allow read, write: if isAuthenticated();
+      }
+      match /config/{id} {
+        allow read, write: if isAuthenticated();
+      }
+      match /logs/{id} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // --- Global Collections ---
+    match /allowedUsers/{id} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only manageable via Firebase Console or Admin SDK
+    }
+  }
+}

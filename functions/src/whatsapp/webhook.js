@@ -3,257 +3,186 @@ const {onRequest} = require("firebase-functions/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
-// Ensure admin is initialized
-if (admin.apps.length === 0) {
-  admin.initializeApp();
-}
+
 
 const sanitizeKey = (key) => key ? String(key).replace(/[.#$/[\]]/g, "_") : key;
 
-exports.whatsappWebhook = onRequest(async (request, response) => {
-  if (request.method === "GET") {
-    const mode = request.query["hub.mode"];
-    const token = request.query["hub.verify_token"];
-    const challenge = request.query["hub.challenge"];
-    const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
+/**
+ * Common Logic for processing Incoming Messages
+ */
+async function processIncoming(db, report) {
+  const messageId = report.message_id || report.id;
+  const from = report.from;
+  const type = report.message_type || report.type || "text";
+  const timestamp = (report.timestamp > 10000000000 ? report.timestamp : report.timestamp * 1000);
+  const conversationId = sanitizeKey(from);
 
-    if (mode === "subscribe" && token) {
-      if (VERIFY_TOKEN && token !== VERIFY_TOKEN) {
-        logger.warn("Webhook verification failed: token mismatch", {token});
-        return response.status(403).send("Forbidden: Invalid verify token");
+  let textBody = "";
+  let previewText = "";
+  let imageData = null;
+
+  if (type === "image" || type === "audio" || report.media_url || report.image || report.audio) {
+    if (type === "image") {
+      const img = report.image || {};
+      textBody = report.caption || img.caption || "";
+      previewText = textBody ? `📷 ${textBody}` : `📷 Photo`;
+      imageData = {url: report.media_url || img.link || img.id, mimeType: report.mime_type || img.mime_type || "", caption: textBody};
+    } else if (type === "audio") {
+      previewText = `🎤 Voice Message`;
+      imageData = {url: report.media_url || report.audio?.link || report.audio?.id, mimeType: report.mime_type || report.audio?.mime_type || ""};
+    } else {
+      textBody = report.caption || "";
+      previewText = `📎 Attachment`;
+      imageData = {url: report.media_url, mimeType: report.mime_type || "", caption: textBody};
+    }
+  } else if (type === "text") {
+    textBody = report.body || report.text?.body || "";
+    previewText = textBody;
+  } else if (type === "button" || type === "interactive") {
+    textBody = report.button?.text || report.interactive?.button_reply?.title || "Button clicked";
+    previewText = `🔘 ${textBody}`;
+  } else {
+    textBody = "";
+    previewText = `📎 ${type} message`;
+  }
+
+  const conversationRef = db.ref(`modules/whatsapp_sender/conversations/${conversationId}`);
+  const existingCheck = await conversationRef.child("messages").orderByChild("messageId").equalTo(messageId).once("value");
+  
+  if (!existingCheck.exists()) {
+    const newMsg = {
+      messageId, from, to: report.phone_number_id || "business_number",
+      message: textBody, type, timestamp, direction: "inbound", status: "received",
+    };
+    if (imageData) newMsg.imageData = imageData;
+    await conversationRef.child("messages").push(newMsg);
+
+    await conversationRef.child("metadata").transaction((currentData) => {
+      const senderName = report.contact_name || report.profile_name || report.name || from;
+      if (!currentData) {
+        return {lastMessage: previewText, timestamp, unreadCount: 1, displayName: senderName, phoneNumber: from};
       }
-      logger.info("Webhook verification successful", {mode});
-      return response.status(200).send(challenge);
-    }
-    return response.status(200).send("OK (GET)");
-  }
-
-  if (request.method !== "POST") {
-    return response.status(405).send("Method Not Allowed");
-  }
-
-  logger.info("Webhook received", {body: JSON.stringify(request.body)});
-
-  let processed = false;
-  let errorDetails = null;
-
-  try {
-    let body = request.body;
-    if (typeof body === 'string') {
-        try { body = JSON.parse(body); } catch (e) { /* ignore, use string */ }
-    }
-    const db = admin.database();
-    const historyRef = db.ref("modules/whatsapp_sender");
-
-    // Always log for debug
-    await historyRef.child("debug_webhooks").push({
-      timestamp: admin.database.ServerValue.TIMESTAMP,
-      payload: body,
+      const updatedName = (!currentData.displayName || currentData.displayName === from || currentData.displayName === "undefined") ? senderName : currentData.displayName;
+      return {...currentData, lastMessage: previewText, timestamp, displayName: updatedName, unreadCount: (currentData.unreadCount || 0) + 1};
     });
+  }
+}
 
-    if (body.whatsapp_reports) {
-      for (const report of body.whatsapp_reports) {
-        if (report.type === "incoming_message") {
-          const messageId = report.message_id;
-          const from = report.from;
-          const type = report.message_type || "text";
-          const timestamp = report.timestamp * 1000;
-          const conversationId = from;
+/**
+ * Common Logic for processing Status Updates
+ */
+async function processStatus(db, fs, report) {
+  const messageId = report.request_id || report.message_id || report.id;
+  const status = (report.status || "").toLowerCase();
+  const timestamp = (report.timestamp > 10000000000 ? report.timestamp : report.timestamp * 1000);
+  const docId = sanitizeKey(messageId);
 
-          let textBody = "";
-          let previewText = "";
-          let imageData = null;
+  const logRef = db.ref(`modules/whatsapp_sender/broadcast_logs/${docId}`);
+  const logSnap = await logRef.once("value");
+  const logData = logSnap.val();
 
-          if (type === "image" || type === "audio" || report.media_url) {
-            if (type === "image") {
-              textBody = report.caption || "";
-              previewText = report.caption ? `📷 ${report.caption}` : `📷 Photo`;
-            } else if (type === "audio") {
-              textBody = "";
-              previewText = `🎤 Voice Message`;
-            } else {
-              textBody = report.caption || "";
-              previewText = `📎 Attachment`;
-            }
-            imageData = {url: report.media_url, mimeType: report.mime_type || "", caption: report.caption || ""};
-          } else if (type === "text") {
-            textBody = report.body || "";
-            previewText = textBody;
-          } else {
-            textBody = "";
-            previewText = `📎 ${type} message`;
-          }
+  if (logData) {
+    const currentStatus = logData.status || "pending";
+    const STATUS_RANK = { "failed": 0, "pending": 1, "sent": 2, "delivered": 3, "read": 4 };
+    const newRank = STATUS_RANK[status] || 0;
+    const currentRank = STATUS_RANK[currentStatus] || 0;
 
-          const existingCheck = await historyRef.child(`conversations/${conversationId}/messages`).orderByChild("messageId").equalTo(messageId).once("value");
-          if (!existingCheck.exists()) {
-            const newMsg = {
-              messageId, from, to: report.phone_number_id || "business_number",
-              message: textBody, type, timestamp, direction: "inbound", status: "received",
-            };
-            if (imageData) newMsg.imageData = imageData;
-            await historyRef.child(`conversations/${conversationId}/messages`).push(newMsg);
+    const {recipientId, broadcastId} = logData;
+    const recipientKey = sanitizeKey(recipientId);
+    const updatePromises = [];
 
-            await historyRef.child(`conversations/${conversationId}/metadata`).transaction((currentData) => {
-              const senderName = report.contact_name || report.profile_name || report.name || from;
-              if (!currentData) {
-                return {lastMessage: previewText, timestamp, unreadCount: 1, displayName: senderName, phoneNumber: from};
-              }
-              const updatedName = (!currentData.displayName || currentData.displayName === from || currentData.displayName === "undefined") ? senderName : currentData.displayName;
-              return {...currentData, lastMessage: previewText, timestamp, displayName: updatedName, unreadCount: (currentData.unreadCount || 0) + 1};
-            });
-          }
-          processed = true;
-        } else if (report.type === "status_update") {
-          const messageId = report.request_id || report.message_id || report.id;
-          const status = (report.status || "").toLowerCase();
-          const timestamp = report.timestamp * 1000;
+    let errMsg = null;
+    if (status === "failed" && report.errors && Array.isArray(report.errors) && report.errors.length > 0) {
+      const errObj = report.errors[0];
+      errMsg = (errObj.error_data && errObj.error_data.details) || errObj.message || errObj.title || "Unknown error";
+    }
 
-          const lookupRef = db.ref(`modules/whatsapp_sender/message_lookup/${sanitizeKey(messageId)}`);
-          const lookupSnapshot = await lookupRef.once("value");
-          const lookupData = lookupSnapshot.val();
+    const shouldUpdateMain = (newRank > currentRank) || (currentStatus === "failed" && status !== "failed");
+    const statusEntry = { status, timestamp, serverTime: Date.now() };
+    if (errMsg) statusEntry.error = errMsg;
 
-          if (lookupData) {
-            const currentStatus = lookupData.lastStatus || "sent";
-            const STATUS_RANK = { "failed": 4, "read": 3, "delivered": 2, "sent": 1, "pending": 0 };
-            const newRank = STATUS_RANK[status] || 0;
-            const currentRank = STATUS_RANK[currentStatus] || 0;
+    updatePromises.push(logRef.child("statusHistory").push(statusEntry));
 
-            if (newRank <= currentRank && status !== "failed") {
-              console.log(`Ignoring duplicate or delayed webhook. Current: ${currentStatus}, Received: ${status} for Msg: ${messageId}`);
-              continue; // Skip further processing for this report but continue the loop
-            }
+    if (shouldUpdateMain) {
+      const rtdbUpdate = { status, timestamp };
+      if (status === "sent") rtdbUpdate.sentAt = timestamp;
+      if (status === "delivered") rtdbUpdate.deliveredAt = timestamp;
+      if (status === "read") rtdbUpdate.readAt = timestamp;
+      if (errMsg) rtdbUpdate.error = errMsg;
+      updatePromises.push(logRef.update(rtdbUpdate));
+    }
 
-            const {recipientId, msgKey, broadcastId} = lookupData;
-            const msgRef = historyRef.child(`conversations/${recipientId}/messages/${msgKey}`);
+    const messagesRef = db.ref(`modules/whatsapp_sender/conversations/${recipientKey}/messages`);
+    const msgQuery = await messagesRef.orderByChild("messageId").equalTo(messageId).once("value");
+    
+    if (msgQuery.exists()) {
+      msgQuery.forEach((child) => {
+        updatePromises.push(child.ref.child("statusHistory").push(statusEntry));
+        if (shouldUpdateMain) {
+          const u = { status };
+          if (errMsg) u.error = errMsg;
+          updatePromises.push(child.ref.update(u));
+        }
+      });
+    }
 
-            // Extract detailed error info (full object, not just a string)
-            let errMsg = null;
-            let errorInfo = null;
-            if (status === "failed" && report.errors && Array.isArray(report.errors) && report.errors.length > 0) {
-              const errObj = report.errors[0];
-              errMsg = (errObj.error_data && errObj.error_data.details) || errObj.message || errObj.title || "Unknown error";
-              errorInfo = {
-                code: errObj.code || null,
-                title: errObj.title || null,
-                details: (errObj.error_data && errObj.error_data.details) || errObj.message || null,
-                href: errObj.href || null,
-              };
-            } else if (status === "failed" && typeof report.errors === "string") {
-              errMsg = report.errors;
-              errorInfo = {code: null, title: null, details: report.errors, href: null};
-            }
-
-            // Extract conversation & billing metadata from webhook payload
-            const conversationInfo = report.conversation ? {
-              id: report.conversation.id || null,
-              originType: (report.conversation.origin && report.conversation.origin.type) || null,
-            } : null;
-            const pricingModel = report.pricing_model || (report.pricing && report.pricing.model) || null;
-            const billingCategory = (report.pricing && report.pricing.category) || (report.billing && report.billing.category) || null;
-
-            const update = {status};
-            if (status === "sent") update.sentAt = timestamp;
-            if (status === "delivered") update.deliveredAt = timestamp;
-            if (status === "read") update.readAt = timestamp;
-            if (errMsg) update.error = errMsg;
-            if (errorInfo) update.errorInfo = errorInfo;
-            if (conversationInfo) update.conversationInfo = conversationInfo;
-            if (pricingModel) update.pricingModel = pricingModel;
-            if (billingCategory) update.billingCategory = billingCategory;
-
-            const updatePromises = [];
-
-            updatePromises.push(msgRef.update(update));
-
-            const newStatusEntry = {status, timestamp};
-            if (errMsg) newStatusEntry.error = errMsg;
-            updatePromises.push(msgRef.child("statusHistory").push(newStatusEntry));
-
-            if (broadcastId) {
-              const logUpdate = {status, timestamp};
-              if (errMsg) logUpdate.error = errMsg;
-              if (errorInfo) logUpdate.errorInfo = errorInfo;
-              if (conversationInfo) logUpdate.conversationInfo = conversationInfo;
-              if (pricingModel) logUpdate.pricingModel = pricingModel;
-              if (billingCategory) logUpdate.billingCategory = billingCategory;
-              if (status === "sent") logUpdate.sentAt = timestamp;
-              if (status === "delivered") logUpdate.deliveredAt = timestamp;
-              if (status === "read") logUpdate.readAt = timestamp;
-
-              const bLogRef = db.ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}/${recipientId}`);
-              updatePromises.push(bLogRef.update(logUpdate));
-              updatePromises.push(bLogRef.child("statusHistory").push(newStatusEntry));
-
-              // Update aggregate progress in history record transactionally
-              const historyRecordRef = db.ref(`modules/whatsapp_sender/broadcast_history/${broadcastId}`);
-              updatePromises.push(historyRecordRef.transaction((history) => {
-                if (!history) return history;
-
-                // Initialize if not present (safeguard)
-                if (history.sentCount === undefined) history.sentCount = history.successCount || 0;
-                if (history.deliveredCount === undefined) history.deliveredCount = 0;
-                if (history.readCount === undefined) history.readCount = 0;
-                if (history.failedCount === undefined) history.failedCount = 0;
-
-                if (status === "delivered") history.deliveredCount = (history.deliveredCount || 0) + 1;
-                if (status === "read") history.readCount = (history.readCount || 0) + 1;
-                if (status === "failed") history.failedCount = (history.failedCount || 0) + 1;
-
-                return history;
-              }));
-            }
-
-            // Self-Cleaning: Delete lookup entry once message reaches terminal state
-            if (status === "read" || status === "failed") {
-              updatePromises.push(lookupRef.remove());
-              if (lookupData.alternateMessageId && lookupData.alternateMessageId !== lookupRef.key) {
-                updatePromises.push(db.ref(`modules/whatsapp_sender/message_lookup/${lookupData.alternateMessageId}`).remove());
-              }
-              if (lookupData.messageId && lookupData.messageId !== lookupRef.key) {
-                updatePromises.push(db.ref(`modules/whatsapp_sender/message_lookup/${lookupData.messageId}`).remove());
-              }
-            } else {
-              updatePromises.push(lookupRef.update({ lastStatus: status }));
-              if (lookupData.alternateMessageId && lookupData.alternateMessageId !== lookupRef.key) {
-                updatePromises.push(db.ref(`modules/whatsapp_sender/message_lookup/${lookupData.alternateMessageId}`).update({ lastStatus: status }));
-              }
-              if (lookupData.messageId && lookupData.messageId !== lookupRef.key) {
-                updatePromises.push(db.ref(`modules/whatsapp_sender/message_lookup/${lookupData.messageId}`).update({ lastStatus: status }));
-              }
-            }
-
-            // Execute all writes in parallel for maximum precision and speed
-            await Promise.all(updatePromises);
-          }
-          processed = true; // Structurally valid status update
+    if (broadcastId && broadcastId !== "adhoc" && shouldUpdateMain) {
+      const historyRecordRef = fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId);
+      const historyUpdate = {};
+      
+      if (status === "delivered" && (currentStatus === "sent" || currentStatus === "pending")) {
+        historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1);
+      } else if (status === "read") {
+        historyUpdate.readCount = admin.firestore.FieldValue.increment(1);
+        if (currentStatus === "sent" || currentStatus === "pending") {
+            historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1);
         }
       }
-    } else if (body.object) {
-      const entry = body.entry && body.entry.length > 0 ? body.entry[0] : null;
-      const change = entry && entry.changes && entry.changes.length > 0 ? entry.changes[0] : null;
-      const value = change ? change.value : null;
-
-      if (value && value.messages && value.messages.length > 0) {
-        processed = true;
-        // Add Meta logic back if strictly required, but focus is Fast2SMS status/incoming
-      } else if (value && value.statuses && value.statuses.length > 0) {
-        processed = true;
+      
+      if (currentStatus === "failed" && status !== "failed") {
+        historyUpdate.failedCount = admin.firestore.FieldValue.increment(-1);
+        if (status === "sent") historyUpdate.sentCount = admin.firestore.FieldValue.increment(1);
+        if (status === "delivered") { historyUpdate.sentCount = admin.firestore.FieldValue.increment(1); historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1); }
+        if (status === "read") { historyUpdate.sentCount = admin.firestore.FieldValue.increment(1); historyUpdate.deliveredCount = admin.firestore.FieldValue.increment(1); historyUpdate.readCount = admin.firestore.FieldValue.increment(1); }
+      } else if (status === "failed" && currentStatus !== "failed") {
+        historyUpdate.failedCount = admin.firestore.FieldValue.increment(1);
       }
+      
+      if (Object.keys(historyUpdate).length > 0) {
+        updatePromises.push(historyRecordRef.update(historyUpdate));
+      }
+    }
+
+    await Promise.all(updatePromises);
+  }
+}
+
+exports.whatsappWebhook = onRequest(async (request, response) => {
+  if (request.method === "GET") {
+    const challenge = request.query["hub.challenge"];
+    return response.status(200).send(challenge);
+  }
+
+  if (request.method !== "POST") return response.status(405).send("Method Not Allowed");
+
+  try {
+    const db = admin.database(), fs = admin.firestore(), body = request.body;
+    await db.ref("modules/whatsapp_sender/debug_webhooks").push({ timestamp: admin.database.ServerValue.TIMESTAMP, payload: body });
+
+    if (body.whatsapp_reports && Array.isArray(body.whatsapp_reports)) {
+      for (const report of body.whatsapp_reports) {
+        if (report.type === "incoming_message") await processIncoming(db, report);
+        else if (report.type === "status_update") await processStatus(db, fs, report);
+      }
+    } else if (body.object) {
+      const value = body.entry?.[0]?.changes?.[0]?.value || {};
+      if (value.messages) for (const msg of value.messages) await processIncoming(db, {...msg, profile_name: value.contacts?.[0]?.profile?.name});
+      if (value.statuses) for (const status of value.statuses) await processStatus(db, fs, status);
     }
 
     response.status(200).send("OK");
   } catch (error) {
-    errorDetails = error.message;
-    logger.error("Error processing webhook", error);
+    logger.error("Global error processing webhook", error);
     response.status(500).send("Error");
-  } finally {
-    if (!processed) {
-      await admin.database().ref("modules/whatsapp_sender/unhandled_webhooks").push({
-        timestamp: admin.database.ServerValue.TIMESTAMP,
-        payload: request.body,
-        error: errorDetails,
-        processed: false,
-      });
-    }
   }
 });

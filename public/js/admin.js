@@ -201,8 +201,8 @@ window.adminPanel = {
         const container = document.getElementById('admin-whatsapp-config-container');
         if (!container) return;
 
-        firebase.database().ref('modules/whatsapp_sender/config').once('value').then(snapshot => {
-            const config = snapshot.val() || {};
+        firestore.collection('modules').doc('whatsapp_sender').collection('config').doc('main').get().then(snapshot => {
+            const config = snapshot.data() || {};
             const isConnected = !!(config.apiKey && config.wabaId && config.phoneNumberId);
 
             container.innerHTML = `
@@ -256,7 +256,13 @@ window.adminPanel = {
                                 <label style="display:block; margin-bottom:8px; font-weight:500;">Sender Phone Number (For Display)</label>
                                 <input type="text" id="wa-phone-number" value="${config.phoneNumber || ''}" class="wa-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--card-border); background:var(--input-bg); color:var(--text-primary);" placeholder="e.g. +91 99999 99999">
                             </div>
-                            <button type="submit" class="btn btn-primary" style="width:100%; padding:12px; border-radius:8px; background:var(--accent-primary); color:white; border:none; font-weight:600; cursor:pointer;">Save Configuration</button>
+                            
+                            <div style="display:flex; gap:12px;">
+                                <button type="submit" class="btn btn-primary" style="flex:1; padding:12px; border-radius:8px; background:var(--accent-primary); color:white; border:none; font-weight:600; cursor:pointer;">Save Configuration</button>
+                                <button type="button" id="wa-sync-templates-btn" class="btn btn-secondary" onclick="window.handleSyncTemplates(this)" style="padding:12px 20px; border-radius:8px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px;">
+                                    <i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> Sync Templates
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -534,12 +540,36 @@ window.handleSaveWhatsAppConfig = async (e) => {
     const phoneNumber = document.getElementById('wa-phone-number').value;
 
     try {
-        const configRef = firebase.database().ref('modules/whatsapp_sender/config');
-        await configRef.set({ apiKey, wabaId, phoneNumberId, phoneNumber, updatedAt: firebase.database.ServerValue.TIMESTAMP });
-        AppDialog.toast('Configuration saved successfully', 'success');
+        await firestore.collection('modules').doc('whatsapp_sender').collection('config').doc('main').set({ 
+            apiKey, wabaId, phoneNumberId, phoneNumber, updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+        });
+        AppDialog.toast('Configuration saved successfully to Firestore', 'success');
         window.adminPanel.renderWhatsAppConfig();
     } catch (error) {
         console.error("Error saving WhatsApp config:", error);
         AppDialog.toast('Failed to save configuration: ' + error.message, 'error');
+    }
+};
+
+window.handleSyncTemplates = async (btn) => {
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader" style="width:16px;height:16px;animation:spin 1s linear infinite;"></i> Syncing...';
+    if (window.lucide) window.lucide.createIcons({ root: btn });
+
+    try {
+        const result = await window.whatsAppSender.syncTemplatesAPI();
+        if (result.success) {
+            AppDialog.toast(`Successfully synced ${result.count} templates to Firestore.`, 'success');
+        } else {
+            AppDialog.toast('Template sync failed: Unexpected response structure.', 'error');
+        }
+    } catch (error) {
+        console.error("Sync Error:", error);
+        AppDialog.toast('Failed to sync templates: ' + error.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+        if (window.lucide) window.lucide.createIcons({ root: btn });
     }
 };

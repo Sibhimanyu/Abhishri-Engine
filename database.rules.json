@@ -39,18 +39,19 @@
       },
       "whatsapp_sender": {
         ".read": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').child('access').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').val() === true)",
-        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').child('access').val() === true)",
+        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').child('access').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').val() === true)",
         "conversations": {
           "$recipientId": {
+            "metadata": {
+              ".indexOn": ["timestamp"]
+            },
             "messages": {
-              ".indexOn": ["messageId"]
+              ".indexOn": ["messageId", "timestamp"]
             }
           }
         },
-        "message_lookup": {
-          ".read": "auth != null",
-          ".write": "auth != null",
-          ".indexOn": ["timestamp"]
+        "broadcast_logs": {
+          ".indexOn": ["broadcastId", "timestamp"]
         }
       }
     }

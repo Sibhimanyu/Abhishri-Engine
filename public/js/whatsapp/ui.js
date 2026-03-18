@@ -246,8 +246,7 @@ if (!window.whatsAppSender) {
         `;
         if (window.lucide) window.lucide.createIcons();
 
-        // 3. Subscribe to specific messages (Logic moved to main.js / event subscription, but triggered here)
-        // For simplicity, calling the subscription logic directly if available, or implementing it here as it was in original
+        // Subscribe to messages for this conversation.
         this.subscribeToMessages(phoneNumber);
     };
 
@@ -872,7 +871,7 @@ if (!window.whatsAppSender) {
             if (modal) modal.remove();
         }).catch(function (error) {
             console.error('Upload failed:', error);
-            alert('Upload failed: ' + error.message);
+            AppDialog.toast('Upload failed: ' + error.message, 'error');
         }).finally(function () {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="upload" style="width:15px;height:15px;"></i>&nbsp; Upload New Image'; }
             if (window.lucide && btn) window.lucide.createIcons({ root: btn });
@@ -1045,22 +1044,17 @@ if (!window.whatsAppSender) {
         `;
         if (window.lucide) window.lucide.createIcons();
 
-        // Clear existing listener to prevent duplicates pulling double performance
-        if (window.whatsAppSender._historyListener) {
-            firebase.database().ref('modules/whatsapp_sender/broadcast_history')
-                .orderByChild('timestamp')
-                .limitToLast(100)
-                .off('value', window.whatsAppSender._historyListener);
+        // Unsubscribe any existing listener
+        if (window.whatsAppSender._historyUnsubscribe) {
+            window.whatsAppSender._historyUnsubscribe();
         }
 
-        window.whatsAppSender._historyListener = firebase.database().ref('modules/whatsapp_sender/broadcast_history')
-            .orderByChild('timestamp')
-            .limitToLast(100)
-            .on('value', async snapshot => {
-                const logs = [];
-                snapshot.forEach(child => {
-                    logs.push({ id: child.key, ...child.val() });
-                });
+        window.whatsAppSender._historyUnsubscribe = firestore
+            .collection('modules').doc('whatsapp_sender').collection('history')
+            .orderBy('timestamp', 'desc')
+            .limit(100)
+            .onSnapshot(async snapshot => {
+                const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
                 if (logs.length === 0) {
                     tbody.innerHTML = `
@@ -1075,15 +1069,11 @@ if (!window.whatsAppSender) {
                     return;
                 }
 
-                // Sort descending (newest first)
-                logs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
                 // Fetch broadcast logs for each history entry to compute actual status counts
-                // (Optimized: we only fetch deep logs if not actively dispatching to save bandwidth, unless requested)
+                // (Optimized: we only fetch deep logs if not actively dispatching to save bandwidth)
                 const logsWithStatusCounts = await Promise.all(logs.map(async log => {
                     let sent = 0, delivered = 0, read = 0, failed = 0, total = 0;
 
-                    // If it's old and we need deep data, or it's finished
                     if (log.broadcastId && log.status !== 'dispatching') {
                         try {
                             const broadcastLogSnapshot = await firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${log.broadcastId}`).once('value');
@@ -1102,7 +1092,7 @@ if (!window.whatsAppSender) {
                         }
                     }
 
-                    // Fall back to stored values if no broadcast logs or if actively dispatching (to prefer live count)
+                    // Fall back to stored values if no broadcast logs or if actively dispatching
                     if (total === 0 || log.status === 'dispatching') {
                         total = log.recipientsCount || log.successCount || 0;
                         sent = log.sentCount || 0;
@@ -1115,7 +1105,8 @@ if (!window.whatsAppSender) {
                 }));
 
                 tbody.innerHTML = logsWithStatusCounts.map(log => {
-                    const date = new Date(log.timestamp).toLocaleString();
+                    const ts = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
+                    const date = ts.toLocaleString();
                     const audience = log.listName || log.listId || 'Unknown List';
                     const campaignName = log.campaignName || 'Untitled Broadcast';
                     const templateName = log.template || log.message || '—';
@@ -1200,314 +1191,6 @@ if (!window.whatsAppSender) {
             });
     };
 
-    window.whatsAppSender.viewBroadcastDetails = async function (broadcastId, logId) {
-        if (!broadcastId) {
-            AppDialog.toast('Old broadcast records do not support detailed view.', 'info');
-            return;
-        }
-
-        const container = document.getElementById('whatsapp-content-history');
-        if (!container) return;
-
-        // Show loading state
-        container.innerHTML = `
-            <div style="display:flex; justify-content:center; align-items:center; min-height:400px; color:var(--text-dim);">
-                <i data-lucide="loader" style="width:24px;height:24px;animation:spin 1s linear infinite;margin-right:12px;"></i> Generating your premium report...
-            </div>
-        `;
-        if (window.lucide) window.lucide.createIcons();
-
-        // Fetch the broadcast meta from history
-        let broadcastMeta = {};
-        try {
-            const historySnap = await firebase.database().ref(`modules/whatsapp_sender/broadcast_history/${logId}`).once('value');
-            broadcastMeta = historySnap.val() || {};
-        } catch (e) { console.error(e); }
-
-        const logRef = firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}`);
-        const snapshot = await logRef.once('value');
-        const recipients = snapshot.val() || {};
-
-        if (Object.keys(recipients).length === 0) {
-            AppDialog.toast('No detailed recipient logs found for this broadcast.', 'info');
-            this.renderHistoryView();
-            return;
-        }
-
-        // Calculate stats
-        let total = 0, delivered = 0, read = 0, failed = 0, sent = 0;
-        let deliveryTimes = [], readTimes = [];
-
-        // Helper to safely format timestamps without showing bogus 5:30 AM defaults
-        const formatTimeSafe = (ts) => {
-            if (!ts) return '--:--';
-            const d = new Date(ts);
-            if (isNaN(d.getTime())) return '--:--';
-            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        };
-
-        const recipientsArray = Object.entries(recipients).map(([phone, data]) => {
-            total++;
-            const status = (data.status || 'unknown').toLowerCase();
-            if (status === 'failed' || status === 'error') failed++;
-            else if (status === 'read') read++;
-            else if (status === 'delivered') delivered++;
-            else if (status === 'sent') sent++;
-
-            if (data.sentAt && data.deliveredAt) deliveryTimes.push(data.deliveredAt - data.sentAt);
-            if (data.sentAt && data.readAt) readTimes.push(data.readAt - data.sentAt);
-
-            return { phone, ...data, status };
-        });
-
-        const formatStatusTimeLabel = (m) => {
-            if (m.readAt) return 'Read: ' + formatTimeSafe(m.readAt);
-            if (m.deliveredAt) return 'Delivered: ' + formatTimeSafe(m.deliveredAt);
-            const baseTs = m.sentAt || broadcastMeta.timestamp;
-            if (baseTs) return 'Sent: ' + formatTimeSafe(baseTs);
-            return '--:--';
-        };
-
-        const dateStr = broadcastMeta.timestamp ? new Date(broadcastMeta.timestamp).toLocaleString() : 'Unknown Date';
-        const campaignName = broadcastMeta.campaignName || broadcastMeta.message || 'Broadcast Report';
-        const audienceName = broadcastMeta.listName || broadcastMeta.listId || 'Unknown Audience';
-        const templateName = broadcastMeta.template || broadcastMeta.message || '—';
-
-        // Compute cumulative stats for display
-        const displayRead = read;
-        const displayDelivered = delivered + read;
-        const displaySent = sent + delivered + read;
-        const displayFailed = failed;
-
-        // Compute percentages based on cumulative stats
-        const readPct = total > 0 ? Math.round((displayRead / total) * 100) : 0;
-        const deliveredPct = total > 0 ? Math.round((displayDelivered / total) * 100) : 0;
-        const sentPct = total > 0 ? Math.round((displaySent / total) * 100) : 0;
-        const failedPct = total > 0 ? Math.round((displayFailed / total) * 100) : 0;
-
-        // Donut chart logic (Keep segments exclusive for visualization)
-        const segments = [];
-        let cumulative = 0;
-        if (read > 0) segments.push({ pct: (read / total) * 100, color: '#25d366' });
-        if (delivered > 0) segments.push({ pct: (delivered / total) * 100, color: '#3b82f6' });
-        if (sent > 0) segments.push({ pct: (sent / total) * 100, color: '#38bdf8' });
-        if (failed > 0) segments.push({ pct: (failed / total) * 100, color: '#ef4444' });
-
-        const gradientParts = segments.map(seg => {
-            const part = `${seg.color} ${cumulative}% ${cumulative + seg.pct}%`;
-            cumulative += seg.pct;
-            return part;
-        });
-        const donutGradient = gradientParts.length > 0 ? `conic-gradient(${gradientParts.join(', ')})` : 'conic-gradient(var(--border) 0% 100%)';
-
-        const formatDuration = (ms) => {
-            if (ms < 1000) return `${ms}ms`;
-            if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-            return `${(ms / 60000).toFixed(1)}m`;
-        };
-        const avgDeliveryTime = deliveryTimes.length > 0 ? formatDuration(deliveryTimes.reduce((a, b) => a + b, 0) / deliveryTimes.length) : '—';
-        const avgReadTime = readTimes.length > 0 ? formatDuration(readTimes.reduce((a, b) => a + b, 0) / readTimes.length) : '—';
-
-        container.innerHTML = `
-            <div class="wa-history-page wa-report-container">
-                <!-- Header -->
-                <div class="wa-lists-header" style="border-bottom:1px solid var(--card-border); padding-bottom:16px; margin-bottom:20px;">
-                    <div style="display:flex;align-items:center;gap:12px;">
-                        <button class="btn-icon" onclick="window.whatsAppSender.renderHistoryView()" title="Back to History" style="background:var(--card-bg);">
-                            <i data-lucide="arrow-left" style="width:18px;height:18px;"></i>
-                        </button>
-                        <div>
-                            <div style="font-size:1.3rem;font-weight:700;color:var(--text-main); letter-spacing:-0.02em;">${campaignName}</div>
-                            <div style="font-size:0.85rem;color:var(--text-dim);margin-top:6px; display:flex; flex-wrap:wrap; gap:16px; align-items:center;">
-                                <span style="display:flex;align-items:center;gap:4px;"><i data-lucide="calendar" style="width:14px;height:14px;"></i>${dateStr}</span>
-                                <span style="display:flex;align-items:center;gap:4px;"><i data-lucide="users" style="width:14px;height:14px;"></i>${audienceName}</span>
-                                <span style="color:var(--accent); font-family:monospace; background:rgba(var(--accent-rgb),0.1); padding:2px 8px; border-radius:4px; font-weight:600;">
-                                    <i data-lucide="layout-template" style="width:12px;height:12px;margin-right:4px;"></i>${templateName}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    <button class="btn btn-secondary" onclick="window.whatsAppSender.viewBroadcastDetails('${broadcastId}', '${logId}')">
-                        <i data-lucide="refresh-cw" style="width:14px;height:14px;margin-right:6px;"></i> Refresh
-                    </button>
-                </div>
-
-                <!-- Analytics Dashboard -->
-                <div style="display:grid; grid-template-columns: 200px 1fr; gap:32px; margin-bottom:32px; align-items:center;">
-                    
-                    <!-- Donut Chart -->
-                    <div style="display:flex; flex-direction:column; align-items:center; gap:12px;">
-                        <div style="width:160px; height:160px; border-radius:50%; background:${donutGradient}; display:flex; align-items:center; justify-content:center; position:relative; box-shadow: 0 0 40px rgba(0,0,0,0.3);">
-                            <div class="wa-donut-inner" style="width:110px; height:110px; border-radius:50%; background:var(--bg-color); display:flex; align-items:center; justify-content:center; flex-direction:column; border: 1px solid rgba(255,255,255,0.05);">
-                                <span style="font-size:2rem; font-weight:800; color:var(--text-main); line-height:1;">${total}</span>
-                                <span style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-top:4px;">Recipients</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Stats Cards Grid -->
-                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:16px;">
-                        <div class="wa-stat-card">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                                <span style="font-size:0.85rem; color:#25d366; font-weight:600;">Open Rate</span>
-                                <span style="font-size:0.75rem; color:#25d366; background:rgba(37,211,102,0.15); padding:2px 8px; border-radius:10px;">${readPct}%</span>
-                            </div>
-                            <div style="font-size:1.8rem; font-weight:700; color:var(--text-main);">${displayRead}</div>
-                            <div style="margin-top:12px; height:4px; background:rgba(37,211,102,0.1); border-radius:2px; overflow:hidden;">
-                                <div style="height:100%; width:${readPct}%; background:#25d366; box-shadow: 0 0 10px #25d366;"></div>
-                            </div>
-                        </div>
-                        <div class="wa-stat-card">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                                <span style="font-size:0.85rem; color:#3b82f6; font-weight:600;">Delivered</span>
-                                <span style="font-size:0.75rem; color:#3b82f6; background:rgba(59,130,246,0.15); padding:2px 8px; border-radius:10px;">${deliveredPct}%</span>
-                            </div>
-                            <div style="font-size:1.8rem; font-weight:700; color:var(--text-main);">${displayDelivered}</div>
-                            <div style="margin-top:12px; height:4px; background:rgba(59,130,246,0.1); border-radius:2px; overflow:hidden;">
-                                <div style="height:100%; width:${deliveredPct}%; background:#3b82f6; box-shadow: 0 0 10px #3b82f6;"></div>
-                            </div>
-                        </div>
-                        <div class="wa-stat-card">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                                <span style="font-size:0.85rem; color:#ef4444; font-weight:600;">Failed</span>
-                                <span style="font-size:0.75rem; color:#ef4444; background:rgba(239,68,68,0.15); padding:2px 8px; border-radius:10px;">${failedPct}%</span>
-                            </div>
-                            <div style="font-size:1.8rem; font-weight:700; color:var(--text-main);">${displayFailed}</div>
-                            <div style="margin-top:12px; height:4px; background:rgba(239,68,68,0.1); border-radius:2px; overflow:hidden;">
-                                <div style="height:100%; width:${failedPct}%; background:#ef4444; box-shadow: 0 0 10px #ef4444;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Performance Metrics -->
-                <div style="display:flex; gap:16px; margin-bottom:32px; flex-wrap:wrap;">
-                    <div style="background:var(--wa-report-surface); padding:16px 24px; border-radius:16px; border:1px solid rgba(255,255,255,0.06); display:flex; align-items:center; gap:12px; flex:1; min-width:200px;">
-                        <div style="width:36px; height:36px; border-radius:10px; background:rgba(245,158,11,0.1); display:flex; align-items:center; justify-content:center; color:#f59e0b;">
-                            <i data-lucide="zap" style="width:20px;height:20px;"></i>
-                        </div>
-                        <div>
-                            <div style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Avg Delivery</div>
-                            <div style="font-size:1.2rem; font-weight:700; color:var(--text-main);">${avgDeliveryTime}</div>
-                        </div>
-                    </div>
-                    <div style="background:var(--wa-report-surface); padding:16px 24px; border-radius:16px; border:1px solid rgba(255,255,255,0.06); display:flex; align-items:center; gap:12px; flex:1; min-width:200px;">
-                        <div style="width:36px; height:36px; border-radius:10px; background:rgba(168,85,247,0.1); display:flex; align-items:center; justify-content:center; color:#a855f7;">
-                            <i data-lucide="eye" style="width:20px;height:20px;"></i>
-                        </div>
-                        <div>
-                            <div style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Avg Read</div>
-                            <div style="font-size:1.2rem; font-weight:700; color:var(--text-main);">${avgReadTime}</div>
-                        </div>
-                    </div>
-                    <div style="background:var(--wa-report-surface); padding:16px 24px; border-radius:16px; border:1px solid rgba(255,255,255,0.06); display:flex; align-items:center; gap:12px; flex:1; min-width:200px;">
-                        <div style="width:36px; height:36px; border-radius:10px; background:rgba(37,211,102,0.1); display:flex; align-items:center; justify-content:center; color:#25d366;">
-                            <i data-lucide="check-check" style="width:20px;height:20px;"></i>
-                        </div>
-                        <div>
-                            <div style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Reach Rate</div>
-                            <div style="font-size:1.2rem; font-weight:700; color:var(--text-main);">${total > 0 ? Math.round((displayDelivered / total) * 100) : 0}%</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Filters and Search -->
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
-                    <div style="display:flex; gap:10px;" id="wa-report-filters">
-                        <button class="btn btn-secondary wa-filter-btn wa-filter-active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')" style="padding:6px 16px; border-radius:30px;">All</button>
-                        <button class="btn btn-secondary wa-filter-btn" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')" style="padding:6px 16px; border-radius:30px; border-color:rgba(168,85,247,0.3); color:#a855f7;">Read</button>
-                        <button class="btn btn-secondary wa-filter-btn" data-filter="delivered" onclick="window.whatsAppSender._filterReportRows('delivered')" style="padding:6px 16px; border-radius:30px; border-color:rgba(59,130,246,0.3); color:#3b82f6;">Delivered</button>
-                        <button class="btn btn-secondary wa-filter-btn" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')" style="padding:6px 16px; border-radius:30px; border-color:rgba(239,68,68,0.3); color:#ef4444;">Failed</button>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:16px;">
-                        <div style="position:relative;">
-                            <i data-lucide="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--text-dim);"></i>
-                            <input type="text" id="wa-report-search" placeholder="Search phone number..." oninput="window.whatsAppSender._applyReportFilters()" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:8px 16px 8px 36px; color:var(--text-main); font-size:0.85rem; outline:none; width:220px; transition:border-color 0.3s;" onfocus="this.style.borderColor='rgba(255,255,255,0.3)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
-                        </div>
-                        <div style="font-size:0.85rem; color:var(--text-dim); font-weight:500;" id="wa-report-count">Showing ${total} Recipients</div>
-                    </div>
-                </div>
-
-                <!-- Recipient Detail Cards -->
-                <div id="wa-report-recipients" style="display:grid; grid-template-columns: 1fr; gap:12px;">
-                    ${recipientsArray.map((m) => {
-            const statusColors = { read: '#a855f7', delivered: '#3b82f6', sent: '#38bdf8', failed: '#ef4444', error: '#ef4444' };
-            const statusIcons = { read: 'eye', delivered: 'check', sent: 'clock', failed: 'alert-circle', error: 'alert-circle' };
-            const color = statusColors[m.status] || 'var(--text-dim)';
-            const icon = statusIcons[m.status] || 'circle';
-            const variables = Array.isArray(m.variables) ? m.variables.join(', ') : (m.variables || '');
-
-            return `
-                <div class="wa-report-row" data-status="${m.status}" style="position:relative; overflow:hidden;">
-                    <div class="wa-status-stripe" style="background:${color}; box-shadow: 0 0 10px ${color}88;"></div>
-                    <div style="display:flex; align-items:center; padding:18px 24px; cursor:pointer; gap:20px;" 
-                         onclick="this.parentElement.classList.toggle('wa-row-expanded'); const exp = this.nextElementSibling; exp.style.display = exp.style.display === 'none' ? 'block' : 'none';">
-                        
-                        <div style="width:40px; height:40px; border-radius:12px; background:${color}15; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                            <i data-lucide="${icon}" style="width:20px;height:20px;color:${color};"></i>
-                        </div>
-
-                        <div style="flex:1;">
-                            <div class="wa-phone-number" style="font-weight:700; font-family:monospace; font-size:1.05rem; color:var(--text-main); letter-spacing:0.5px;">+${m.phone.replace(/\D/g, '')}</div>
-                            <button class="btn btn-secondary" style="margin-top:6px; padding:4px 10px; font-size:0.7rem; border-radius:12px; opacity:0.8; height:auto; line-height:1;" onclick="event.stopPropagation(); window.whatsAppSender.lookupNameInLists('${m.phone.replace(/\D/g, '')}', this)">
-                                <i data-lucide="search" style="width:12px;height:12px;margin-right:4px;display:inline-block;vertical-align:middle;"></i><span style="vertical-align:middle;">Lookup Name</span>
-                            </button>
-                        </div>
-
-                        <div style="text-align:right;">
-                            <div style="color:${color}; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:1px; background:${color}11; padding:4px 12px; border-radius:8px;">${m.status}</div>
-                            <div style="font-size:0.7rem; color:var(--text-dim); margin-top:6px;">${formatStatusTimeLabel(m)}</div>
-                        </div>
-
-                        <i data-lucide="chevron-down" style="width:18px;height:18px;color:var(--text-dim);flex-shrink:0;transition:transform 0.3s;" class="wa-chevron"></i>
-                    </div>
-
-                    <div class="wa-report-details" style="display:none; padding:0 24px 24px 84px; border-top:1px solid rgba(255,255,255,0.04); background:rgba(0,0,0,0.1);">
-                        <!-- Detailed Pipeline -->
-                        <div style="display:flex; align-items:flex-start; gap:0; padding-top:24px; margin-bottom:24px;">
-                            ${['sent', 'delivered', 'read'].map((step, si) => {
-                const ts = step === 'sent' ? m.sentAt : step === 'delivered' ? m.deliveredAt : m.readAt;
-                const active = !!ts;
-                const stepColor = active ? statusColors[step] : 'var(--border)';
-                return `
-                                    <div class="wa-pipeline-step ${active ? 'active' : ''}" style="flex:1; display:flex; flex-direction:column; align-items:center; position:relative; color:${stepColor};">
-                                        <div class="wa-step-circle" style="width:12px; height:12px; border-radius:50%; background:${active ? 'currentColor' : 'transparent'}; border:2px solid ${active ? 'currentColor' : 'var(--border)'}; z-index:2;"></div>
-                                        <span style="font-size:0.75rem; font-weight:700; margin-top:8px; text-transform:uppercase; letter-spacing:0.5px;">${step}</span>
-                                        <span style="font-size:0.65rem; opacity:0.6; margin-top:4px;">${formatTimeSafe(ts)}</span>
-                                    </div>
-                                    ${si < 2 ? `<div style="flex:1; height:2px; background:${(m.status === 'failed' || m.status === 'error') && si === 0 ? 'var(--wa-failed)' : active ? statusColors[step] : 'var(--border)'}; margin-top:5px; opacity:0.3;"></div>` : ''}
-                                `;
-            }).join('')}
-                        </div>
-
-                        ${(m.status === 'failed' || m.status === 'error') ? `
-                            <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:12px; padding:16px;">
-                                <div style="display:flex; align-items:center; gap:8px; color:#ef4444; margin-bottom:8px;">
-                                    <i data-lucide="alert-triangle" style="width:18px;height:18px;"></i>
-                                    <span style="font-weight:700;">Delivery Failed</span>
-                                </div>
-                                <div style="font-size:0.85rem; color:#fca5a5; line-height:1.5;">${m.error || m.errorInfo?.details || 'Unknown error occurred. Please check your template configuration or recipient number.'}</div>
-                                ${m.errorInfo?.href ? `<a href="${m.errorInfo.href}" target="_blank" style="display:inline-block; margin-top:10px; font-size:0.75rem; color:#38bdf8; text-decoration:none;">Learn more in documentation →</a>` : ''}
-                            </div>
-                        ` : `
-                            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                                ${m.conversationInfo?.originType ? `<span style="background:rgba(168,85,247,0.1); color:#a855f7; border:1px solid rgba(168,85,247,0.2); padding:4px 12px; border-radius:8px; font-size:0.7rem; font-weight:600;">${m.conversationInfo.originType.replace(/_/g, ' ')}</span>` : ''}
-                                ${m.billingCategory ? `<span style="background:rgba(59,130,246,0.1); color:#3b82f6; border:1px solid rgba(59,130,246,0.2); padding:4px 12px; border-radius:8px; font-size:0.7rem; font-weight:600;">${m.billingCategory}</span>` : ''}
-                                ${m.pricingModel ? `<span style="background:rgba(245,158,11,0.1); color:#f59e0b; border:1px solid rgba(245,158,11,0.2); padding:4px 12px; border-radius:8px; font-size:0.7rem; font-weight:600;">${m.pricingModel}</span>` : ''}
-                            </div>
-                        `}
-                    </div>
-                </div>
-            `;
-        }).join('')}
-                </div>
-            </div>
-        `;
-
-        if (window.lucide) window.lucide.createIcons();
-    };
-
-    // Set active filter button, then apply filters
     window.whatsAppSender._filterReportRows = function (status) {
         document.querySelectorAll('.wa-filter-btn').forEach(btn => {
             if (btn.getAttribute('data-filter') === status) {
@@ -1670,7 +1353,9 @@ if (!window.whatsAppSender) {
             </div>
         `;
         if (window.lucide) window.lucide.createIcons();
-        this.loadLists();
+        // Note: lists are kept current by the loadLists() listener started in initialize().
+        // renderLists() will be called automatically when this.lists updates.
+        this.renderLists();
     };
 
     window.whatsAppSender.scanListDuplicates = function (btnElement) {
@@ -2048,37 +1733,209 @@ if (!window.whatsAppSender) {
     };
 
 
-    window.whatsAppSender.stopBroadcast = async function (logId) {
-        if (!logId) return;
+    window.whatsAppSender.viewBroadcastDetails = async function (broadcastId, logId) {
+        this.switchView('history'); // Ensure redirection to history tab
+        const container = document.getElementById('whatsapp-content-history');
+        if (!container) return;
+        container.innerHTML = `
+            <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:400px; color:var(--text-dim); gap:20px;">
+                <i data-lucide="loader" style="width:40px;height:40px;animation:spin 1s linear infinite;"></i>
+                <h3>Syncing Live Report...</h3>
+            </div>`;
+        if (window.lucide) window.lucide.createIcons();
 
-        const confirmStop = await new Promise(resolve => {
-            if (window.AppDialog && window.AppDialog.confirm) {
-                window.AppDialog.confirm({
-                    title: 'Stop Broadcast?',
-                    message: 'This will prevent any further messages from being sent in this campaign. Are you sure?',
-                    confirmText: 'Yes, Stop Now',
-                    cancelText: 'Cancel',
-                    type: 'danger',
-                    onConfirm: () => resolve(true),
-                    onCancel: () => resolve(false)
-                });
-            } else {
-                resolve(confirm('Stop this broadcast? No more messages will be sent.'));
-            }
+        let meta = {}, recipients = {};
+        if (this._historyDetailsUnsubscribe) this._historyDetailsUnsubscribe();
+        if (this._logsDetailsUnsubscribe) this._logsDetailsUnsubscribe();
+
+        this._historyDetailsUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId)
+            .onSnapshot(doc => { 
+                meta = doc.data() || {}; 
+                this.renderBroadcastDetails(broadcastId, logId, meta, recipients); 
+            });
+
+        const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
+        const query = logsRef.orderByChild('broadcastId').equalTo(broadcastId);
+        const listener = query.on('value', snap => { 
+            recipients = snap.val() || {}; 
+            this.renderBroadcastDetails(broadcastId, logId, meta, recipients); 
+        }, err => {
+            console.error(err);
+            AppDialog.toast('Error loading recipient logs.', 'error');
+        });
+        this._logsDetailsUnsubscribe = () => query.off('value', listener);
+    };
+
+    window.whatsAppSender.renderBroadcastDetails = function (broadcastId, logId, meta, recipients) {
+        const container = document.getElementById('whatsapp-content-history');
+        if (!container) return;
+        
+        if (!container.querySelector('.wa-report-container') || container.getAttribute('data-active-report') !== logId) {
+            container.setAttribute('data-active-report', logId);
+            this._renderReportSkeleton(container, broadcastId, logId, meta);
+        }
+
+        const recipientsArray = Object.values(recipients).sort((a,b) => (a.timestamp||0)-(b.timestamp||0));
+        let sent = 0, read = 0, deliv = 0, fail = 0, total = recipientsArray.length;
+        let dTimes = [], rTimes = [];
+        const baseTs = meta.timestamp?.toMillis ? meta.timestamp.toMillis() : (typeof meta.timestamp === 'number' ? meta.timestamp : null);
+
+        recipientsArray.forEach(m => {
+            const status = (m.status || 'unknown').toLowerCase();
+            if (status === 'failed' || status === 'error') fail++;
+            else if (status === 'read') read++;
+            else if (status === 'delivered') deliv++;
+            else if (status === 'sent') sent++;
+
+            if (baseTs && m.timestamp && !['sent','failed','pending','excluded'].includes(status)) dTimes.push(m.timestamp - baseTs);
+            if (baseTs && m.timestamp && status === 'read') rTimes.push(m.timestamp - baseTs);
         });
 
-        if (!confirmStop) return;
+        this._updateReportLiveProgress(meta);
+        this._updateReportStatsDashboard(total, sent, deliv, read, fail, dTimes, rTimes);
+        this._updateRecipientRowsList(recipientsArray);
 
-        try {
-            await firebase.database().ref(`modules/whatsapp_sender/broadcast_history/${logId}`).update({
-                stopRequested: true
-            });
-            if (window.AppDialog && window.AppDialog.toast) {
-                window.AppDialog.toast('Stop signal sent. Broadcaster will exit soon.', 'info');
+        if (window.lucide) window.lucide.createIcons({ root: container });
+    };
+
+    window.whatsAppSender._renderReportSkeleton = function (container, broadcastId, logId, meta) {
+        const dateStr = meta.timestamp ? (meta.timestamp.toDate ? meta.timestamp.toDate() : new Date(meta.timestamp)).toLocaleString() : '—';
+        container.innerHTML = `
+            <div class="wa-report-container" style="padding:24px;">
+                <div class="wa-lists-header" style="margin-bottom:24px; border-bottom:1px solid var(--border); padding-bottom:16px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <button class="btn-icon" onclick="window.whatsAppSender.renderHistoryView()"><i data-lucide="arrow-left"></i></button>
+                        <div>
+                            <h2 id="wa-report-title" style="margin:0; font-size:1.4rem; color:var(--text-main);">${meta.campaignName || 'Report'}</h2>
+                            <div style="font-size:0.85rem; color:var(--text-dim); margin-top:4px;">${dateStr} • ${meta.listName || 'Audience'}</div>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="window.whatsAppSender.viewBroadcastDetails('${broadcastId}', '${logId}')"><i data-lucide="refresh-cw" style="width:14px;height:14px;margin-right:6px;"></i> Refresh</button>
+                </div>
+                <div id="wa-live-progress-mount"></div>
+                <div id="wa-report-dashboard-mount"></div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn btn-secondary wa-filter-btn wa-filter-active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')">All</button>
+                        <button class="btn btn-secondary wa-filter-btn" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')">Read</button>
+                        <button class="btn btn-secondary wa-filter-btn" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')">Failed</button>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <input type="text" id="wa-report-search" placeholder="Search phone..." oninput="window.whatsAppSender._applyReportFilters()" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:6px 16px; color:var(--text-main); font-size:0.85rem; outline:none; width:180px;">
+                        <div id="wa-report-count" style="font-size:0.85rem; color:var(--text-dim);"></div>
+                    </div>
+                </div>
+                <div id="wa-report-recipients-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:20px;"></div>
+            </div>`;
+    };
+
+    window.whatsAppSender._updateReportLiveProgress = function (meta) {
+        const mount = document.getElementById('wa-live-progress-mount');
+        if (!mount) return;
+        if (meta.status !== 'dispatching') { mount.innerHTML = ''; return; }
+        const cPct = Math.round(((meta.processedContactsCount || 0) / (meta.contactsCount || 1)) * 100);
+        const nPct = Math.round(((meta.processedNumbersCount || 0) / (meta.recipientsCount || 1)) * 100);
+        mount.innerHTML = `
+            <div style="background:rgba(59,130,246,0.05); border:1px solid rgba(59,130,246,0.2); border-radius:16px; padding:20px; margin-bottom:32px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div>
+                        <div style="font-weight:700; color:#3b82f6; display:flex; align-items:center; gap:8px;"><i data-lucide="radio" class="animation-pulse"></i> Actively Dispatching...</div>
+                        <div style="font-size:0.8rem; color:var(--text-dim); margin-top:4px;">Current: <strong style="color:var(--text-main);">${meta.currentContactName || '...'}</strong></div>
+                    </div>
+                    <button class="btn btn-danger btn-sm" onclick="window.whatsAppSender.stopBroadcast('${meta.broadcastId}')">Stop</button>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                    <div>
+                        <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:4px; text-transform:uppercase;">Contacts Reached</div>
+                        <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;"><div style="height:100%; background:#3b82f6; width:${cPct}%;"></div></div>
+                        <div style="font-size:0.7rem; margin-top:4px;">${meta.processedContactsCount || 0}/${meta.contactsCount || 0}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:0.7rem; color:var(--text-dim); margin-bottom:4px; text-transform:uppercase;">Numbers Processed</div>
+                        <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;"><div style="height:100%; background:#38bdf8; width:${nPct}%;"></div></div>
+                        <div style="font-size:0.7rem; margin-top:4px;">${meta.processedNumbersCount || 0}/${meta.recipientsCount || 0}</div>
+                    </div>
+                </div>
+            </div>`;
+    };
+
+    window.whatsAppSender._updateReportStatsDashboard = function (total, sent, deliv, read, fail, dTimes, rTimes) {
+        const mount = document.getElementById('wa-report-dashboard-mount');
+        if (!mount) return;
+        const readPct = total > 0 ? Math.round((read/total)*100) : 0;
+        const delivPct = total > 0 ? Math.round(((deliv+read)/total)*100) : 0;
+        mount.innerHTML = `
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:32px;">
+                <div class="wa-stat-card"><div style="color:#a855f7; font-size:0.7rem; font-weight:800; text-transform:uppercase;">OPEN RATE</div><div style="font-size:1.8rem; font-weight:800; color:var(--text-main);">${readPct}%</div></div>
+                <div class="wa-stat-card"><div style="color:#3b82f6; font-size:0.7rem; font-weight:800; text-transform:uppercase;">DELIVERY</div><div style="font-size:1.8rem; font-weight:800; color:var(--text-main);">${delivPct}%</div></div>
+                <div class="wa-stat-card"><div style="color:#38bdf8; font-size:0.7rem; font-weight:800; text-transform:uppercase;">TOTAL SENT</div><div style="font-size:1.8rem; font-weight:800; color:var(--text-main);">${sent+deliv+read}</div></div>
+                <div class="wa-stat-card"><div style="color:#ef4444; font-size:0.7rem; font-weight:800; text-transform:uppercase;">FAILED</div><div style="font-size:1.8rem; font-weight:800; color:${fail>0?'#ef4444':'var(--text-main)'};">${fail}</div></div>
+            </div>`;
+        const countEl = document.getElementById('wa-report-count');
+        if (countEl) countEl.innerText = `Detailed Log: ${total} entries`;
+    };
+
+    window.whatsAppSender._updateRecipientRowsList = function (recipients) {
+        const grid = document.getElementById('wa-report-recipients-grid');
+        if (!grid) return;
+        const colors = { read: '#a855f7', delivered: '#3b82f6', sent: '#38bdf8', pending: '#94a3b8', failed: '#ef4444', error: '#ef4444', excluded: '#94a3b8' };
+        
+        recipients.forEach(m => {
+            const cleanPhone = String(m.phone || m.recipientId || '').replace(/\D/g, '');
+            const rowId = `wa-row-${m.messageId ? m.messageId.replace(/[.#$/[\]]/g, "_") : cleanPhone}`;
+            let row = document.getElementById(rowId);
+            if (!row) {
+                row = document.createElement('div');
+                row.id = rowId;
+                row.className = 'wa-report-item';
+                grid.appendChild(row);
             }
-        } catch (e) {
-            console.error('Failed to send stop signal:', e);
-            alert('Failed to stop broadcast: ' + e.message);
-        }
+            if (row.getAttribute('data-status') === m.status && row.getAttribute('data-updated') === String(m.timestamp)) return;
+            row.setAttribute('data-status', m.status);
+            row.setAttribute('data-updated', String(m.timestamp));
+            const color = colors[m.status] || 'gray';
+            
+            row.innerHTML = `
+                <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; padding:20px; position:relative; overflow:hidden;">
+                    <div style="position:absolute; top:0; left:0; width:4px; height:100%; background:${color};"></div>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                        <div>
+                            <div style="font-weight:700; color:var(--text-main); font-size:1rem;">${m.name || 'Unknown'}</div>
+                            <div style="font-size:0.8rem; color:var(--text-dim); font-family:monospace;">+${cleanPhone}</div>
+                        </div>
+                        <div style="background:${color}; color:white; font-size:0.65rem; font-weight:800; padding:4px 10px; border-radius:8px; text-transform:uppercase;">${m.status}</div>
+                    </div>
+                    ${m.statusHistory ? `
+                        <div style="margin-bottom:16px; display:flex; flex-direction:column; gap:6px;">
+                            ${Object.values(m.statusHistory).map(h => h.error ? `<div style="font-size:0.75rem; color:#fca5a5; padding:8px 12px; background:rgba(239,68,68,0.1); border-radius:8px; border:1px solid rgba(239,68,68,0.2); display:flex; align-items:center; gap:8px;"><i data-lucide="alert-circle" style="width:12px;height:12px;"></i> <span>[${h.status.toUpperCase()}]: ${h.error}</span></div>` : '').join('')}
+                        </div>` : (m.error ? `<div style="color:#ef4444; font-size:0.75rem; padding:8px 12px; background:rgba(239,68,68,0.08); border-radius:8px; border:1px solid rgba(239,68,68,0.15); margin-bottom:16px;">${m.error}</div>` : '')}
+                    
+                    <div style="display:flex; align-items:flex-start; gap:0; padding-top:16px; margin-top:16px; border-top:1px solid rgba(255,255,255,0.03);">
+                        ${['sent', 'delivered', 'read'].map((step, si) => {
+                            const ts = step === 'sent' ? m.sentAt : step === 'delivered' ? m.deliveredAt : m.readAt;
+                            const active = !!ts;
+                            const stepColor = active ? colors[step] : 'var(--border)';
+                            return `
+                                <div class="wa-pipeline-step" style="flex:1; display:flex; flex-direction:column; align-items:center; color:${stepColor}; opacity: ${active ? '1' : '0.3'}">
+                                    <div style="width:8px; height:8px; border-radius:50%; background:${active ? 'currentColor' : 'transparent'}; border:1px solid ${active ? 'currentColor' : 'var(--border)'};"></div>
+                                    <span style="font-size:0.6rem; font-weight:700; margin-top:6px; text-transform:uppercase;">${step}</span>
+                                    <span style="font-size:0.55rem; margin-top:2px;">${ts ? new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
+                                </div>
+                                ${si < 2 ? `<div style="flex:1; height:1px; background:var(--border); margin-top:4px; opacity:0.1;"></div>` : ''}
+                            `;
+                        }).join('')}
+                    </div>
+                </div>`;
+        });
+    };
+
+    window.whatsAppSender.stopBroadcast = async function (logId) {
+        if (!logId) return;
+        const confirmStop = await AppDialog.confirm('Stop this broadcast? This will prevent any further messages from being sent.');
+        if (!confirmStop) return;
+        try {
+            await firebase.database().ref(`modules/whatsapp_sender/broadcast_history/${logId}`).update({ stopRequested: true });
+            AppDialog.toast('Stop signal sent.', 'info');
+        } catch (e) { AppDialog.toast('Failed to stop: ' + e.message, 'error'); }
     };
 }

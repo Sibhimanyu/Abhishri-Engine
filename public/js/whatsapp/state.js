@@ -20,9 +20,6 @@ window.whatsAppSender = {
     // Configuration
     config: null,
 
-    // Listeners (to be managed)
-    configListener: null,
-    currentMessageListener: null
 };
 
 

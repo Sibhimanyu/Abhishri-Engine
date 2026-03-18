@@ -20,29 +20,35 @@ if (!window.whatsAppSender) {
     // --- Subscriptions ---
 
     window.whatsAppSender.subscribe = function () {
-        // 1. Subscribe to Configuration
-        if (this.configListener) {
-            firebase.database().ref('modules/whatsapp_sender/config').off('value', this.configListener);
-        }
+        // 1. Subscribe to Configuration in Firestore
+        if (this._configUnsubscribe) this._configUnsubscribe();
 
-        const configRef = firebase.database().ref('modules/whatsapp_sender/config');
-        this.configListener = configRef.on('value', (snapshot) => {
-            this.config = snapshot.val();
-            if (this.config && this.config.apiKey && this.config.wabaId) {
-                this.fetchTemplates();
-            }
-            this.render();
-        });
+        this._configUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('config').doc('main')
+            .onSnapshot((doc) => {
+                this.config = doc.data();
+                this.render();
+            });
 
-        // 2. Subscribe to Conversations (Metadata only)
-        const conversationsRef = firebase.database().ref('modules/whatsapp_sender/conversations');
-        conversationsRef.on('value', (snapshot) => {
+        // 2. Subscribe to Templates in Firestore
+        if (this._templatesUnsubscribe) this._templatesUnsubscribe();
+        this._templatesUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('templates')
+            .onSnapshot((snapshot) => {
+                this.templates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (this.currentView === 'broadcast' && typeof this.renderBroadcastView === 'function') {
+                    this.renderBroadcastView();
+                }
+            });
+
+        // 3. Subscribe to Conversations (Metadata from RTDB)
+        if (this._convosUnsubscribe) this._convosUnsubscribe();
+        
+        const convosRef = firebase.database().ref('modules/whatsapp_sender/conversations');
+        const listener = convosRef.on('value', (snapshot) => {
             const data = snapshot.val() || {};
-            // Process conversations: object { phone: { metadata: {}, messages: {} } }
             this.conversations = {};
-            Object.entries(data).forEach(([phone, content]) => {
-                if (content.metadata) {
-                    this.conversations[phone] = content.metadata;
+            Object.entries(data).forEach(([key, val]) => {
+                if (val.metadata) {
+                    this.conversations[val.metadata.phoneNumber || key] = val.metadata;
                 }
             });
 
@@ -50,33 +56,36 @@ if (!window.whatsAppSender) {
                 this.renderConversationList();
             }
         });
+        this._convosUnsubscribe = () => convosRef.off('value', listener);
     };
 
     window.whatsAppSender.subscribeToMessages = function (phoneNumber) {
-        // 3. Subscribe to specific messages
-        const messagesRef = firebase.database().ref(`modules/whatsapp_sender/conversations/${phoneNumber}/messages`).limitToLast(50);
+        if (this._messagesUnsubscribe) this._messagesUnsubscribe();
 
-        // Remove previous listener on messages if exists
-        if (this.currentMessageListener) {
-            this.currentMessageListener.ref.off('value', this.currentMessageListener.callback);
-        }
-
-        const callback = (snapshot) => {
-            const data = snapshot.val() || {};
-            this.activeMessages = Object.entries(data).map(([key, val]) => ({ key, ...val }));
+        const safeKey = phoneNumber.replace(/[.#$/[\]]/g, '_');
+        const messagesRef = firebase.database().ref(`modules/whatsapp_sender/conversations/${safeKey}/messages`);
+        
+        const listener = messagesRef.orderByChild('timestamp').limitToLast(50).on('value', (snapshot) => {
+            const messages = [];
+            snapshot.forEach(child => {
+                messages.push({ key: child.key, ...child.val() });
+            });
+            this.activeMessages = messages;
             this.renderMessages();
-            // Reset unread count
-            firebase.database().ref(`modules/whatsapp_sender/conversations/${phoneNumber}/metadata/unreadCount`).set(0);
-        };
+            
+            // Reset unread count in RTDB
+            firebase.database().ref(`modules/whatsapp_sender/conversations/${safeKey}/metadata`).update({ unreadCount: 0 }).catch(() => {});
+        });
 
-        messagesRef.on('value', callback);
-        this.currentMessageListener = { ref: messagesRef, callback };
+        this._messagesUnsubscribe = () => messagesRef.off('value', listener);
     };
 
     window.whatsAppSender.loadLists = function () {
-        const listsRef = firebase.database().ref('modules/whatsapp_sender/custom_lists');
-        listsRef.on('value', (snapshot) => {
-            const data = snapshot.val() || {};
+        firestore.collection('modules').doc('whatsapp_sender').collection('lists').onSnapshot((querySnapshot) => {
+            const data = {};
+            querySnapshot.forEach((doc) => {
+                data[doc.id] = doc.data();
+            });
             this.lists = data;
 
             if (this.currentView === 'lists' && typeof this.renderLists === 'function') {
@@ -91,7 +100,7 @@ if (!window.whatsAppSender) {
 
                 if (optgroup) {
                     optgroup.innerHTML = Object.entries(this.lists).map(([id, list]) =>
-                        `<option value="list:${id}">${list.name} (${list.count || 0})</option>`
+                        `<option value="list:${id}">${list.name} (${list.contactsCount ?? list.count ?? 0})</option>`
                     ).join('');
                 }
 
@@ -99,7 +108,7 @@ if (!window.whatsAppSender) {
                 if (Array.from(audienceSelect.options).some(opt => opt.value === currentValue)) {
                     audienceSelect.value = currentValue;
                 } else {
-                    audienceSelect.value = 'all'; // Fallback
+                    audienceSelect.value = 'none'; // Fallback
                     if (typeof this.updateRecipientCount === 'function') {
                         this.updateRecipientCount();
                     }
@@ -119,54 +128,39 @@ if (!window.whatsAppSender) {
 
         // Cost warning
         const proceed = await AppDialog.confirm('Sending this message will cost ₹0.03. Do you wish to proceed?', { title: 'Confirm Send', confirmText: 'Send' });
-        if (!proceed) {
-            return;
-        }
+        if (!proceed) return;
 
         const recipient = this.activeConversationId;
         if (!recipient) return;
 
-        input.value = ''; // Clear input immediately
+        input.value = '';
         input.focus();
 
         try {
-            // 1. Direct Push to Firebase (Optimistic)
-            const newMessageRef = firebase.database().ref(`modules/whatsapp_sender/conversations/${recipient}/messages`).push();
+            const safeKey = recipient.replace(/[.#$/[\]]/g, '_');
+            const messagesRef = firebase.database().ref(`modules/whatsapp_sender/conversations/${safeKey}/messages`);
+            const newMessageRef = messagesRef.push();
+            const timestamp = Date.now();
 
             await newMessageRef.set({
                 message: text,
                 direction: 'outbound',
-                status: 'pending',
-                timestamp: firebase.database.ServerValue.TIMESTAMP,
+                status: 'processing',
+                timestamp: timestamp,
                 to: recipient,
                 from: this.config.phoneNumber
             });
 
-            // Update metadata transactionally
-            firebase.database().ref(`modules/whatsapp_sender/conversations/${recipient}/metadata`).transaction((currentData) => {
-                if (!currentData) {
-                    return {
-                        lastMessage: text,
-                        timestamp: Date.now(),
-                        phoneNumber: recipient,
-                        displayName: recipient
-                    };
-                }
-                return {
-                    ...currentData,
-                    lastMessage: text,
-                    timestamp: Date.now()
-                };
+            await firebase.database().ref(`modules/whatsapp_sender/conversations/${safeKey}/metadata`).update({
+                lastMessage: text,
+                timestamp: timestamp,
+                phoneNumber: recipient,
+                displayName: this.conversations[recipient]?.displayName || recipient
             });
 
-            // 2. Call Cloud Function via API Layer
             const data = await this.sendMessageAPI(recipient, text);
-
-
-            // Extract Message ID
             const realMessageId = data.messages?.[0]?.id || data.message_id || data.id;
 
-            // Update message with real ID and status
             await newMessageRef.update({
                 status: 'sent',
                 messageId: realMessageId
@@ -174,6 +168,7 @@ if (!window.whatsAppSender) {
 
         } catch (error) {
             console.error("Send Failed:", error);
+            AppDialog.toast('Failed to send message: ' + error.message, 'error');
         }
     };
 
@@ -181,6 +176,7 @@ if (!window.whatsAppSender) {
         const select = document.getElementById('wa-template-select');
         const audienceSelect = document.getElementById('wa-broadcast-audience');
         const inputs = document.querySelectorAll('.wa-var-input');
+        const isSimulation = document.getElementById('wa-broadcast-simulate')?.checked || false;
 
         if (!select || !select.value) {
             AppDialog.toast('Please select a template first.', 'warn');
@@ -199,206 +195,89 @@ if (!window.whatsAppSender) {
         }
 
         const variables = Array.from(inputs)
-            .filter(inp => inp.id !== 'wa-header-media-url') // Exclude header media from standard variables
+            .filter(inp => inp.id !== 'wa-header-media-url')
             .map(inp => inp.value);
             
-        // Look for the header media URL if present
         const customMediaUrl = document.getElementById('wa-header-media-url')?.value;
-        const defaultMediaUrl = selectedOption.getAttribute('data-header-image');
-        const headerImageUrl = customMediaUrl || defaultMediaUrl || null;
+        const headerImageUrl = customMediaUrl || selectedOption.getAttribute('data-header-image') || null;
 
-        // Required variable check
         if (variables.some(v => v.trim() === '')) {
             const proceed = await AppDialog.confirm('Some template variables are empty. Do you want to proceed?', { title: 'Empty Variables', confirmText: 'Proceed Anyway' });
-            if (!proceed) {
-                return;
-            }
+            if (!proceed) return;
         }
 
-        // Get recipients logic
-        let recipients = [];
-        if (audienceVal === 'staff') {
-            const data = await firebase.database().ref('modules/staff_directory/staff').once('value');
-            const staffs = data.val() || {};
-            recipients = Object.values(staffs).map(s => s.phone).filter(Boolean);
-        } else if (audienceVal === 'students') {
-            // Example hook for future students lists
-            AppDialog.toast('Students broadcast list logic not yet configured.', 'info');
-            return;
-        } else if (audienceVal.startsWith('list:')) {
-            const listId = audienceVal.split(':')[1];
-            const data = await firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/members`).once('value');
-            const members = data.val() || {};
-            recipients = Object.values(members).map(m => m.phone).filter(Boolean);
-        } else {
-            // "all" - Merge staff and lists
-            const staffData = await firebase.database().ref('modules/staff_directory/staff').once('value');
-            const staffs = staffData.val() || {};
-            Object.values(staffs).forEach(s => { if (s.phone) recipients.push(s.phone); });
-
-            const listsData = await firebase.database().ref('modules/whatsapp_sender/custom_lists').once('value');
-            const lists = listsData.val() || {};
-            Object.values(lists).forEach(l => {
-                if (l.members) Object.values(l.members).forEach(m => { if (m.phone) recipients.push(m.phone); });
-            });
-        }
-
-        // Clean duplicates and missing + signs
-        recipients = [...new Set(recipients)].map(num => num.startsWith('+') ? num : '+' + num);
-
+        const recipients = await this._getCurrentlySelectedRecipients();
         if (recipients.length === 0) {
             AppDialog.toast('No recipients found for this audience.', 'warn');
             return;
         }
 
-        // Calculate Cost Based on Category
-        let ratePerMsg = 0.95; // Default to Marketing
-        let isUtility = false;
-        if (templateCategory.toUpperCase() === 'UTILITY') {
-            ratePerMsg = 0.25;
-            isUtility = true;
-        }
-
-        const totalCostEst = recipients.length * ratePerMsg;
-
-        // Fetch Live Wallet Balance
-        // We use a direct fetch here to the Fast2SMS wallet API
-        let walletBalanceDisplay = '<i data-lucide="loader" style="width:14px;height:14px;animation:spin 1s linear infinite;"></i> Loading...';
-        let walletBalance = null;
-
-        try {
-            // Creating a callable function to check wallet balance securely
-            const checkWalletCallable = firebase.functions().httpsCallable('checkWhatsAppWallet');
-            const walletResult = await checkWalletCallable();
-
-            let wResponse = walletResult.data;
-            if (wResponse && wResponse.data && wResponse.wallet === undefined) {
-                // Occasional double wrap from axios + firebase
-                wResponse = wResponse.data;
-            }
-
-            if (wResponse && wResponse.wallet !== undefined) {
-                walletBalance = parseFloat(wResponse.wallet);
-                walletBalanceDisplay = `₹${walletBalance.toFixed(2)}`;
-            } else {
-                walletBalanceDisplay = 'Unknown (API Error)';
-                console.warn('Unexpected wallet response structure:', wResponse);
-            }
-        } catch (e) {
-            console.error("Wallet check failed", e);
-            walletBalanceDisplay = 'Unavailable';
-        }
-
-        const sufficientFunds = walletBalance === null || walletBalance >= totalCostEst;
+        const excluded = this.excludedNumbers || [];
+        const excludedSet = new Set(excluded.map(n => n.replace(/[^\d]/g, "")));
+        const activeRecipients = recipients.filter(r => !excludedSet.has(r.phone.replace(/[^\d]/g, "")));
+        
+        let ratePerMsg = 0.95;
+        if (templateCategory.toUpperCase() === 'UTILITY') ratePerMsg = 0.25;
+        const totalCostEst = activeRecipients.length * ratePerMsg;
+        const contactsCount = [...new Set(recipients.map(r => r.name))].length;
 
         const dialogHtml = `
             <div style="text-align:left; margin-top: 10px;">
-                <p style="color:var(--text-dim); margin-bottom: 20px;">Please review the broadcast billing summary before dispatching.</p>
-                
+                <p style="color:var(--text-dim); margin-bottom: 20px;">Review the broadcast billing summary before dispatching.</p>
                 <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
                     <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
-                        <span style="color:var(--text-dim);">Template Category</span>
-                        <strong style="text-transform: capitalize; color: ${isUtility ? 'var(--accent)' : '#f43f5e'};">
-                            ${templateCategory}
-                        </strong>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
-                        <span style="color:var(--text-dim);">Rate per Message</span>
-                        <strong>₹${ratePerMsg.toFixed(2)}</strong>
-                    </div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
-                        <span style="color:var(--text-dim);">Total Recipients</span>
+                        <span style="color:var(--text-dim);">Recipients (Total)</span>
                         <strong>${recipients.length}</strong>
                     </div>
+                    ${excluded.length > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:12px; color:#94a3b8;"><span>- Excluded</span><strong>-${excluded.length}</strong></div>` : ''}
                     <div style="height:1px; background:var(--card-border); margin: 12px 0;"></div>
                     <div style="display:flex; justify-content:space-between; font-size:1.1rem;">
-                        <span>Estimated Cost</span>
-                        <strong style="color: ${sufficientFunds ? 'white' : '#ef4444'};">₹${totalCostEst.toFixed(2)}</strong>
+                        <span>To Bill</span>
+                        <strong>${activeRecipients.length} Msgs</strong>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:1.1rem; margin-top:8px;">
+                        <span>Est. Cost</span>
+                        <strong>₹${totalCostEst.toFixed(2)}</strong>
                     </div>
                 </div>
+            </div>`;
 
-                <div style="display:flex; justify-content:space-between; align-items:center; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <i data-lucide="wallet" style="width:18px;height:18px;color:var(--accent);"></i>
-                        <span style="color:var(--text-dim);">Wallet Balance</span>
-                    </div>
-                    <strong style="font-size:1.1rem;">${walletBalanceDisplay}</strong>
-                </div>
-                
-                ${!sufficientFunds ? `
-                <div style="margin-top:16px; padding:12px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:8px; display:flex; gap:12px; align-items:flex-start;">
-                    <i data-lucide="alert-triangle" style="width:18px;height:18px;color:#ef4444;flex-shrink:0;margin-top:2px;"></i>
-                    <span style="color:#f87171; font-size:0.9rem;">Your wallet balance appears to be lower than the estimated cost. The broadcast may fail or partially deliver.</span>
-                </div>` : ''}
-            </div>
-        `;
+        const confirmed = await AppDialog.confirm(dialogHtml, { title: 'Confirm Broadcast', confirmText: `Send (${activeRecipients.length})`, isHtml: true });
+        if (!confirmed) return;
 
-        // Render lucide icons in the dynamically constructed HTML shortly after it renders in the DOM
-        setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 100);
+        const broadcastRef = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc();
+        const broadcastId = broadcastRef.id;
 
-        const broadcastConfirmed = await AppDialog.confirm(dialogHtml, {
-            title: 'Confirm Broadcast Billing',
-            confirmText: `Pay ₹${totalCostEst.toFixed(2)} & Send`,
-            isHtml: true, // Custom flag to let AppDialog know message is raw HTML
-            width: '450px'
-        });
-
-        if (!broadcastConfirmed) {
-            return;
-        }
-
-        // Generate a unique broadcast ID for tracking individual message statuses
-        const broadcastRef = firebase.database().ref('modules/whatsapp_sender/broadcast_history').push();
-        const broadcastId = broadcastRef.key;
-        
-        const audienceText = audienceSelect.options[audienceSelect.selectedIndex] ? audienceSelect.options[audienceSelect.selectedIndex].text : audienceVal;
-
-        // 1. Instantly log the campaign as "dispatching" so it appears in History immediately
         await broadcastRef.set({
             template: templateName,
             campaignName: campaignNameValue,
-            message: templateName, 
-            listId: audienceVal,
-            listName: audienceText,
-            successCount: recipients.length, 
+            listName: audienceSelect.options[audienceSelect.selectedIndex].text,
             recipientsCount: recipients.length,
-            sentCount: 0, // Starts at 0, Cloud Function will increment this
-            deliveredCount: 0,
-            readCount: 0,
-            failedCount: 0,
-            timestamp: firebase.database.ServerValue.TIMESTAMP,
+            contactsCount: contactsCount,
+            sentCount: 0, deliveredCount: 0, readCount: 0, failedCount: 0,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
             status: 'dispatching',
-            variables: variables,
-            headerImageUrl: headerImageUrl || null,
             broadcastId: broadcastId
         });
 
-        AppDialog.toast(`Broadcast initiated. You can track progress in the History tab.`, 'success');
-        
-        // Flag the list as used if it's a custom list
-        if (audienceVal && audienceVal.startsWith('list_')) {
-            const listKey = audienceVal.replace('list_', '');
-            firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listKey}/used`).set(true);
+        if (!isSimulation && audienceVal.startsWith('list:')) {
+            firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(audienceVal.split(':')[1]).update({ used: true });
         }
 
-        // Switch to history view so they can watch live progress
-        if (typeof this.switchView === 'function') {
-            this.switchView('history');
+        AppDialog.toast('Broadcast initiated. Opening report...', 'success');
+        this.viewBroadcastDetails(broadcastId, broadcastRef.id);
+
+        if (isSimulation) {
+            this.startLocalSimulation(broadcastId, recipients);
+        } else {
+            this.sendBroadcastAPI({
+                templateName, recipients, variables, broadcastId, headerImageUrl, contactsCount, excludedNumbers: excluded
+            }).then(() => {
+                this.excludedNumbers = [];
+            }).catch(e => {
+                AppDialog.toast('Broadcast failed: ' + e.message, 'error');
+            });
         }
-
-        // 2. Fire and forget the API call. The Cloud Function will run the background loop.
-        this.sendBroadcastAPI({
-            templateName,
-            recipients,
-            variables,
-            broadcastId,
-            headerImageUrl
-        }).then(() => {
-
-        }).catch(error => {
-            console.error("Broadcast failed:", error);
-            AppDialog.toast('Failed to send broadcast batch: ' + error.message, 'error');
-        });
     };
 
     window.whatsAppSender.startNewChat = function () {
@@ -986,24 +865,126 @@ if (!window.whatsAppSender) {
         const confirmed = await AppDialog.confirm('Remove this contact from the list?', { danger: true, confirmText: 'Remove', title: 'Remove Contact' });
         if (!confirmed) return;
 
-        const listRef = firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}`);
-        listRef.child(`members/${memberKey}`).remove().then(() => {
-            listRef.child('count').transaction(count => (count || 1) - 1);
-        });
+        const memberRef = firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/members/${memberKey}`);
+        await memberRef.remove();
+        firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/count`)
+            .transaction(count => Math.max(0, (count || 1) - 1));
+        this.recalculateListCounts(listId);
     };
 
     window.whatsAppSender.deleteList = async function (listId) {
-        // Enforce server-side restriction before even prompting
-        const listSnap = await firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}/used`).once('value');
-        if (listSnap.val() === true) {
+        const listSnap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).get();
+        if (listSnap.data()?.used === true) {
             AppDialog.toast('This list has been used in a broadcast and cannot be deleted.', 'error');
             return;
         }
 
         const confirmed = await AppDialog.confirm('Delete this entire list? This action cannot be undone.', { danger: true, confirmText: 'Delete List', title: 'Delete List' });
         if (!confirmed) return;
-        firebase.database().ref(`modules/whatsapp_sender/custom_lists/${listId}`).remove();
+        firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).delete();
         this.renderListsView();
     };
 
+    window.whatsAppSender._getCurrentlySelectedRecipients = async function () {
+        const val = document.getElementById('wa-broadcast-audience').value;
+        let recipients = [];
+        const addRecipient = (phone, name) => {
+            if (!phone) return;
+            phone.split(/[\/,;]/).forEach(num => {
+                let cleaned = num.trim().replace(/[^\d]/g, '');
+                if (cleaned.length >= 10) {
+                    if (cleaned.length === 10) cleaned = '91' + cleaned;
+                    recipients.push({ phone: cleaned, name: name || cleaned });
+                }
+            });
+        };
+
+        if (val === 'staff') {
+            const snap = await firebase.database().ref('modules/staff_directory/staff').once('value');
+            Object.values(snap.val() || {}).forEach(s => addRecipient(s.phone, s.name));
+        } else if (val === 'students') {
+            const snap = await firestore.collection('modules').doc('directory').collection('students').get();
+            snap.docs.forEach(doc => addRecipient(doc.data().phone, doc.data().name));
+        } else if (val.startsWith('list:')) {
+            const snap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(val.split(':')[1]).collection('members').get();
+            snap.docs.forEach(doc => addRecipient(doc.data().phone, doc.data().name));
+        }
+        
+        const seen = new Set();
+        return recipients.filter(r => seen.has(r.phone) ? false : seen.add(r.phone));
+    };
+
+    window.whatsAppSender.scanForDuplicates = async function () {
+        const template = document.getElementById('wa-template-select').value;
+        const days = parseInt(document.getElementById('wa-duplicate-days').value) || 7;
+        const resultsEl = document.getElementById('wa-scanner-results');
+        if (!template) return;
+
+        resultsEl.innerHTML = '<i data-lucide="loader" style="animation:spin 1s linear infinite;"></i> Scanning...';
+        try {
+            const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+            const historySnap = await firestore.collection('modules').doc('whatsapp_sender').collection('history')
+                .where('timestamp', '>=', new Date(cutoff)).get();
+
+            const bIds = historySnap.docs.filter(doc => doc.data().template === template).map(doc => doc.id);
+            const dupPhones = new Set();
+
+            for (const bId of bIds) {
+                const snap = await firebase.database().ref('modules/whatsapp_sender/broadcast_logs').orderByChild('broadcastId').equalTo(bId).once('value');
+                Object.values(snap.val() || {}).forEach(log => { if (log.status !== 'failed' && log.recipientId) dupPhones.add(log.recipientId.replace(/\D/g, '')); });
+            }
+
+            const current = await this._getCurrentlySelectedRecipients();
+            const found = current.filter(r => dupPhones.has(r.phone.replace(/\D/g, '')));
+
+            if (found.length === 0) {
+                resultsEl.innerHTML = '<span style="color:#4ade80;">No duplicates found.</span>';
+                this.excludedNumbers = [];
+            } else {
+                resultsEl.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; background:rgba(245,158,11,0.1); padding:8px 12px; border-radius:6px; border:1px solid rgba(245,158,11,0.2);">
+                    <span style="color:#f59e0b; font-weight:600;">${found.length} Duplicates Found</span>
+                    <button class="btn btn-secondary" onclick="window.whatsAppSender.showExclusionModal()" style="padding:4px 10px; font-size:0.7rem; height:auto;">Exclude</button>
+                </div>`;
+                this.foundDuplicates = found;
+                this.excludedNumbers = found.map(r => r.phone);
+            }
+            if (window.lucide) window.lucide.createIcons({ root: resultsEl });
+        } catch (e) { resultsEl.innerHTML = '<span style="color:var(--danger);">Scan failed.</span>'; }
+    };
+
+    window.whatsAppSender.showExclusionModal = function () {
+        const duplicates = this.foundDuplicates || [];
+        const html = `
+            <div style="padding:24px;">
+                <h3 style="margin-bottom:16px;">Exclude Recent Recipients</h3>
+                <div style="max-height:300px; overflow-y:auto; margin-bottom:20px;">
+                    ${duplicates.map(r => `
+                        <label style="display:flex; align-items:center; gap:12px; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px; margin-bottom:8px; cursor:pointer;">
+                            <input type="checkbox" class="wa-exclude-check" value="${r.phone}" ${this.excludedNumbers.includes(r.phone) ? 'checked' : ''}>
+                            <div><div style="font-weight:600;">${r.name}</div><div style="font-size:0.75rem; color:var(--text-dim);">${r.phone}</div></div>
+                        </label>`).join('')}
+                </div>
+                <button class="btn btn-primary full-width" data-wa-modal-submit>Apply Exclusion</button>
+            </div>`;
+        this._showModal(html, (overlay) => {
+            this.excludedNumbers = Array.from(overlay.querySelectorAll('.wa-exclude-check:checked')).map(cb => cb.value);
+            overlay.remove();
+            AppDialog.toast(`${this.excludedNumbers.length} recipients excluded.`, 'info');
+        });
+    };
+
+    window.whatsAppSender.recalculateListCounts = async function (listId) {
+        try {
+            const membersSnap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).collection('members').get();
+            let cCount = 0, nCount = 0;
+            membersSnap.forEach(doc => {
+                cCount++;
+                const phones = String(doc.data().phone || "").split(/[\/,;]/).map(n => n.trim().replace(/[^\d]/g, '')).filter(n => n.length >= 10);
+                nCount += [...new Set(phones)].length;
+            });
+            await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).update({ contactsCount: cCount, numbersCount: nCount, count: cCount });
+        } catch (e) { console.error(e); }
+    };
+
 }
+

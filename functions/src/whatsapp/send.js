@@ -1,325 +1,151 @@
+
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
-const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const axios = require("axios");
 
 const sanitizeKey = (key) => key ? String(key).replace(/[.#$/[\]]/g, "_") : key;
 
-// Helper to verify admin privileges
+function deepSanitize(obj) {
+  if (Array.isArray(obj)) return obj.map(deepSanitize);
+  if (obj !== null && typeof obj === "object") {
+    const newObj = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const val = obj[key];
+        if (val !== undefined) newObj[key] = deepSanitize(val);
+      }
+    }
+    return newObj;
+  }
+  return obj;
+}
+
 async function verifyAdmin(auth) {
-  if (!auth || !auth.uid || !auth.token.email) {
-    throw new HttpsError("unauthenticated", "User must be logged in.");
-  }
-
+  if (!auth || !auth.uid || !auth.token.email) throw new HttpsError("unauthenticated", "User must be logged in.");
   const emailKey = auth.token.email.replace(/\./g, "_").replace(/@/g, "_");
-  const db = admin.database();
-
-  // Check if user is in allowedUsers and has permission
-  const snapshot = await db.ref(`allowedUsers/${emailKey}`).once("value");
-  const userData = snapshot.val();
-
-  if (!userData) {
-    throw new HttpsError("permission-denied", "User not found in allowed list.");
-  }
-
-  const isAdmin = userData.isAdmin === true;
-  const hasAccess = userData.permissions?.whatsapp_sender?.access === true || userData.permissions?.whatsapp_sender === true;
-
-  if (!isAdmin && !hasAccess) {
-    throw new HttpsError("permission-denied", "User does not have permission to use WhatsApp Sender.");
+  const snap = await admin.database().ref(`allowedUsers/${emailKey}`).once("value");
+  if (!snap.exists() || (!snap.val().isAdmin && !snap.val().permissions?.whatsapp_sender)) {
+    throw new HttpsError("permission-denied", "User does not have required permissions.");
   }
 }
 
-// Helper to fetch Fast2SMS config
 async function getWhatsAppConfig() {
-  const db = admin.database();
-  const snapshot = await db.ref("modules/whatsapp_sender/config").once("value");
-  const config = snapshot.val();
-
-  if (!config || !config.apiKey) {
-    throw new HttpsError("failed-precondition", "WhatsApp configuration is missing.");
-  }
+  const snapshot = await admin.firestore().collection("modules").doc("whatsapp_sender").collection("config").doc("main").get();
+  const config = snapshot.data();
+  if (!config || !config.apiKey) throw new HttpsError("failed-precondition", "WhatsApp config missing.");
   return config;
 }
 
-// Fetch Templates (Callable)
-exports.fetchTemplates = onCall(async (request) => {
+exports.syncWhatsAppTemplates = onCall(async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
-
-  if (!config.wabaId) {
-    throw new HttpsError("failed-precondition", "WABA ID is not configured.");
-  }
-
-  const url = `https://www.fast2sms.com/dev/whatsapp/v24.0/${config.wabaId}/message_templates?authorization=${config.apiKey}`;
-
   try {
-    const response = await axios.get(url, {
-      headers: {"accept": "application/json"},
-    });
-    return {data: response.data};
-  } catch (error) {
-    const apiError = error.response?.data || error.message;
-    logger.error("Error fetching templates", {error: apiError});
-
-    const displayMsg = typeof apiError === "object" ? JSON.stringify(apiError) : String(apiError);
-    throw new HttpsError("internal", displayMsg);
-  }
+    const url = `https://www.fast2sms.com/dev/whatsapp/v24.0/${config.wabaId}/message_templates?authorization=${config.apiKey}`;
+    const response = await axios.get(url, { headers: {"accept": "application/json"} });
+    const templates = response.data?.data?.data || response.data?.data || response.data || [];
+    if (templates.length > 0) {
+        const fs = admin.firestore();
+        const batch = fs.batch();
+        const coll = fs.collection("modules").doc("whatsapp_sender").collection("templates");
+        for (const t of templates) {
+            if (t.name) {
+                batch.set(coll.doc(t.name), {
+                    ...deepSanitize(t),
+                    lastSynced: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        }
+        await batch.commit();
+    }
+    return {success: true, count: templates.length};
+  } catch (error) { throw new HttpsError("internal", error.message); }
 });
 
-// Check WhatsApp Fast2SMS Wallet Balance (Callable)
 exports.checkWhatsAppWallet = onCall(async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
-
-  if (!config.apiKey) {
-    throw new HttpsError("failed-precondition", "API Key is not configured.");
-  }
-
-  const url = `https://www.fast2sms.com/dev/wallet?authorization=${config.apiKey}`;
-
   try {
-    const response = await axios.get(url, {
-      headers: {"accept": "application/json"},
-    });
-    return {data: response.data};
-  } catch (error) {
-    const apiError = error.response?.data || error.message;
-    logger.error("Error fetching wallet balance", {error: apiError});
-
-    const displayMsg = typeof apiError === "object" ? JSON.stringify(apiError) : String(apiError);
-    throw new HttpsError("internal", displayMsg);
-  }
+    const response = await axios.get(`https://www.fast2sms.com/dev/wallet?authorization=${config.apiKey}`);
+    return response.data;
+  } catch (error) { throw new HttpsError("internal", error.message); }
 });
 
-// Send WhatsApp Message (Callable)
 exports.sendWhatsAppMessage = onCall(async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
-
   const {to, text} = request.data;
-  if (!to || !text) {
-    throw new HttpsError("invalid-argument", "Missing to or text parameters.");
-  }
-
-  const url = `https://www.fast2sms.com/dev/whatsapp/v24.0/${config.phoneNumberId}/messages`;
-  const payload = {
-    "messaging_product": "whatsapp",
-    "to": to,
-    "type": "text",
-    "text": {"body": text},
-  };
-
   try {
-    const response = await axios.post(url, payload, {
-      headers: {
-        "Authorization": config.apiKey,
-        "Content-Type": "application/json",
-      },
-    });
-    logger.info("WhatsApp message sent securely", {to});
+    const response = await axios.post(`https://www.fast2sms.com/dev/whatsapp/v24.0/${config.phoneNumberId}/messages`, {
+      messaging_product: "whatsapp", to: String(to).replace("+", ""), type: "text", text: {body: text}
+    }, { headers: {"Authorization": config.apiKey, "Content-Type": "application/json"} });
+    const messageId = response.data.request_id || response.data.messages?.[0]?.id || response.data.id;
+    if (messageId) {
+        const ts = Date.now(), docId = sanitizeKey(messageId), recipientPhone = sanitizeKey(to), db = admin.database();
+        await db.ref(`modules/whatsapp_sender/conversations/${recipientPhone}/messages/${docId}`).set({ messageId, from: "business", to, message: text, type: "text", timestamp: ts, direction: "outbound", status: "processing" });
+        await db.ref(`modules/whatsapp_sender/conversations/${recipientPhone}/metadata`).update({ lastMessage: text, timestamp: ts, phoneNumber: to });
+    }
     return response.data;
-  } catch (error) {
-    const apiError = error.response?.data || error.message;
-    logger.error("Error sending message", {error: apiError});
-
-    const displayMsg = typeof apiError === "object" ? JSON.stringify(apiError) : String(apiError);
-    throw new HttpsError("internal", displayMsg);
-  }
+  } catch (error) { throw new HttpsError("internal", error.message); }
 });
 
-// Send WhatsApp Broadcast (Callable)
 exports.sendWhatsAppBroadcast = onCall(async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
-
-  const {templateName, numbers, variables} = request.data;
-  if (!templateName || !numbers) {
-    throw new HttpsError("invalid-argument", "Missing templateName or numbers parameters.");
-  }
-
+  const {templateName, recipients, variables, broadcastId, contactsCount, excludedNumbers} = request.data;
+  const excludedSet = new Set((excludedNumbers || []).map(num => String(num).replace(/[^\d]/g, "")));
   const url = `https://www.fast2sms.com/dev/whatsapp/v24.0/${config.phoneNumberId}/messages`;
-  const formattedNumbers = numbers.map((num) => String(num).replace("+", ""));
+  const parameters = (variables || []).map((val) => ({ type: "text", text: String(val) }));
+  let sentCount = 0, processedContactsCount = 0, lastContactName = null;
+  const db = admin.database(), fs = admin.firestore();
 
-  // Construct variables array for Meta template API
-  const parameters = (variables || []).map((val) => ({
-    type: "text",
-    text: String(val),
-  }));
-
-  // We will loop and send to each to guarantee delivery using the standard Meta structure).
-  const results = [];
-  const errors = [];
-  let sentCount = 0; // Keep track of successful dispatches to power the real-time UI
-
-  // Function to ping the DB with the current progress
-  const updateProgress = async (isFinal = false, statusOverride = null) => {
-    if (!request.data.broadcastId) return;
-    try {
-      const updatePayload = {sentCount: sentCount};
-      if (statusOverride) {
-        updatePayload.status = statusOverride;
-      } else if (isFinal) {
-        updatePayload.status = "dispatched";
-        updatePayload.failedCount = errors.length;
-      }
-      await admin.database().ref(`modules/whatsapp_sender/broadcast_history/${request.data.broadcastId}`).update(updatePayload);
-    } catch (e) {
-      logger.warn("Failed to ping broadcast progress to DB: " + e.message);
-    }
+  const updateProgress = async (isFinal = false, statusOverride = null, currentName = null) => {
+    if (!broadcastId) return;
+    const update = { sentCount, processedNumbersCount: sentCount, processedContactsCount, currentContactName: currentName || "" };
+    if (statusOverride) update.status = statusOverride;
+    else if (isFinal) { update.status = "dispatched"; update.currentContactName = ""; }
+    await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).update(update);
   };
 
-  let processedCount = 0;
-  let isStopped = false;
+  for (const recipient of recipients) {
+    if (recipient.name !== lastContactName) { processedContactsCount++; lastContactName = recipient.name; }
+    const number = String(recipient.phone).replace(/[^\d]/g, ""), name = recipient.name || number;
+    await updateProgress(false, null, name);
 
-  for (const number of formattedNumbers) {
-    // Check for stop signal if broadcastId exists
-    if (request.data.broadcastId) {
-      const stopSnapshot = await admin.database().ref(`modules/whatsapp_sender/broadcast_history/${request.data.broadcastId}/stopRequested`).once("value");
-      if (stopSnapshot.val() === true) {
-        isStopped = true;
-        logger.info(`Broadcast ${request.data.broadcastId} stopped by user request.`);
-        break;
-      }
+    if (excludedSet.has(number)) {
+        const ts = Date.now();
+        await db.ref(`modules/whatsapp_sender/broadcast_logs/excluded_${broadcastId}_${number}`).set({
+          broadcastId, recipientId: recipient.phone, name, status: "excluded", timestamp: ts, sentAt: ts, message: "Skipped (Recent)"
+        });
+        sentCount++; continue;
     }
 
-    processedCount++;
-    const payload = {
-      messaging_product: "whatsapp",
-      to: number,
-      type: "template",
-      template: {
-        name: templateName,
-        language: {
-          code: "en", // Defaulting to english, adjust if needed
-        },
-        components: [],
-      },
-    };
+    const stopSnap = await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).get();
+    if (stopSnap.exists && stopSnap.data().stopRequested) { await updateProgress(true, "stopped"); return {success: true, stopped: true}; }
 
-    // Add header component if an image URL was provided
-    if (request.data.headerImageUrl) {
-      payload.template.components.push({
-        type: "header",
-        parameters: [
-          {
-            type: "image",
-            image: {
-              link: request.data.headerImageUrl,
-            },
-          },
-        ],
-      });
-    }
-
-    // Add body variables if they exist
-    if (parameters.length > 0) {
-      payload.template.components.push({
-        type: "body",
-        parameters: parameters,
-      });
-    }
+    const payload = { messaging_product: "whatsapp", to: number, type: "template", template: { name: templateName, language: { code: "en" }, components: [] }};
+    if (request.data.headerImageUrl) payload.template.components.push({ type: "header", parameters: [{ type: "image", image: { link: request.data.headerImageUrl } }] });
+    if (parameters.length > 0) payload.template.components.push({ type: "body", parameters });
 
     try {
-      const response = await axios.post(url, payload, {
-        headers: {
-          "Authorization": config.apiKey,
-          "Content-Type": "application/json",
-        },
-      });
-      const responseData = response.data;
-      results.push(responseData);
-
-      // Fetch messageId robustly depending on Fast2SMS or Meta response format
-      let messageId = null;
-      let alternateMessageId = null;
-
-      // Extract request_id natively from Fast2SMS
-      if (responseData.request_id) {
-        messageId = responseData.request_id;
-        // Meta wamid usually sits in messages array
-        if (responseData.messages && responseData.messages.length > 0 && responseData.messages[0].id) {
-          alternateMessageId = responseData.messages[0].id;
-        }
-      } 
-      // Fallbacks if only Meta format is provided
-      else if (responseData.messages && responseData.messages.length > 0 && responseData.messages[0].id) {
-        messageId = responseData.messages[0].id;
-      } else if (responseData.id) {
-        messageId = responseData.id;
-      }
-
-      // Log to individual conversation for webhook status tracking
+      const response = await axios.post(url, payload, { headers: {"Authorization": config.apiKey, "Content-Type": "application/json"} });
+      const messageId = response.data.request_id || response.data.messages?.[0]?.id || response.data.id;
       if (messageId) {
-        const timestamp = Date.now();
-        const msgRecord = {
-          messageId: messageId,
-          from: "business",
-          to: number,
-          message: `[Broadcast Template]: ${templateName}`,
-          type: "template",
-          templateName: templateName,
-          variables: variables,
-          timestamp: timestamp,
-          direction: "outbound",
-          status: "sent",
-          broadcastId: request.data.broadcastId, // Link to specific broadcast campaign
-        };
-
-        const db = admin.database();
-        const msgRef = db.ref(`modules/whatsapp_sender/conversations/${number}/messages`).push();
-        const msgKey = msgRef.key;
-        await msgRef.set(msgRecord);
-
-        // Store lookup mapping for O(1) webhook correlation (save both message IDs to ensure webhooks catch it)
-        const lookupPayload = {
-          recipientId: number,
-          broadcastId: request.data.broadcastId || null,
-          msgKey: msgKey,
-          timestamp: timestamp,
-          messageId: sanitizeKey(messageId),
-          alternateMessageId: alternateMessageId ? sanitizeKey(alternateMessageId) : null,
-        };
-        await db.ref(`modules/whatsapp_sender/message_lookup/${sanitizeKey(messageId)}`).set(lookupPayload);
-
-        if (alternateMessageId && alternateMessageId !== messageId) {
-          await db.ref(`modules/whatsapp_sender/message_lookup/${sanitizeKey(alternateMessageId)}`).set(lookupPayload);
-        }
-
-        // Also log to a dedicated broadcast logs path for easier grouping in UI
-        if (request.data.broadcastId) {
-          await db.ref(`modules/whatsapp_sender/broadcast_logs/${request.data.broadcastId}/${number}`).set({
-            messageId: messageId,
-            msgKey: msgKey,
-            status: "sent",
-            timestamp: timestamp,
-          });
-        }
+        const ts = Date.now(), docId = sanitizeKey(messageId), rKey = sanitizeKey(recipient.phone);
+        await db.ref(`modules/whatsapp_sender/conversations/${rKey}/messages/${docId}`).set({
+          messageId, from: "business", to: recipient.phone, message: `[Broadcast]: ${templateName}`, type: "template", timestamp: ts, direction: "outbound", status: "processing", broadcastId
+        });
+        await db.ref(`modules/whatsapp_sender/broadcast_logs/${docId}`).set({
+          broadcastId, recipientId: recipient.phone, name, status: "processing", timestamp: ts, messageId
+        });
       }
-
-      sentCount++; // Increment successful send count
-
-      // Ping DB every 5 messages to provide real-time UI updates
-      if (processedCount % 5 === 0) {
-        updateProgress(false).catch(() => {}); // Fire and forget
-      }
+      sentCount++;
     } catch (error) {
-      const apiError = error.response?.data || error.message;
-      logger.error(`Error sending broadcast to ${number}`, {error: apiError});
-      errors.push({number, error: apiError});
+      const ts = Date.now();
+      await db.ref(`modules/whatsapp_sender/broadcast_logs/fail_${broadcastId}_${number}`).set({
+          broadcastId, recipientId: recipient.phone, name, status: "failed", timestamp: ts, error: error.message
+      });
     }
   }
-
-  if (errors.length > 0) {
-    logger.error("Some broadcast messages failed", {errors});
-    // We still return results for those that succeeded
-  }
-
-  // Final database ping to mark as complete or stopped
-  if (request.data.broadcastId) {
-    await updateProgress(true, isStopped ? "stopped" : null);
-  }
-
-  logger.info("WhatsApp broadcast sent securely", {count: numbers.length, failed: errors.length});
-  return {success: true, results, errors};
+  await updateProgress(true);
+  return {success: true, sentCount};
 });
