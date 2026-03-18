@@ -5,14 +5,20 @@ const axios = require("axios");
 
 const sanitizeKey = (key) => key ? String(key).replace(/[.#$/[\]]/g, "_") : key;
 
-function deepSanitize(obj) {
-  if (Array.isArray(obj)) return obj.map(deepSanitize);
+function deepSanitize(obj, isInsideArray = false) {
+  if (Array.isArray(obj)) {
+    if (isInsideArray) {
+      // Firestore doesn't allow nested arrays [[...]]. Stringify it to preserve data.
+      return JSON.stringify(obj);
+    }
+    return obj.map(item => deepSanitize(item, true));
+  }
   if (obj !== null && typeof obj === "object") {
     const newObj = {};
     for (const key in obj) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {
         const val = obj[key];
-        if (val !== undefined) newObj[key] = deepSanitize(val);
+        if (val !== undefined) newObj[key] = deepSanitize(val, false);
       }
     }
     return newObj;
