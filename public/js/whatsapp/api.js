@@ -105,13 +105,23 @@ if (!window.whatsAppSender) {
                     name: member.name,
                     status: 'pending',
                     timestamp: timestamp,
-                    messageId
+                    messageId,
+                    isSimulation: true
                 };
                 await logRef.set(initialLog);
                 await logRef.child('statusHistory').push({ status: 'pending', timestamp });
 
                 // 2. Simulate 'Sent' (Confirmed by provider)
                 setTimeout(async () => {
+                    // 5% chance of early failure (e.g., invalid number)
+                    if (Math.random() < 0.05) {
+                        const failTs = Date.now();
+                        await logRef.update({ status: 'failed', timestamp: failTs, error: 'Simulation: Invalid Number' });
+                        await logRef.child('statusHistory').push({ status: 'failed', timestamp: failTs, error: 'Simulation: Invalid Number' });
+                        await historyRef.update({ failedCount: firebase.firestore.FieldValue.increment(1) });
+                        return;
+                    }
+
                     const sentTs = Date.now();
                     const statusEntry = { status: 'sent', timestamp: sentTs, serverTime: Date.now() };
                     await logRef.update({ status: 'sent', timestamp: sentTs, sentAt: sentTs });
@@ -130,18 +140,18 @@ if (!window.whatsAppSender) {
                         await logRef.child('statusHistory').push({ status: 'delivered', timestamp: delivTs });
                         await historyRef.update({ deliveredCount: firebase.firestore.FieldValue.increment(1) });
 
-                        // 4. 60% chance of reading
-                        if (Math.random() > 0.4) {
+                        // 4. 70% chance of reading
+                        if (Math.random() > 0.3) {
                             setTimeout(async () => {
                                 const readTs = Date.now();
                                 await logRef.update({ status: 'read', timestamp: readTs, readAt: readTs });
                                 await logRef.child('statusHistory').push({ status: 'read', timestamp: readTs });
                                 await historyRef.update({ readCount: firebase.firestore.FieldValue.increment(1) });
-                            }, 2000 + Math.random() * 5000);
+                            }, 1000 + Math.random() * 8000);
                         }
-                    }, 1000 + Math.random() * 3000);
+                    }, 800 + Math.random() * 4000);
 
-                }, 500 + Math.random() * 1000);
+                }, 400 + Math.random() * 1200);
 
                 // Delay between numbers
                 await new Promise(r => setTimeout(r, 300 + Math.random() * 500));

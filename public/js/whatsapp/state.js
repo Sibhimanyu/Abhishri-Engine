@@ -16,6 +16,7 @@ window.whatsAppSender = {
     // Active Selection State
     activeConversationId: null, // phoneNumber
     activeMessages: [],
+    excludedNumbers: [],
 
     // Configuration
     config: null,

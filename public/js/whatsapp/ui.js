@@ -520,12 +520,7 @@ if (!window.whatsAppSender) {
                             </label>
                             <select class="wa-input" id="wa-broadcast-audience" onchange="window.whatsAppSender.updateRecipientCount()">
                                 <option value="none" disabled selected>-- Choose Audience --</option>
-                                <option value="all">All Contacts</option>
-                                <option value="staff">Staff Members</option>
-                                <option value="students">Students</option>
-                                <optgroup label="Custom Lists">
-                                    ${Object.entries(this.lists).map(([id, list]) => `<option value="list:${id}">${list.name} (${list.count || 0})</option>`).join('')}
-                                </optgroup>
+                                ${Object.entries(this.lists).map(([id, list]) => `<option value="list:${id}">${list.name} (${list.count || 0})</option>`).join('')}
                             </select>
                             <div class="bcast-meta" id="wa-recipient-count"></div>
                         </div>
@@ -557,6 +552,20 @@ if (!window.whatsAppSender) {
                             </select>
                         </div>
 
+                        <!-- Frequency Protection -->
+                        <div class="bcast-field-group" style="padding-top:0;">
+                            <label class="bcast-label">
+                                <i data-lucide="shield" style="width:14px;height:14px;"></i> Shield
+                            </label>
+                            <button class="btn btn-secondary full-width" onclick="window.whatsAppSender.openFrequencyProtection()" 
+                                style="height: 44px; border-radius: 12px; background: rgba(102, 200, 200, 0.06); border: 1px solid rgba(102, 200, 200, 0.2); color: var(--accent-secondary); font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.2s;"
+                                onmouseenter="this.style.background='rgba(102, 200, 200, 0.12)'; this.style.borderColor='rgba(102, 200, 200, 0.4)';"
+                                onmouseleave="this.style.background='rgba(102, 200, 200, 0.06)'; this.style.borderColor='rgba(102, 200, 200, 0.2)';"
+                            >
+                                <i data-lucide="shield-check" style="width:18px;height:18px;"></i> Smart Protection Scanner
+                            </button>
+                        </div>
+
                         <!-- Variables (injected dynamically) -->
                         <div id="wa-template-variables"></div>
 
@@ -564,6 +573,17 @@ if (!window.whatsAppSender) {
 
                     <!-- Send Button pinned at bottom -->
                     <div class="broadcast-form-footer">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px;">
+                            <span style="font-size:0.85rem; color:var(--text-dim); display:flex; align-items:center; gap:8px;">
+                                <i data-lucide="flask-conical" style="width:14px;height:14px;color:#f59e0b;"></i> Simulation Mode
+                            </span>
+                            <label class="wa-switch">
+                                <input type="checkbox" id="wa-broadcast-simulate">
+                                <span class="wa-slider" style="border-radius:34px;">
+                                    <span style="position:absolute; content:''; height:14px; width:14px; left:4px; bottom:3px; background-color:white; transition:.3s; border-radius:50%;" class="wa-slider-dot"></span>
+                                </span>
+                            </label>
+                        </div>
                         ${canBroadcast ? `
                         <button id="wa-broadcast-send-btn" class="btn btn-primary full-width" onclick="window.whatsAppSender.prepareBroadcast()">
                             <i data-lucide="send"></i> Send Broadcast
@@ -988,8 +1008,20 @@ if (!window.whatsAppSender) {
         const display = document.getElementById('wa-recipient-count');
         if (select && display) {
             const text = select.options[select.selectedIndex].text;
-            // Extract count if available or logic to count
-            display.innerText = `Selected Group: ${text} `;
+            let html = `<div style="display:flex; flex-direction:column; gap:4px; margin-top:8px; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--border);">
+                <div style="font-size:0.75rem; color:var(--text-dim); font-weight:600;">Selection: <span style="color:var(--text-main);">${text}</span></div>`;
+            
+            if (this.excludedNumbers && this.excludedNumbers.length > 0) {
+                html += `<div style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:#ef4444; font-weight:700; background:rgba(239, 68, 68, 0.1); padding:4px 8px; border-radius:6px; margin-top:4px;">
+                    <i data-lucide="shield-check" style="width:12px;height:12px;"></i>
+                    ${this.excludedNumbers.length} recipients excluded via Frequency Protection
+                    <button onclick="window.whatsAppSender.excludedNumbers=[]; window.whatsAppSender.updateRecipientCount()" style="margin-left:auto; background:none; border:none; color:#ef4444; cursor:pointer; font-weight:800; text-decoration:underline;">Reset</button>
+                </div>`;
+            }
+            
+            html += `</div>`;
+            display.innerHTML = html;
+            if (window.lucide) window.lucide.createIcons({ root: display });
         }
     };
 
@@ -1760,16 +1792,28 @@ if (!window.whatsAppSender) {
         this.switchView('history'); // Ensure redirection to history tab
         const container = document.getElementById('whatsapp-content-history');
         if (!container) return;
-        container.innerHTML = `
-            <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:400px; color:var(--text-dim); gap:20px;">
-                <i data-lucide="loader" style="width:40px;height:40px;animation:spin 1s linear infinite;"></i>
-                <h3>Syncing Live Report...</h3>
-            </div>`;
-        if (window.lucide) window.lucide.createIcons();
+        
+        // Render initial skeleton immediately if possible, or show a simpler loader
+        if (container.getAttribute('data-active-report') !== logId) {
+            container.innerHTML = `
+                <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:400px; color:var(--text-dim); gap:20px;">
+                    <i data-lucide="loader" style="width:40px;height:40px;animation:spin 1s linear infinite;"></i>
+                    <h3>Syncing Live Report...</h3>
+                </div>`;
+            if (window.lucide) window.lucide.createIcons();
+        }
 
-        let meta = {}, recipients = {};
         if (this._historyDetailsUnsubscribe) this._historyDetailsUnsubscribe();
         if (this._logsDetailsUnsubscribe) this._logsDetailsUnsubscribe();
+
+        // Fetch initial meta once to render skeleton properly before listeners start
+        const metaDoc = await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).get();
+        const initialMeta = metaDoc.data() || {};
+        
+        container.setAttribute('data-active-report', logId);
+        this._renderReportSkeleton(container, broadcastId, logId, initialMeta);
+
+        let meta = initialMeta, recipients = {};
 
         this._historyDetailsUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId)
             .onSnapshot(doc => { 
@@ -1809,9 +1853,25 @@ if (!window.whatsAppSender) {
         const container = document.getElementById('whatsapp-content-history');
         if (!container) return;
         
+        // Skeleton should already be there from viewBroadcastDetails, but safety check
         if (!container.querySelector('.wa-report-container') || container.getAttribute('data-active-report') !== logId) {
             container.setAttribute('data-active-report', logId);
             this._renderReportSkeleton(container, broadcastId, logId, meta);
+        }
+
+        // Update skeleton meta if it changed or was empty
+        const titleEl = document.getElementById('wa-report-title');
+        const dateEl = document.getElementById('wa-report-date');
+        const listEl = document.getElementById('wa-report-list');
+
+        if (titleEl && meta.campaignName) titleEl.innerText = meta.campaignName;
+        if (dateEl && meta.timestamp) {
+            const dateStr = meta.timestamp.toDate ? meta.timestamp.toDate().toLocaleString() : new Date(meta.timestamp).toLocaleString();
+            if (dateEl.innerText !== dateStr) dateEl.innerText = dateStr;
+        }
+        if (listEl && (meta.listName || meta.listId)) {
+            const listName = meta.listName || meta.listId;
+            if (listEl.innerText !== listName) listEl.innerText = listName;
         }
 
         const recipientsArray = Object.values(recipients).sort((a,b) => (a.timestamp||0)-(b.timestamp||0));
@@ -1830,7 +1890,7 @@ if (!window.whatsAppSender) {
         // The 'TOTAL SENT' metric should include everything that reached 'sent', 'delivered' or 'read'
         const totalSentReached = sent + deliv + read;
 
-        this._updateReportLiveProgress(meta);
+        this._updateReportLiveProgress(logId, meta);
         this._updateReportStatsDashboard(total, processing, totalSentReached, deliv, read, fail, excluded);
         this._updateRecipientRowsList(recipientsArray);
 
@@ -1840,15 +1900,22 @@ if (!window.whatsAppSender) {
     window.whatsAppSender._renderReportSkeleton = function (container, broadcastId, logId, meta) {
         const dateStr = meta.timestamp ? (meta.timestamp.toDate ? meta.timestamp.toDate() : new Date(meta.timestamp)).toLocaleString() : '—';
         container.innerHTML = `
-            <div class="wa-report-container" style="padding:24px;">
+            <div class="wa-report-container" style="padding:12px 24px 24px 24px;">
                 <div class="wa-lists-header" style="margin-bottom:24px; border-bottom:1px solid var(--border); padding-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
                     <div style="display:flex; align-items:center; gap:12px;">
                         <button class="btn-icon" onclick="window.whatsAppSender.renderHistoryView()" title="Back"><i data-lucide="arrow-left"></i></button>
                         <div>
-                            <h2 id="wa-report-title" style="margin:0; font-size:1.4rem; color:var(--text-main);">${meta.campaignName || 'Broadcast Report'}</h2>
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <h2 id="wa-report-title" style="margin:0; font-size:1.4rem; color:var(--text-main);">${meta.campaignName || 'Broadcast Report'}</h2>
+                                ${meta.isSimulation ? `
+                                <span style="background:rgba(245, 158, 11, 0.1); color:#f59e0b; border:1px solid rgba(245, 158, 11, 0.2); font-size:0.65rem; font-weight:800; text-transform:uppercase; padding:2px 8px; border-radius:6px; letter-spacing:0.05em; display:flex; align-items:center; gap:4px;">
+                                    <i data-lucide="flask-conical" style="width:10px;height:10px;"></i> Simulation
+                                </span>
+                                ` : ''}
+                            </div>
                             <div style="font-size:0.85rem; color:var(--text-dim); margin-top:4px;">
-                                <i data-lucide="calendar" style="width:12px;height:12px;margin-right:4px;"></i>${dateStr} • 
-                                <i data-lucide="users" style="width:12px;height:12px;margin-right:4px;margin-left:8px;"></i>${meta.listName || 'Custom List'}
+                                <i data-lucide="calendar" style="width:12px;height:12px;margin-right:4px;"></i><span id="wa-report-date">${dateStr}</span> • 
+                                <i data-lucide="users" style="width:12px;height:12px;margin-right:4px;margin-left:8px;"></i><span id="wa-report-list">${meta.listName || 'Custom List'}</span>
                             </div>
                         </div>
                     </div>
@@ -1882,29 +1949,63 @@ if (!window.whatsAppSender) {
             </div>`;
     };
 
-    window.whatsAppSender._updateReportLiveProgress = function (meta) {
+    window.whatsAppSender._updateReportLiveProgress = function (logId, meta) {
         const mount = document.getElementById('wa-live-progress-mount');
         if (!mount) return;
-        if (meta.status !== 'dispatching') { mount.innerHTML = ''; return; }
         
+        const isDispatching = meta.status === 'dispatching' || meta.status === 'processing';
+        const isStopped = meta.status === 'stopped';
+        const isCompleted = meta.status === 'dispatched' || meta.status === 'completed';
+
         const cPct = Math.round(((meta.processedContactsCount || 0) / (meta.contactsCount || 1)) * 100);
         const nPct = Math.round(((meta.processedNumbersCount || 0) / (meta.recipientsCount || 1)) * 100);
+
+        let statusConfig = {
+            title: 'Actively Sending Messages',
+            subtitle: `Targeting: <strong style="color:var(--text-main);">${meta.currentContactName || 'Calculating...'}</strong>`,
+            icon: 'send',
+            bg: 'linear-gradient(135deg, rgba(59,130,246,0.1) 0%, rgba(37,211,102,0.05) 100%)',
+            border: 'rgba(59,130,246,0.2)',
+            accent: '#3b82f6'
+        };
+
+        if (isStopped) {
+            statusConfig = {
+                title: 'Broadcast Stopped',
+                subtitle: 'The campaign was manually stopped by an administrator.',
+                icon: 'square',
+                bg: 'linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(239,68,68,0.05) 100%)',
+                border: 'rgba(239,68,68,0.2)',
+                accent: '#ef4444'
+            };
+        } else if (isCompleted) {
+            statusConfig = {
+                title: 'Broadcast Completed',
+                subtitle: 'All messages have been successfully dispatched to the queue.',
+                icon: 'check-circle',
+                bg: 'linear-gradient(135deg, rgba(34,197,94,0.1) 0%, rgba(34,197,94,0.05) 100%)',
+                border: 'rgba(34,197,94,0.2)',
+                accent: '#22c55e'
+            };
+        }
         
         mount.innerHTML = `
-            <div style="background:linear-gradient(135deg, rgba(59,130,246,0.1) 0%, rgba(37,211,102,0.05) 100%); border:1px solid rgba(59,130,246,0.2); border-radius:20px; padding:24px; margin-bottom:32px; box-shadow:0 10px 30px rgba(0,0,0,0.1);">
+            <div style="background:${statusConfig.bg}; border:1px solid ${statusConfig.border}; border-radius:20px; padding:24px; margin-bottom:32px; box-shadow:0 10px 30px rgba(0,0,0,0.1);">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px;">
                     <div style="display:flex; align-items:center; gap:16px;">
-                        <div class="wa-status-pulse" style="width:48px; height:48px; background:#3b82f6; border-radius:14px; display:flex; align-items:center; justify-content:center; color:white; box-shadow:0 0 20px rgba(59,130,246,0.4);">
-                            <i data-lucide="send" style="width:24px;height:24px;"></i>
+                        <div class="${isDispatching ? 'wa-status-pulse' : ''}" style="width:48px; height:48px; background:${statusConfig.accent}; border-radius:14px; display:flex; align-items:center; justify-content:center; color:white; box-shadow:0 0 20px ${statusConfig.accent}66;">
+                            <i data-lucide="${statusConfig.icon}" style="width:24px;height:24px;"></i>
                         </div>
                         <div>
-                            <div style="font-weight:800; color:#3b82f6; font-size:1.1rem; letter-spacing:-0.01em;">Actively Sending Messages</div>
-                            <div style="font-size:0.85rem; color:var(--text-dim); margin-top:2px;">Targeting: <strong style="color:var(--text-main);">${meta.currentContactName || 'Calculating...'}</strong></div>
+                            <div style="font-weight:800; color:${statusConfig.accent}; font-size:1.1rem; letter-spacing:-0.01em;">${statusConfig.title}</div>
+                            <div style="font-size:0.85rem; color:var(--text-dim); margin-top:2px;">${statusConfig.subtitle}</div>
                         </div>
                     </div>
-                    <button class="btn btn-danger" style="border-radius:12px; padding:8px 20px; font-weight:700;" onclick="window.whatsAppSender.stopBroadcast('${meta.broadcastId}')">
+                    ${isDispatching ? `
+                    <button class="btn btn-danger" style="border-radius:12px; padding:8px 20px; font-weight:700;" onclick="window.whatsAppSender.stopBroadcast('${logId}')">
                         <i data-lucide="square" style="width:14px;height:14px;margin-right:6px;"></i> Stop Broadcast
                     </button>
+                    ` : ''}
                 </div>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:32px;">
                     <div>
@@ -1913,7 +2014,7 @@ if (!window.whatsAppSender) {
                             <span style="font-size:0.75rem; color:var(--text-main); font-weight:800;">${cPct}%</span>
                         </div>
                         <div style="height:10px; background:rgba(255,255,255,0.05); border-radius:5px; overflow:hidden;">
-                            <div style="height:100%; background:linear-gradient(90deg, #3b82f6, #60a5fa); width:${cPct}%; transition:width 0.5s ease; box-shadow:0 0 10px rgba(59,130,246,0.5);"></div>
+                            <div style="height:100%; background:linear-gradient(90deg, ${statusConfig.accent}, ${statusConfig.accent}cc); width:${cPct}%; transition:width 0.5s ease; box-shadow:0 0 10px ${statusConfig.accent}80;"></div>
                         </div>
                         <div style="font-size:0.75rem; margin-top:8px; color:var(--text-dim);">${meta.processedContactsCount || 0} of ${meta.contactsCount || 0} unique contacts</div>
                     </div>
@@ -1923,7 +2024,7 @@ if (!window.whatsAppSender) {
                             <span style="font-size:0.75rem; color:var(--text-main); font-weight:800;">${nPct}%</span>
                         </div>
                         <div style="height:10px; background:rgba(255,255,255,0.05); border-radius:5px; overflow:hidden;">
-                            <div style="height:100%; background:linear-gradient(90deg, #38bdf8, #7dd3fc); width:${nPct}%; transition:width 0.5s ease; box-shadow:0 0 10px rgba(56,189,248,0.5);"></div>
+                            <div style="height:100%; background:linear-gradient(90deg, ${statusConfig.accent}, ${statusConfig.accent}cc); width:${nPct}%; transition:width 0.5s ease; box-shadow:0 0 10px ${statusConfig.accent}80;"></div>
                         </div>
                         <div style="font-size:0.75rem; margin-top:8px; color:var(--text-dim);">${meta.processedNumbersCount || 0} of ${meta.recipientsCount || 0} total phone numbers</div>
                     </div>
@@ -2093,5 +2194,213 @@ if (!window.whatsAppSender) {
             await firebase.database().ref(`modules/whatsapp_sender/broadcast_history/${logId}`).update({ stopRequested: true });
             AppDialog.toast('Stop signal sent.', 'info');
         } catch (e) { AppDialog.toast('Failed to stop: ' + e.message, 'error'); }
+    };
+
+    // --- Frequency Protection Feature ---
+
+    window.whatsAppSender.openFrequencyProtection = async function() {
+        const audienceSelect = document.getElementById('wa-broadcast-audience');
+        const templateSelect = document.getElementById('wa-template-select');
+        
+        const audienceVal = audienceSelect ? audienceSelect.value : 'none';
+        const templateName = templateSelect ? templateSelect.value : '';
+
+        if (audienceVal === 'none' || !templateName) {
+            AppDialog.toast('Please select an audience and template first.', 'warn');
+            return;
+        }
+
+        const audienceText = audienceSelect.options[audienceSelect.selectedIndex].text;
+
+        const html = `
+            <div style="display:flex; flex-direction:column; gap:20px;">
+                <div style="display:flex; align-items:center; gap:12px; padding-bottom:12px; border-bottom:1px solid var(--border);">
+                    <div style="width:42px; height:42px; border-radius:12px; background:rgba(102, 200, 200, 0.1); color:var(--accent-secondary); display:flex; align-items:center; justify-content:center;">
+                        <i data-lucide="shield-check" style="width:24px;height:24px;"></i>
+                    </div>
+                    <div>
+                        <div style="font-weight:800; color:var(--text-main); font-size:1.1rem;">Smart Frequency Filter</div>
+                        <div style="font-size:0.8rem; color:var(--text-dim);">Ensuring a healthy message cadence</div>
+                    </div>
+                </div>
+
+                <div style="background:rgba(255,255,255,0.02); padding:16px; border-radius:14px; border:1px solid rgba(255,255,255,0.05); display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; font-weight:700; letter-spacing:0.05em;">Current Audience</span>
+                        <span style="font-size:0.8rem; color:var(--text-main); font-weight:600;">${audienceText}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; font-weight:700; letter-spacing:0.05em;">Template</span>
+                        <span style="font-size:0.8rem; color:var(--accent-secondary); font-weight:600;">${templateName}</span>
+                    </div>
+                </div>
+
+                <div class="form-group" style="background:rgba(255,255,255,0.03); padding:16px; border-radius:14px; border:1px solid rgba(255,255,255,0.05);">
+                    <label style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; display:block; margin-bottom:12px; letter-spacing:0.05em;">Lookback Window</label>
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <input type="number" id="wa-fp-days" class="wa-input" value="7" min="1" max="30" style="width:80px; text-align:center; font-weight:700; font-size:1.1rem; padding:12px;">
+                        <span style="font-size:0.9rem; color:var(--text-main); font-weight:600;">Days</span>
+                    </div>
+                    <p style="font-size:0.75rem; color:var(--text-dim); margin-top:10px; line-height:1.4;">We will identify recipients who have already received this template in the selected window.</p>
+                </div>
+            </div>
+        `;
+
+        const modalPromise = AppDialog.confirm(html, {
+            title: 'Frequency Protection',
+            confirmText: 'Run Scanner',
+            isHtml: true,
+            width: '450px'
+        });
+
+        // Initialize icons after modal is likely in DOM
+        setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 50);
+
+        const confirmed = await modalPromise;
+
+        if (confirmed) {
+            const daysInput = document.getElementById('wa-fp-days');
+            const days = daysInput ? (parseInt(daysInput.value) || 7) : 7;
+            this.runFrequencyCheck(audienceVal, templateName, days);
+        }
+    };
+
+    window.whatsAppSender.runFrequencyCheck = async function(audienceVal, templateName, days) {
+        try {
+            AppDialog.toast('Running frequency check...', 'info');
+            
+            // 1. Get recipients from current audience
+            const recipients = await this._getCurrentlySelectedRecipients();
+
+            if (!recipients || recipients.length === 0) {
+                AppDialog.toast('No recipients found in selected audience.', 'error');
+                return;
+            }
+
+            // 2. Query history for this template in the last X days
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - days);
+
+            // We filter by timestamp first to get recent broadcasts, then filter template in-memory 
+            // to avoid requiring a composite index in Firestore.
+            const historySnap = await firestore.collection('modules').doc('whatsapp_sender').collection('history')
+                .where('timestamp', '>=', cutoffDate)
+                .get();
+
+            const matchingHistoryDocs = historySnap.docs.filter(doc => doc.data().template === templateName);
+
+            if (matchingHistoryDocs.length === 0) {
+                AppDialog.alert('No previous broadcasts found for this template in the last ' + days + ' days. Your entire audience is "fresh".', { title: 'Frequency Protection', type: 'success' });
+                return;
+            }
+
+            // 3. Collect all recipient logs for these matching broadcasts from RTDB
+            const alreadySentTo = new Set();
+            const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
+            const broadcastIds = matchingHistoryDocs.map(doc => doc.id);
+            const snapshots = await Promise.all(broadcastIds.map(bId => logsRef.orderByChild('broadcastId').equalTo(bId).once('value')));
+            
+            snapshots.forEach(snap => {
+                const logs = snap.val() || {};
+                Object.values(logs).forEach(log => {
+                    const status = (log.status || '').toLowerCase();
+                    if (['sent', 'delivered', 'read'].includes(status)) {
+                        alreadySentTo.add(String(log.phone).replace(/\D/g, ''));
+                    }
+                });
+            });
+
+            // 4. Filter recipients
+            const duplicates = recipients.filter(r => alreadySentTo.has(r.phone));
+            const fresh = recipients.filter(r => !alreadySentTo.has(r.phone));
+
+            if (duplicates.length === 0) {
+                AppDialog.alert('Found ' + recipients.length + ' recipients. None have received this template in the last ' + days + ' days.', { title: 'Frequency Protection', type: 'success' });
+            } else {
+                // Global helper for the modal actions
+                window.whatsAppSender._toggleAllFrequencyExclusions = (checked) => {
+                    document.querySelectorAll('.wa-fp-check').forEach(c => c.checked = checked);
+                };
+
+                const html = `
+                    <div style="display:flex; flex-direction:column; gap:24px;">
+                        <div style="text-align:center;">
+                            <div style="font-size:3.5rem; margin-bottom:12px; filter: drop-shadow(0 0 15px rgba(239, 68, 68, 0.3));">🛡️</div>
+                            <h3 style="margin:0; color:var(--text-main); font-weight:800; font-size:1.5rem;">Scanner Results</h3>
+                            <p style="font-size:0.85rem; color:var(--text-dim); margin-top:6px;">We identified <strong>${duplicates.length}</strong> recipients who received this template in the last <strong>${days}</strong> days.</p>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                            <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.15); padding:16px; border-radius:18px; text-align:center;">
+                                <div style="font-size:0.7rem; color:#ef4444; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Duplicates</div>
+                                <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${duplicates.length}</div>
+                            </div>
+                            <div style="background:rgba(34, 197, 94, 0.08); border:1px solid rgba(34, 197, 94, 0.15); padding:16px; border-radius:18px; text-align:center;">
+                                <div style="font-size:0.7rem; color:#4ade80; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Keep Fresh</div>
+                                <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${fresh.length}</div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding:0 4px;">
+                                <div style="font-size:0.85rem; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+                                    <i data-lucide="list-filter" style="width:14px;height:14px;color:var(--accent-secondary);"></i>
+                                    Exclusion List
+                                </div>
+                                <div style="display:flex; gap:12px;">
+                                    <button onclick="window.whatsAppSender._toggleAllFrequencyExclusions(true)" style="font-size:0.75rem; color:var(--accent-secondary); background:rgba(102, 200, 200, 0.1); border:1px solid rgba(102, 200, 200, 0.2); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700; transition:all 0.2s; border-style:none;">Check All</button>
+                                    <button onclick="window.whatsAppSender._toggleAllFrequencyExclusions(false)" style="font-size:0.75rem; color:var(--text-dim); background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700; transition:all 0.2s; border-style:none;">Clear</button>
+                                </div>
+                            </div>
+
+                            <div style="max-height:260px; overflow-y:auto; border:1px solid var(--border); border-radius:16px; background:rgba(0,0,0,0.25); padding:6px; scrollbar-width:thin;">
+                                ${duplicates.map((r, i) => `
+                                    <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:10px; transition: background 0.2s; margin-bottom:2px;" class="wa-fp-item">
+                                        <label style="display:flex; align-items:center; gap:14px; cursor:pointer; width:100%;">
+                                            <input type="checkbox" class="wa-fp-check" value="${r.phone}" checked style="width:20px; height:20px; accent-color:var(--accent-secondary); cursor:pointer; border-radius:6px;">
+                                            <div style="flex:1;">
+                                                <div style="font-size:0.95rem; font-weight:700; color:var(--text-main);">${r.name}</div>
+                                                <div style="font-size:0.75rem; color:var(--text-dim); letter-spacing:0.02em;">+${r.phone}</div>
+                                            </div>
+                                            <div style="font-size:0.65rem; color:#ef4444; background:rgba(239, 68, 68, 0.1); padding:2px 8px; border-radius:6px; font-weight:800; text-transform:uppercase;">DUP</div>
+                                        </label>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <div style="background:rgba(102, 200, 200, 0.05); border:1px dotted var(--accent-secondary); padding:14px; border-radius:14px; display:flex; gap:12px; align-items:flex-start;">
+                             <i data-lucide="info" style="width:16px;height:16px;color:var(--accent-secondary);flex-shrink:0;margin-top:2px;"></i>
+                             <p style="font-size:0.75rem; color:var(--text-dim); line-height:1.5; margin:0;">Frequency protection helps maintain sender reputation. We recommend excluding all identified duplicates unless you have specific intent to re-send.</p>
+                        </div>
+                    </div>
+                `;
+
+                const modalPromise = AppDialog.confirm(html, {
+                    title: 'Scanner Results',
+                    confirmText: 'Apply Exclusions',
+                    cancelText: 'Skip Filtering',
+                    isHtml: true,
+                    width: '520px'
+                });
+
+                // Initialize icons after modal is likely in DOM
+                setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 50);
+
+                const confirmed = await modalPromise;
+
+                if (confirmed) {
+                    const selectedChecks = document.querySelectorAll('.wa-fp-check:checked');
+                    const toExclude = Array.from(selectedChecks).map(c => c.value);
+                    
+                    this.excludedNumbers = toExclude;
+                    AppDialog.toast(`Successfully excluded ${toExclude.length} duplicate recipients.`, 'success');
+                    this.updateRecipientCount();
+                }
+            }
+        } catch (error) {
+            console.error("Frequency Check Failed:", error);
+            AppDialog.toast('Frequency check failed: ' + error.message, 'error');
+        }
     };
 }

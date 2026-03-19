@@ -96,13 +96,11 @@ if (!window.whatsAppSender) {
             const audienceSelect = document.getElementById('wa-broadcast-audience');
             if (audienceSelect) {
                 const currentValue = audienceSelect.value;
-                const optgroup = audienceSelect.querySelector('optgroup[label="Custom Lists"]');
-
-                if (optgroup) {
-                    optgroup.innerHTML = Object.entries(this.lists).map(([id, list]) =>
+                
+                audienceSelect.innerHTML = `<option value="none" disabled selected>-- Choose Audience --</option>` + 
+                    Object.entries(this.lists).map(([id, list]) =>
                         `<option value="list:${id}">${list.name} (${list.contactsCount ?? list.count ?? 0})</option>`
                     ).join('');
-                }
 
                 // Try to keep the previously selected value
                 if (Array.from(audienceSelect.options).some(opt => opt.value === currentValue)) {
@@ -321,7 +319,8 @@ if (!window.whatsAppSender) {
                 sentCount: 0, deliveredCount: 0, readCount: 0, failedCount: 0,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                 status: 'dispatching',
-                broadcastId: broadcastId
+                broadcastId: broadcastId,
+                isSimulation: isSimulation
             });
 
             if (!isSimulation && audienceVal.startsWith('list:')) {
@@ -346,6 +345,25 @@ if (!window.whatsAppSender) {
             console.error("Preparation Failed:", error);
             AppDialog.toast('Failed to prepare broadcast: ' + error.message, 'error');
             if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = originalBtnHtml; if (window.lucide) window.lucide.createIcons({ root: sendBtn }); }
+        }
+    };
+
+    window.whatsAppSender.stopBroadcast = async function (logId) {
+        const confirmed = await AppDialog.confirm('Are you sure you want to stop this broadcast? Messages already in queue will still be sent.', { 
+            title: 'Stop Broadcast', 
+            confirmText: 'Stop Now',
+            danger: true 
+        });
+        if (!confirmed) return;
+
+        try {
+            await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).update({
+                stopRequested: true,
+                status: 'stopped'
+            });
+            AppDialog.toast('Stop request sent.', 'info');
+        } catch (e) {
+            AppDialog.toast('Failed to stop: ' + e.message, 'error');
         }
     };
 
@@ -981,13 +999,7 @@ if (!window.whatsAppSender) {
             });
         };
 
-        if (val === 'staff') {
-            const snap = await firebase.database().ref('modules/staff_directory/staff').once('value');
-            Object.values(snap.val() || {}).forEach(s => addRecipient(s.phone, s.name));
-        } else if (val === 'students') {
-            const snap = await firestore.collection('modules').doc('directory').collection('students').get();
-            snap.docs.forEach(doc => addRecipient(doc.data().phone, doc.data().name));
-        } else if (val.startsWith('list:')) {
+        if (val.startsWith('list:')) {
             const snap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(val.split(':')[1]).collection('members').get();
             snap.docs.forEach(doc => addRecipient(doc.data().phone, doc.data().name));
         }

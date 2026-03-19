@@ -2446,7 +2446,8 @@ header {
 
 #whatsapp-app header {
   flex-shrink: 0;
-  padding-bottom: 16px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
 }
 
 #whatsapp-app #whatsapp-content {
@@ -2457,9 +2458,9 @@ header {
 /* Mobile: give header room below user widget */
 @media (max-width: 1024px) {
   #whatsapp-app .view-title h1 {
-    padding-top: 60px;
+    padding-top: 20px;
   }
-
+}
   #whatsapp-app .console-main {
     padding: 16px 16px 100px;
   }
