@@ -94,7 +94,7 @@ exports.sendWhatsAppMessage = onCall(async (request) => {
   } catch (error) { throw new HttpsError("internal", error.message); }
 });
 
-exports.sendWhatsAppBroadcast = onCall(async (request) => {
+exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
   const {templateName, recipients, variables, broadcastId, contactsCount, excludedNumbers} = request.data;

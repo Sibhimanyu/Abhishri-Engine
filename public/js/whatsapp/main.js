@@ -310,12 +310,18 @@ if (!window.whatsAppSender) {
             const broadcastRef = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc();
             const broadcastId = broadcastRef.id;
 
+            // CRITICAL: We only want to send to people NOT in the excluded list.
+            // This ensures the progress bar (which uses recipientsCount) is accurate 
+            // and the backend only processes valid targets.
+            const recipientsToProcess = activeRecipients;
+            const finalExcluded = excluded;
+
             await broadcastRef.set({
                 template: templateName,
                 campaignName: campaignNameValue,
                 listName: audienceSelect.options[audienceSelect.selectedIndex].text,
-                recipientsCount: recipients.length,
-                contactsCount: contactsCount,
+                recipientsCount: recipientsToProcess.length, // Accurate count for progress bar
+                contactsCount: [...new Set(recipientsToProcess.map(r => r.name))].length,
                 sentCount: 0, deliveredCount: 0, readCount: 0, failedCount: 0,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                 status: 'dispatching',
@@ -331,10 +337,16 @@ if (!window.whatsAppSender) {
             this.viewBroadcastDetails(broadcastId, broadcastRef.id);
 
             if (isSimulation) {
-                this.startLocalSimulation(broadcastId, recipients);
+                this.startLocalSimulation(broadcastId, recipientsToProcess);
             } else {
                 this.sendBroadcastAPI({
-                    templateName, recipients, variables, broadcastId, headerImageUrl, contactsCount, excludedNumbers: excluded
+                    templateName, 
+                    recipients: recipientsToProcess, // ONLY send the filtered list
+                    variables, 
+                    broadcastId, 
+                    headerImageUrl, 
+                    contactsCount: [...new Set(recipientsToProcess.map(r => r.name))].length, 
+                    excludedNumbers: finalExcluded // Still pass these for logging purposes if needed
                 }).then(() => {
                     this.excludedNumbers = [];
                 }).catch(e => {
@@ -1025,7 +1037,13 @@ if (!window.whatsAppSender) {
 
             for (const bId of bIds) {
                 const snap = await firebase.database().ref('modules/whatsapp_sender/broadcast_logs').orderByChild('broadcastId').equalTo(bId).once('value');
-                Object.values(snap.val() || {}).forEach(log => { if (log.status !== 'failed' && log.recipientId) dupPhones.add(log.recipientId.replace(/\D/g, '')); });
+                Object.values(snap.val() || {}).forEach(log => { 
+                    const status = (log.status || '').toLowerCase();
+                    if (log.status !== 'failed' && (log.recipientId || log.phone)) {
+                        const phone = log.recipientId || log.phone;
+                        dupPhones.add(String(phone).replace(/\D/g, '')); 
+                    }
+                });
             }
 
             const current = await this._getCurrentlySelectedRecipients();

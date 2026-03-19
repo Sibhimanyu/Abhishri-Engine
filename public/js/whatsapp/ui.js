@@ -1032,6 +1032,10 @@ if (!window.whatsAppSender) {
         const container = document.getElementById('whatsapp-content-history');
         if (!container) return;
 
+        // Use cached logs for instant restoration if available
+        const cachedLogs = this._cachedHistoryLogs || [];
+        const hasCache = cachedLogs.length > 0;
+
         container.innerHTML = `
             <div class="wa-history-page">
                 <div class="wa-history-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
@@ -1048,7 +1052,7 @@ if (!window.whatsAppSender) {
                         <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Sync Logs
                     </button>
                 </div>
-                
+
                 <div class="table-responsive" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; overflow:hidden;">
                     <table class="table" style="width:100%; border-collapse:collapse;">
                         <thead style="background:rgba(255,255,255,0.02); border-bottom:1px solid var(--border);">
@@ -1062,12 +1066,14 @@ if (!window.whatsAppSender) {
                             </tr>
                         </thead>
                         <tbody id="wa-history-tbody">
+                            ${hasCache ? this._mapLogsToRows(cachedLogs) : `
                             <tr>
                                 <td colspan="6" style="padding:60px; text-align:center; color:var(--text-dim);">
                                     <i data-lucide="loader" style="width:32px;height:32px;animation:spin 1s linear infinite;margin-bottom:12px;opacity:0.5;"></i>
                                     <p style="font-weight:600;">Connecting to log server...</p>
                                 </td>
                             </tr>
+                            `}
                         </tbody>
                     </table>
                 </div>
@@ -1077,9 +1083,119 @@ if (!window.whatsAppSender) {
         this.loadHistory();
     };
 
+    window.whatsAppSender._mapLogsToRows = function (logs) {
+        return logs.map(log => {
+            const ts = log._parsedTimestamp || (log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp));
+            const date = ts.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            const time = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const audience = log.listName || log.listId || 'Custom List';
+            const campaignName = log.campaignName || 'Untitled Campaign';
+            const templateName = log.template || '—';
+
+            const displayRead = log.readCount || 0;
+            const displayDelivered = log.deliveredCount || 0;
+            const displaySent = log.sentCount || 0;
+            const displayFailed = log.failedCount || 0;
+            const total = log.recipientsCount || 0;
+
+            const now = Date.now();
+            const ageMinutes = (now - ts.getTime()) / (1000 * 60);
+            const isDispatching = log.status === 'dispatching' || log.status === 'dispatching_meta';
+            const isStuck = isDispatching && ageMinutes > 30;
+
+            const statusHTML = `
+                <div style="display:flex; flex-direction:column; gap:6px; min-width:180px;">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+                        <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(59, 130, 246, 0.08); border:1px solid rgba(59,130,246,0.15); color:#3b82f6;" title="Sent (Total processed)">
+                            <i data-lucide="send" style="width:12px;height:12px; opacity:0.8;"></i>
+                            <span style="font-size:0.7rem; font-weight:700;">SENT</span>
+                            <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displaySent}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(37, 211, 102, 0.08); border:1px solid rgba(37,211,102,0.15); color:#25D366; opacity:${displayDelivered > 0 ? '1' : '0.4'};" title="Delivered (Received by device)">
+                            <i data-lucide="check" style="width:12px;height:12px; opacity:0.8;"></i>
+                            <span style="font-size:0.7rem; font-weight:700;">DELIV</span>
+                            <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayDelivered}</span>
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+                        <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(168, 85, 247, 0.08); border:1px solid rgba(168,85,247,0.15); color:#a855f7; opacity:${displayRead > 0 ? '1' : '0.4'};" title="Read (Opened)">
+                            <i data-lucide="check-check" style="width:12px;height:12px; opacity:0.8;"></i>
+                            <span style="font-size:0.7rem; font-weight:700;">READ</span>
+                            <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayRead}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239,68,68,0.15); color:#ef4444; opacity:${displayFailed > 0 ? '1' : '0.4'};" title="Failed">
+                            <i data-lucide="alert-circle" style="width:12px;height:12px; opacity:0.8;"></i>
+                            <span style="font-size:0.7rem; font-weight:700;">FAIL</span>
+                            <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayFailed}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            return `
+                <tr style="border-bottom:1px solid var(--border); transition:background 0.2s; cursor:pointer;"
+                    onmouseenter="this.style.background='rgba(255,255,255,0.02)'" onmouseleave="this.style.background=''"
+                    onclick="window.whatsAppSender.viewBroadcastDetails('${log.broadcastId || ''}', '${log.id}')">
+                    <td style="padding:20px;">
+                        <div style="font-weight:700; color:var(--text-main); font-size:0.95rem;">${date}</div>
+                        <div style="font-size:0.75rem; color:var(--text-dim); margin-top:2px;">${time}</div>
+                    </td>
+                    <td style="padding:20px;">
+                        <div style="font-weight:800; color:var(--text-main); font-size:1rem; margin-bottom:6px;">${campaignName}</div>
+                        <div style="display:inline-flex; align-items:center; gap:6px; font-size:0.7rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.1); padding:4px 10px; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
+                            <i data-lucide="layout-template" style="width:12px;height:12px;"></i> ${templateName}
+                        </div>
+                    </td>
+                    <td style="padding:20px;">
+                        <div style="display:flex; align-items:center; gap:8px; font-size:0.9rem; color:var(--text-main); font-weight:600;">
+                            <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);"></div>
+                            ${audience}
+                        </div>
+                    </td>
+                    <td style="padding:20px; text-align:center;">
+                        <div style="font-weight:800; font-size:1.1rem; color:var(--text-main);">${total}</div>
+                        <div style="font-size:0.65rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; font-weight:700;">Targets</div>
+                    </td>
+                    <td style="padding:20px;">
+                        ${statusHTML}
+                    </td>
+                    <td style="padding:20px; text-align:right;">
+                        <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
+                            ${isDispatching ? `
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                                    <div style="font-size:0.7rem; color:${isStuck ? '#ef4444' : '#3b82f6'}; font-weight:800; text-transform:uppercase; display:flex; align-items:center; gap:4px;">
+                                        <div class="wa-status-pulse" style="width:8px;height:8px;background:currentColor;border-radius:50%;"></div>
+                                        ${isStuck ? 'Likely Stuck' : 'Sending...'}
+                                    </div>
+                                    <button class="btn btn-danger" onclick="event.stopPropagation(); window.whatsAppSender.stopBroadcast('${log.id}')" 
+                                        style="padding:4px 8px; font-size:0.65rem; border-radius:6px; height:auto;">
+                                        STOP
+                                    </button>
+                                </div>
+                            ` : ''}
+                            <button class="btn btn-primary" style="padding:8px 16px; border-radius:10px; font-size:0.8rem; font-weight:700; gap:6px;">
+                                <i data-lucide="bar-chart-3" style="width:14px;height:14px;"></i> View Report
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    };
+
     window.whatsAppSender.loadHistory = function () {
         const tbody = document.getElementById('wa-history-tbody');
         if (!tbody) return;
+
+        // Visual feedback on the Sync button
+        const syncBtn = document.querySelector('button[onclick*="loadHistory"]');
+        const originalBtnHtml = syncBtn ? syncBtn.innerHTML : '';
+        if (syncBtn) {
+            syncBtn.disabled = true;
+            syncBtn.innerHTML = `<i data-lucide="loader" class="animation-spin" style="width:14px;height:14px;margin-right:6px;"></i> Syncing...`;
+            if (window.lucide) window.lucide.createIcons({ root: syncBtn });
+        }
 
         // Unsubscribe any existing listener
         if (window.whatsAppSender._historyUnsubscribe) {
@@ -1091,7 +1207,27 @@ if (!window.whatsAppSender) {
             .orderBy('timestamp', 'desc')
             .limit(50)
             .onSnapshot(snapshot => {
-                const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Restore button state
+                if (syncBtn) {
+                    syncBtn.disabled = false;
+                    syncBtn.innerHTML = originalBtnHtml;
+                    if (window.lucide) window.lucide.createIcons({ root: syncBtn });
+                }
+
+                const logs = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    let ts;
+                    if (!data.timestamp) ts = new Date();
+                    else if (data.timestamp.toDate) ts = data.timestamp.toDate();
+                    else ts = new Date(data.timestamp);
+
+                    return { id: doc.id, ...data, _parsedTimestamp: ts };
+                });
+
+                logs.sort((a, b) => b._parsedTimestamp - a._parsedTimestamp);
+
+                // Update local cache for instant restoration next time
+                this._cachedHistoryLogs = logs;
 
                 if (logs.length === 0) {
                     tbody.innerHTML = `
@@ -1105,110 +1241,11 @@ if (!window.whatsAppSender) {
                             </td>
                         </tr>
                     `;
-                    if (window.lucide) window.lucide.createIcons();
-                    return;
+                } else {
+                    tbody.innerHTML = this._mapLogsToRows(logs);
                 }
 
-                tbody.innerHTML = logs.map(log => {
-                    const ts = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
-                    const date = ts.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                    const time = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    
-                    const audience = log.listName || log.listId || 'Custom List';
-                    const campaignName = log.campaignName || 'Untitled Campaign';
-                    const templateName = log.template || '—';
-
-                    const displayRead = log.readCount || 0;
-                    const displayDelivered = log.deliveredCount || 0;
-                    const displaySent = log.sentCount || 0;
-                    const displayFailed = log.failedCount || 0;
-                    const total = log.recipientsCount || 0;
-                    
-                    const now = Date.now();
-                    const ageMinutes = (now - ts.getTime()) / (1000 * 60);
-                    const isDispatching = log.status === 'dispatching' || log.status === 'dispatching_meta';
-                    const isStuck = isDispatching && ageMinutes > 30;
-
-                    const statusHTML = `
-                        <div style="display:flex; flex-direction:column; gap:6px; min-width:180px;">
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
-                                <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(59, 130, 246, 0.08); border:1px solid rgba(59,130,246,0.15); color:#3b82f6;" title="Sent (Total processed)">
-                                    <i data-lucide="send" style="width:12px;height:12px; opacity:0.8;"></i>
-                                    <span style="font-size:0.7rem; font-weight:700;">SENT</span>
-                                    <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displaySent}</span>
-                                </div>
-                                <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(37, 211, 102, 0.08); border:1px solid rgba(37,211,102,0.15); color:#25D366; opacity:${displayDelivered > 0 ? '1' : '0.4'};" title="Delivered (Received by device)">
-                                    <i data-lucide="check" style="width:12px;height:12px; opacity:0.8;"></i>
-                                    <span style="font-size:0.7rem; font-weight:700;">DELIV</span>
-                                    <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayDelivered}</span>
-                                </div>
-                            </div>
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
-                                <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(168, 85, 247, 0.08); border:1px solid rgba(168,85,247,0.15); color:#a855f7; opacity:${displayRead > 0 ? '1' : '0.4'};" title="Read (Opened)">
-                                    <i data-lucide="check-check" style="width:12px;height:12px; opacity:0.8;"></i>
-                                    <span style="font-size:0.7rem; font-weight:700;">READ</span>
-                                    <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayRead}</span>
-                                </div>
-                                <div style="display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:6px; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239,68,68,0.15); color:#ef4444; opacity:${displayFailed > 0 ? '1' : '0.4'};" title="Failed">
-                                    <i data-lucide="alert-circle" style="width:12px;height:12px; opacity:0.8;"></i>
-                                    <span style="font-size:0.7rem; font-weight:700;">FAIL</span>
-                                    <span style="margin-left:auto; font-size:0.8rem; font-weight:800;">${displayFailed}</span>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    return `
-                        <tr style="border-bottom:1px solid var(--border); transition:background 0.2s;"
-                            onmouseenter="this.style.background='rgba(255,255,255,0.02)'" onmouseleave="this.style.background=''">
-                            <td style="padding:20px;">
-                                <div style="font-weight:700; color:var(--text-main); font-size:0.95rem;">${date}</div>
-                                <div style="font-size:0.75rem; color:var(--text-dim); margin-top:2px;">${time}</div>
-                            </td>
-                            <td style="padding:20px;">
-                                <div style="font-weight:800; color:var(--text-main); font-size:1rem; margin-bottom:6px;">${campaignName}</div>
-                                <div style="display:inline-flex; align-items:center; gap:6px; font-size:0.7rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.1); padding:4px 10px; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
-                                    <i data-lucide="layout-template" style="width:12px;height:12px;"></i> ${templateName}
-                                </div>
-                            </td>
-                            <td style="padding:20px;">
-                                <div style="display:flex; align-items:center; gap:8px; font-size:0.9rem; color:var(--text-main); font-weight:600;">
-                                    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);"></div>
-                                    ${audience}
-                                </div>
-                            </td>
-                            <td style="padding:20px; text-align:center;">
-                                <div style="font-weight:800; font-size:1.1rem; color:var(--text-main);">${total}</div>
-                                <div style="font-size:0.65rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; font-weight:700;">Targets</div>
-                            </td>
-                            <td style="padding:20px;">
-                                ${statusHTML}
-                            </td>
-                            <td style="padding:20px; text-align:right;">
-                                <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
-                                    ${isDispatching ? `
-                                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-                                            <div style="font-size:0.7rem; color:${isStuck ? '#ef4444' : '#3b82f6'}; font-weight:800; text-transform:uppercase; display:flex; align-items:center; gap:4px;">
-                                                <div class="wa-status-pulse" style="width:8px;height:8px;background:currentColor;border-radius:50%;"></div>
-                                                ${isStuck ? 'Likely Stuck' : 'Sending...'}
-                                            </div>
-                                            <button class="btn btn-danger" onclick="event.stopPropagation(); window.whatsAppSender.stopBroadcast('${log.id}')" 
-                                                style="padding:4px 8px; font-size:0.65rem; border-radius:6px; height:auto;">
-                                                STOP
-                                            </button>
-                                        </div>
-                                    ` : ''}
-                                    <button class="btn btn-primary" style="padding:8px 16px; border-radius:10px; font-size:0.8rem; font-weight:700; gap:6px;" 
-                                        onclick="window.whatsAppSender.viewBroadcastDetails('${log.broadcastId || ''}', '${log.id}')">
-                                        <i data-lucide="bar-chart-3" style="width:14px;height:14px;"></i> View Report
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
-
-                if (window.lucide) window.lucide.createIcons();
+                if (window.lucide) window.lucide.createIcons({ root: tbody });
             }, err => {
                 console.error("History sync error:", err);
                 tbody.innerHTML = `<tr><td colspan="6" style="padding:40px; color:var(--danger); text-align:center; font-weight:600;"><i data-lucide="alert-triangle" style="vertical-align:middle;margin-right:8px;"></i> Failed to sync logs: ${err.message}</td></tr>`;
@@ -1234,31 +1271,34 @@ if (!window.whatsAppSender) {
         const searchInput = document.getElementById('wa-report-search');
         const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
         
-        const rows = document.querySelectorAll('.wa-report-row');
+        const rows = document.querySelectorAll('.wa-report-item');
         let visibleCount = 0;
 
         rows.forEach(row => {
             const rowStatus = row.getAttribute('data-status');
-            const phoneEl = row.querySelector('.wa-phone-number');
+            const phoneEl = row.querySelector('.wa-report-tab-header div div div:nth-child(2)');
+            const nameEl = row.querySelector('.wa-report-tab-header div div div:nth-child(1)');
+            
             const phoneText = phoneEl ? phoneEl.textContent.trim().toLowerCase() : '';
+            const nameText = nameEl ? nameEl.textContent.trim().toLowerCase() : '';
             
             // 1. Status Check
             let statusMatch = status === 'all' || rowStatus === status;
             if (status === 'delivered' && rowStatus === 'read') statusMatch = true;
             if (status === 'sent' && (rowStatus === 'delivered' || rowStatus === 'read')) statusMatch = true;
-            if (status === 'failed' && rowStatus === 'error') statusMatch = true;
+            if (status === 'failed' && (rowStatus === 'error' || rowStatus === 'failed')) statusMatch = true;
 
             // 2. Search Check
             let searchMatch = true;
             if (searchTerm) {
-                searchMatch = phoneText.includes(searchTerm);
+                searchMatch = phoneText.includes(searchTerm) || nameText.includes(searchTerm);
             }
 
             const isVisible = statusMatch && searchMatch;
 
             if (isVisible) {
                 visibleCount++;
-                row.style.display = 'block';
+                row.style.display = 'block'; // Fixed from flex to block
                 setTimeout(() => {
                     row.style.opacity = '1';
                     row.style.transform = 'scale(1)';
@@ -1789,12 +1829,27 @@ if (!window.whatsAppSender) {
 
 
     window.whatsAppSender.viewBroadcastDetails = async function (broadcastId, logId) {
-        this.switchView('history'); // Ensure redirection to history tab
         const container = document.getElementById('whatsapp-content-history');
         if (!container) return;
+
+        const isAlreadyActive = container.getAttribute('data-active-report') === logId;
+
+        // Only switch view if we're not already looking at the history tab
+        if (this.currentView !== 'history') {
+            this.switchView('history');
+        }
         
+        // Find the refresh button if it exists to show immediate feedback
+        const refreshBtn = document.querySelector('button[onclick*="viewBroadcastDetails"]');
+        if (refreshBtn) {
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = `<i data-lucide="loader" class="animation-spin" style="width:14px;height:14px;margin-right:6px;"></i> Syncing...`;
+            if (window.lucide) window.lucide.createIcons({ root: refreshBtn });
+        }
+
         // Render initial skeleton immediately if possible, or show a simpler loader
-        if (container.getAttribute('data-active-report') !== logId) {
+        // Only show the full-page "Syncing" loader if this isn't the report currently being viewed
+        if (!isAlreadyActive) {
             container.innerHTML = `
                 <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:400px; color:var(--text-dim); gap:20px;">
                     <i data-lucide="loader" style="width:40px;height:40px;animation:spin 1s linear infinite;"></i>
@@ -1811,7 +1866,11 @@ if (!window.whatsAppSender) {
         const initialMeta = metaDoc.data() || {};
         
         container.setAttribute('data-active-report', logId);
-        this._renderReportSkeleton(container, broadcastId, logId, initialMeta);
+        
+        // Stability: Only render skeleton if it's not already there for this logId
+        if (!isAlreadyActive) {
+            this._renderReportSkeleton(container, broadcastId, logId, initialMeta);
+        }
 
         let meta = initialMeta, recipients = {};
 
@@ -1831,11 +1890,20 @@ if (!window.whatsAppSender) {
             AppDialog.toast('Error loading recipient logs.', 'error');
         });
         this._logsDetailsUnsubscribe = () => query.off('value', listener);
+
+        // Reset button state once listeners are established
+        if (refreshBtn) {
+            setTimeout(() => {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = `<i data-lucide="refresh-cw" style="width:14px;height:14px;margin-right:6px;"></i> Refresh`;
+                if (window.lucide) window.lucide.createIcons({ root: refreshBtn });
+            }, 500);
+        }
     };
 
     window.whatsAppSender._getEffectiveStatus = function (m) {
         let status = (m.status || 'unknown').toLowerCase();
-        let error = m.error || null;
+        let error = m.error || (status === 'excluded' ? m.message : null);
 
         // Check statusHistory for hidden failures if top-level is processing
         if (status === 'processing' && m.statusHistory) {
@@ -1932,8 +2000,11 @@ if (!window.whatsAppSender) {
                         <div style="display:flex; gap:8px;" id="wa-report-filters">
                             <button class="btn btn-secondary wa-filter-btn wa-filter-active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')" style="border-radius:20px; padding:6px 16px;">All</button>
                             <button class="btn btn-secondary wa-filter-btn" data-filter="processing" onclick="window.whatsAppSender._filterReportRows('processing')" style="border-radius:20px; padding:6px 16px;">Processing</button>
+                            <button class="btn btn-secondary wa-filter-btn" data-filter="sent" onclick="window.whatsAppSender._filterReportRows('sent')" style="border-radius:20px; padding:6px 16px;">Sent</button>
+                            <button class="btn btn-secondary wa-filter-btn" data-filter="delivered" onclick="window.whatsAppSender._filterReportRows('delivered')" style="border-radius:20px; padding:6px 16px;">Delivered</button>
                             <button class="btn btn-secondary wa-filter-btn" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')" style="border-radius:20px; padding:6px 16px;">Read</button>
                             <button class="btn btn-secondary wa-filter-btn" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')" style="border-radius:20px; padding:6px 16px;">Failed</button>
+                            <button class="btn btn-secondary wa-filter-btn" data-filter="excluded" onclick="window.whatsAppSender._filterReportRows('excluded')" style="border-radius:20px; padding:6px 16px;">Excluded</button>
                         </div>
                         <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:280px; justify-content:flex-end;">
                             <div style="position:relative; flex:1; max-width:300px;">
@@ -2138,8 +2209,8 @@ if (!window.whatsAppSender) {
 
                 <div class="wa-report-tab-content">
                     ${error ? `
-                        <div style="color:#ef4444; font-size:0.8rem; padding:12px 16px; background:rgba(239,68,68,0.06); border-radius:12px; border:1px solid rgba(239,68,68,0.15); margin-bottom:20px; line-height:1.4;">
-                            <div style="font-weight:700; display:flex; align-items:center; gap:6px; margin-bottom:4px;"><i data-lucide="alert-triangle" style="width:14px;height:14px;"></i> Delivery Error</div>
+                        <div style="color:${status === 'excluded' ? 'var(--text-dim)' : '#ef4444'}; font-size:0.8rem; padding:12px 16px; background:${status === 'excluded' ? 'rgba(255,255,255,0.03)' : 'rgba(239,68,68,0.06)'}; border-radius:12px; border:1px solid ${status === 'excluded' ? 'var(--border)' : 'rgba(239,68,68,0.15)'}; margin-bottom:20px; line-height:1.4;">
+                            <div style="font-weight:700; display:flex; align-items:center; gap:6px; margin-bottom:4px;"><i data-lucide="${status === 'excluded' ? 'info' : 'alert-triangle'}" style="width:14px;height:14px;"></i> ${status === 'excluded' ? 'Exclusion Reason' : 'Delivery Error'}</div>
                             ${error}
                         </div>
                     ` : ''}
@@ -2281,8 +2352,6 @@ if (!window.whatsAppSender) {
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - days);
 
-            // We filter by timestamp first to get recent broadcasts, then filter template in-memory 
-            // to avoid requiring a composite index in Firestore.
             const historySnap = await firestore.collection('modules').doc('whatsapp_sender').collection('history')
                 .where('timestamp', '>=', cutoffDate)
                 .get();
@@ -2304,8 +2373,11 @@ if (!window.whatsAppSender) {
                 const logs = snap.val() || {};
                 Object.values(logs).forEach(log => {
                     const status = (log.status || '').toLowerCase();
-                    if (['sent', 'delivered', 'read'].includes(status)) {
-                        alreadySentTo.add(String(log.phone).replace(/\D/g, ''));
+                    if (['sent', 'delivered', 'read', 'processing'].includes(status)) {
+                        const phone = log.recipientId || log.phone;
+                        if (phone) {
+                            alreadySentTo.add(String(phone).replace(/\D/g, ''));
+                        }
                     }
                 });
             });
@@ -2317,86 +2389,83 @@ if (!window.whatsAppSender) {
             if (duplicates.length === 0) {
                 AppDialog.alert('Found ' + recipients.length + ' recipients. None have received this template in the last ' + days + ' days.', { title: 'Frequency Protection', type: 'success' });
             } else {
-                // Global helper for the modal actions
-                window.whatsAppSender._toggleAllFrequencyExclusions = (checked) => {
-                    document.querySelectorAll('.wa-fp-check').forEach(c => c.checked = checked);
-                };
-
-                const html = `
-                    <div style="display:flex; flex-direction:column; gap:24px;">
-                        <div style="text-align:center;">
-                            <div style="font-size:3.5rem; margin-bottom:12px; filter: drop-shadow(0 0 15px rgba(239, 68, 68, 0.3));">🛡️</div>
-                            <h3 style="margin:0; color:var(--text-main); font-weight:800; font-size:1.5rem;">Scanner Results</h3>
-                            <p style="font-size:0.85rem; color:var(--text-dim); margin-top:6px;">We identified <strong>${duplicates.length}</strong> recipients who received this template in the last <strong>${days}</strong> days.</p>
-                        </div>
-
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-                            <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.15); padding:16px; border-radius:18px; text-align:center;">
-                                <div style="font-size:0.7rem; color:#ef4444; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Duplicates</div>
-                                <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${duplicates.length}</div>
+                // We create a custom modal instead of AppDialog.confirm because 
+                // AppDialog.confirm removes the DOM immediately after clicking, 
+                // making it impossible to read the checkboxes after 'confirmed' is true.
+                
+                const overlay = document.createElement('div');
+                overlay.className = 'app-dialog-overlay';
+                overlay.style.zIndex = '100000'; // Ensure it's on top
+                
+                overlay.innerHTML = `
+                    <div class="app-dialog-box" style="max-width: 520px;">
+                        <div style="display:flex; flex-direction:column; gap:24px;">
+                            <div style="text-align:center;">
+                                <div style="font-size:3.5rem; margin-bottom:12px; filter: drop-shadow(0 0 15px rgba(239, 68, 68, 0.3));">🛡️</div>
+                                <h3 style="margin:0; color:var(--text-main); font-weight:800; font-size:1.5rem;">Scanner Results</h3>
+                                <p style="font-size:0.85rem; color:var(--text-dim); margin-top:6px;">We identified <strong>${duplicates.length}</strong> recipients who received this template in the last <strong>${days}</strong> days.</p>
                             </div>
-                            <div style="background:rgba(34, 197, 94, 0.08); border:1px solid rgba(34, 197, 94, 0.15); padding:16px; border-radius:18px; text-align:center;">
-                                <div style="font-size:0.7rem; color:#4ade80; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Keep Fresh</div>
-                                <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${fresh.length}</div>
-                            </div>
-                        </div>
 
-                        <div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding:0 4px;">
-                                <div style="font-size:0.85rem; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
-                                    <i data-lucide="list-filter" style="width:14px;height:14px;color:var(--accent-secondary);"></i>
-                                    Exclusion List
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                                <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.15); padding:16px; border-radius:18px; text-align:center;">
+                                    <div style="font-size:0.7rem; color:#ef4444; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Duplicates</div>
+                                    <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${duplicates.length}</div>
                                 </div>
-                                <div style="display:flex; gap:12px;">
-                                    <button onclick="window.whatsAppSender._toggleAllFrequencyExclusions(true)" style="font-size:0.75rem; color:var(--accent-secondary); background:rgba(102, 200, 200, 0.1); border:1px solid rgba(102, 200, 200, 0.2); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700; transition:all 0.2s; border-style:none;">Check All</button>
-                                    <button onclick="window.whatsAppSender._toggleAllFrequencyExclusions(false)" style="font-size:0.75rem; color:var(--text-dim); background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700; transition:all 0.2s; border-style:none;">Clear</button>
+                                <div style="background:rgba(34, 197, 94, 0.08); border:1px solid rgba(34, 197, 94, 0.15); padding:16px; border-radius:18px; text-align:center;">
+                                    <div style="font-size:0.7rem; color:#4ade80; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Keep Fresh</div>
+                                    <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${fresh.length}</div>
                                 </div>
                             </div>
 
-                            <div style="max-height:260px; overflow-y:auto; border:1px solid var(--border); border-radius:16px; background:rgba(0,0,0,0.25); padding:6px; scrollbar-width:thin;">
-                                ${duplicates.map((r, i) => `
-                                    <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:10px; transition: background 0.2s; margin-bottom:2px;" class="wa-fp-item">
-                                        <label style="display:flex; align-items:center; gap:14px; cursor:pointer; width:100%;">
-                                            <input type="checkbox" class="wa-fp-check" value="${r.phone}" checked style="width:20px; height:20px; accent-color:var(--accent-secondary); cursor:pointer; border-radius:6px;">
-                                            <div style="flex:1;">
-                                                <div style="font-size:0.95rem; font-weight:700; color:var(--text-main);">${r.name}</div>
-                                                <div style="font-size:0.75rem; color:var(--text-dim); letter-spacing:0.02em;">+${r.phone}</div>
-                                            </div>
-                                            <div style="font-size:0.65rem; color:#ef4444; background:rgba(239, 68, 68, 0.1); padding:2px 8px; border-radius:6px; font-weight:800; text-transform:uppercase;">DUP</div>
-                                        </label>
+                            <div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding:0 4px;">
+                                    <div style="font-size:0.85rem; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
+                                        <i data-lucide="list-filter" style="width:14px;height:14px;color:var(--accent-secondary);"></i>
+                                        Exclusion List
                                     </div>
-                                `).join('')}
+                                    <div style="display:flex; gap:12px;">
+                                        <button id="wa-fp-check-all" style="font-size:0.75rem; color:var(--accent-secondary); background:rgba(102, 200, 200, 0.1); border:1px solid rgba(102, 200, 200, 0.2); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700; transition:all 0.2s;">Check All</button>
+                                        <button id="wa-fp-clear" style="font-size:0.75rem; color:var(--text-dim); background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700; transition:all 0.2s;">Clear</button>
+                                    </div>
+                                </div>
+
+                                <div style="max-height:260px; overflow-y:auto; border:1px solid var(--border); border-radius:16px; background:rgba(0,0,0,0.25); padding:6px; scrollbar-width:thin;">
+                                    ${duplicates.map((r, i) => `
+                                        <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:10px; transition: background 0.2s; margin-bottom:2px;" class="wa-fp-item">
+                                            <label style="display:flex; align-items:center; gap:14px; cursor:pointer; width:100%;">
+                                                <input type="checkbox" class="wa-fp-check" value="${r.phone}" checked style="width:20px; height:20px; accent-color:var(--accent-secondary); cursor:pointer; border-radius:6px;">
+                                                <div style="flex:1;">
+                                                    <div style="font-size:0.95rem; font-weight:700; color:var(--text-main);">${r.name}</div>
+                                                    <div style="font-size:0.75rem; color:var(--text-dim); letter-spacing:0.02em;">+${r.phone}</div>
+                                                </div>
+                                                <div style="font-size:0.65rem; color:#ef4444; background:rgba(239, 68, 68, 0.1); padding:2px 8px; border-radius:6px; font-weight:800; text-transform:uppercase;">DUP</div>
+                                            </label>
+                                        </div>
+                                    `).join('')}
+                                </div>
                             </div>
                         </div>
-
-                        <div style="background:rgba(102, 200, 200, 0.05); border:1px dotted var(--accent-secondary); padding:14px; border-radius:14px; display:flex; gap:12px; align-items:flex-start;">
-                             <i data-lucide="info" style="width:16px;height:16px;color:var(--accent-secondary);flex-shrink:0;margin-top:2px;"></i>
-                             <p style="font-size:0.75rem; color:var(--text-dim); line-height:1.5; margin:0;">Frequency protection helps maintain sender reputation. We recommend excluding all identified duplicates unless you have specific intent to re-send.</p>
+                        <div class="app-dialog-actions" style="margin-top:24px;">
+                            <button class="btn btn-secondary" id="wa-fp-cancel" style="min-width:100px;">Skip Filtering</button>
+                            <button class="btn btn-primary" id="wa-fp-apply" style="min-width:150px;">Apply Exclusions</button>
                         </div>
-                    </div>
-                `;
+                    </div>`;
 
-                const modalPromise = AppDialog.confirm(html, {
-                    title: 'Scanner Results',
-                    confirmText: 'Apply Exclusions',
-                    cancelText: 'Skip Filtering',
-                    isHtml: true,
-                    width: '520px'
-                });
+                document.body.appendChild(overlay);
+                if (window.lucide) window.lucide.createIcons({ root: overlay });
 
-                // Initialize icons after modal is likely in DOM
-                setTimeout(() => { if (window.lucide) window.lucide.createIcons(); }, 50);
-
-                const confirmed = await modalPromise;
-
-                if (confirmed) {
-                    const selectedChecks = document.querySelectorAll('.wa-fp-check:checked');
-                    const toExclude = Array.from(selectedChecks).map(c => c.value);
-                    
+                overlay.querySelector('#wa-fp-check-all').onclick = () => overlay.querySelectorAll('.wa-fp-check').forEach(c => c.checked = true);
+                overlay.querySelector('#wa-fp-clear').onclick = () => overlay.querySelectorAll('.wa-fp-check').forEach(c => c.checked = false);
+                
+                overlay.querySelector('#wa-fp-cancel').onclick = () => overlay.remove();
+                
+                overlay.querySelector('#wa-fp-apply').onclick = () => {
+                    const toExclude = Array.from(overlay.querySelectorAll('.wa-fp-check:checked')).map(c => c.value);
                     this.excludedNumbers = toExclude;
-                    AppDialog.toast(`Successfully excluded ${toExclude.length} duplicate recipients.`, 'success');
+                    overlay.remove();
+                    AppDialog.toast(`Successfully applied ${toExclude.length} exclusions to your broadcast selection.`, 'success');
                     this.updateRecipientCount();
-                }
+                };
             }
         } catch (error) {
             console.error("Frequency Check Failed:", error);
