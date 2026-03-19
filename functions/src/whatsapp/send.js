@@ -121,18 +121,36 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
     await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).update(update);
   };
 
+  // 1. Pre-process Exclusions in a fast batch for instant reporting
+  const activeRecipients = [];
+  const exclusionLogs = {};
+  
   for (const recipient of recipients) {
+    const number = String(recipient.phone).replace(/[^\d]/g, "");
+    if (excludedSet.has(number)) {
+        const ts = Date.now();
+        const logId = `excluded_${broadcastId}_${number}`;
+        exclusionLogs[logId] = {
+            broadcastId, recipientId: recipient.phone, name: recipient.name || number, 
+            status: "excluded", timestamp: ts, sentAt: ts, message: "Skipped (Recent)"
+        };
+        excludedCount++;
+    } else {
+        activeRecipients.push(recipient);
+    }
+  }
+
+  // Write all exclusions to RTDB at once (fast)
+  if (excludedCount > 0) {
+      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(exclusionLogs);
+      await updateProgress(); // Initial progress update with exclusions counted
+  }
+
+  // 2. Main Dispatch Loop (Only for Active Recipients)
+  for (const recipient of activeRecipients) {
     if (recipient.name !== lastContactName) { processedContactsCount++; lastContactName = recipient.name; }
     const number = String(recipient.phone).replace(/[^\d]/g, ""), name = recipient.name || number;
     await updateProgress(false, null, name);
-
-    if (excludedSet.has(number)) {
-        const ts = Date.now();
-        await db.ref(`modules/whatsapp_sender/broadcast_logs/excluded_${broadcastId}_${number}`).set({
-          broadcastId, recipientId: recipient.phone, name, status: "excluded", timestamp: ts, sentAt: ts, message: "Skipped (Recent)"
-        });
-        excludedCount++; continue;
-    }
 
     const stopSnap = await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).get();
     if (stopSnap.exists && stopSnap.data().stopRequested) { await updateProgress(true, "stopped"); return {success: true, stopped: true}; }

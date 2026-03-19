@@ -542,13 +542,13 @@ if (!window.whatsAppSender) {
                     const category = t.category || t.previous_category || 'UNKNOWN';
                     const headerComp = components.find(c => c.type === 'HEADER' && c.format === 'IMAGE');
                     const headerImageUrl = headerComp && headerComp.example && headerComp.example.header_handle ? (headerComp.example.header_handle[0] || '') : '';
+                    const hasImageHeader = !!headerComp;
                     const footerComp = components.find(c => c.type === 'FOOTER') || {};
                     const footerText = footerComp.text || '';
                     const buttonsComp = components.find(c => c.type === 'BUTTONS') || {};
                     const buttonsJson = buttonsComp.buttons ? encodeURIComponent(JSON.stringify(buttonsComp.buttons)) : '';
-                    return `<option value="${name}" data-content="${encodeURIComponent(content)}" data-category="${category}" data-header-image="${headerImageUrl}" data-footer="${encodeURIComponent(footerText)}" data-buttons="${buttonsJson}">${name} (${category} - ${t.language || 'en'})</option>`;
-                }).join('')
-                : `<option value="" disabled selected>No templates found from API</option>`}
+                    return `<option value="${name}" data-content="${encodeURIComponent(content)}" data-category="${category}" data-header-image="${headerImageUrl}" data-needs-image="${hasImageHeader}" data-footer="${encodeURIComponent(footerText)}" data-buttons="${buttonsJson}">${name} (${category} - ${t.language || 'en'})</option>`;
+                    }).join('')                : `<option value="" disabled selected>No templates found from API</option>`}
                             </select>
                         </div>
 
@@ -694,8 +694,8 @@ if (!window.whatsAppSender) {
         const currentInputs = varsContainer.querySelectorAll('.wa-var-input');
         
         // Find if template requires an image header (from the dataset we embedded)
+        const needsImageHeader = select.options[select.selectedIndex].getAttribute('data-needs-image') === 'true';
         const headerImageUrl = select.options[select.selectedIndex].getAttribute('data-header-image');
-        const needsImageHeader = headerImageUrl !== null && headerImageUrl !== undefined && headerImageUrl !== '';
 
         if (currentInputs.length !== uniqueVars.length || !varsContainer.querySelector('.wa-media-upload-section')) {
             let html = '';
@@ -1058,10 +1058,10 @@ if (!window.whatsAppSender) {
                         <thead style="background:rgba(255,255,255,0.02); border-bottom:1px solid var(--border);">
                             <tr>
                                 <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Launch Date</th>
-                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Campaign & Template</th>
-                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Audience</th>
-                                <th style="padding:18px 20px; text-align:center; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Size</th>
-                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Performance Metrics</th>
+                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Campaign Details</th>
+                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Status</th>
+                                <th style="padding:18px 20px; text-align:center; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Progress</th>
+                                <th style="padding:18px 20px; text-align:left; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Metrics</th>
                                 <th style="padding:18px 20px; text-align:right; color:var(--text-dim); font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">Actions</th>
                             </tr>
                         </thead>
@@ -1097,12 +1097,34 @@ if (!window.whatsAppSender) {
             const displayDelivered = log.deliveredCount || 0;
             const displaySent = log.sentCount || 0;
             const displayFailed = log.failedCount || 0;
+            const displayExcluded = log.excludedCount || 0;
             const total = log.recipientsCount || 0;
+            const processed = (log.processedNumbersCount !== undefined) ? log.processedNumbersCount : (displaySent + displayFailed + displayExcluded);
+
+            const progressPct = total > 0 ? Math.round((processed / total) * 100) : 0;
 
             const now = Date.now();
             const ageMinutes = (now - ts.getTime()) / (1000 * 60);
-            const isDispatching = log.status === 'dispatching' || log.status === 'dispatching_meta';
-            const isStuck = isDispatching && ageMinutes > 30;
+
+            // Status Logic
+            let statusLabel = 'Completed', statusColor = '#22c55e', statusBg = 'rgba(34, 197, 94, 0.1)';
+            const isDispatching = log.status === 'dispatching' || log.status === 'processing';
+            const isStopped = log.status === 'stopped';
+
+            if (isDispatching) {
+                const isStuck = ageMinutes > 30;
+                statusLabel = isStuck ? 'Likely Stuck' : 'Sending...';
+                statusColor = isStuck ? '#ef4444' : '#3b82f6';
+                statusBg = isStuck ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)';
+            } else if (isStopped) {
+                statusLabel = 'Stopped';
+                statusColor = '#94a3b8';
+                statusBg = 'rgba(148, 163, 184, 0.1)';
+            } else if (log.status === 'dispatched' || processed >= total) {
+                statusLabel = 'Completed';
+                statusColor = '#22c55e';
+                statusBg = 'rgba(34, 197, 94, 0.1)';
+            }
 
             const statusHTML = `
                 <div style="display:flex; flex-direction:column; gap:6px; min-width:180px;">
@@ -1143,19 +1165,29 @@ if (!window.whatsAppSender) {
                     </td>
                     <td style="padding:20px;">
                         <div style="font-weight:800; color:var(--text-main); font-size:1rem; margin-bottom:6px;">${campaignName}</div>
-                        <div style="display:inline-flex; align-items:center; gap:6px; font-size:0.7rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.1); padding:4px 10px; border-radius:8px; border:1px solid rgba(56,189,248,0.2);">
-                            <i data-lucide="layout-template" style="width:12px;height:12px;"></i> ${templateName}
+                        <div style="display:flex; flex-direction:column; gap:4px;">
+                            <div style="display:inline-flex; align-items:center; gap:6px; font-size:0.7rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.1); padding:4px 10px; border-radius:8px; border:1px solid rgba(56,189,248,0.2); width:fit-content;">
+                                <i data-lucide="layout-template" style="width:12px;height:12px;"></i> ${templateName}
+                            </div>
+                            <div style="font-size:0.75rem; color:var(--text-dim); display:flex; align-items:center; gap:4px; margin-left:2px;">
+                                <i data-lucide="users" style="width:12px;height:12px;opacity:0.5;"></i> ${audience}
+                            </div>
                         </div>
                     </td>
                     <td style="padding:20px;">
-                        <div style="display:flex; align-items:center; gap:8px; font-size:0.9rem; color:var(--text-main); font-weight:600;">
-                            <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);"></div>
-                            ${audience}
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <div style="background:${statusBg}; color:${statusColor}; font-size:0.65rem; font-weight:800; padding:4px 10px; border-radius:8px; text-transform:uppercase; letter-spacing:0.05em; border:1px solid ${statusColor}33; display:flex; align-items:center; gap:6px;">
+                                ${isDispatching && statusLabel !== 'Likely Stuck' ? '<div class="wa-status-pulse" style="width:6px;height:6px;background:currentColor;border-radius:50%;"></div>' : ''}
+                                ${statusLabel}
+                            </div>
                         </div>
                     </td>
                     <td style="padding:20px; text-align:center;">
-                        <div style="font-weight:800; font-size:1.1rem; color:var(--text-main);">${total}</div>
-                        <div style="font-size:0.65rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; font-weight:700;">Targets</div>
+                        <div style="font-weight:800; font-size:1.1rem; color:var(--text-main);">${processed}<span style="color:var(--text-dim); font-weight:500; font-size:0.8rem;">/${total}</span></div>
+                        <div style="width:100%; height:4px; background:rgba(255,255,255,0.05); border-radius:2px; margin:6px 0; overflow:hidden;">
+                            <div style="width:${progressPct}%; height:100%; background:${statusColor}; transition:width 0.5s ease;"></div>
+                        </div>
+                        ${displayExcluded > 0 ? `<div style="font-size:0.65rem; color:#f59e0b; font-weight:700;">${displayExcluded} Excluded</div>` : ''}
                     </td>
                     <td style="padding:20px;">
                         ${statusHTML}
@@ -1163,19 +1195,17 @@ if (!window.whatsAppSender) {
                     <td style="padding:20px; text-align:right;">
                         <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
                             ${isDispatching ? `
-                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-                                    <div style="font-size:0.7rem; color:${isStuck ? '#ef4444' : '#3b82f6'}; font-weight:800; text-transform:uppercase; display:flex; align-items:center; gap:4px;">
-                                        <div class="wa-status-pulse" style="width:8px;height:8px;background:currentColor;border-radius:50%;"></div>
-                                        ${isStuck ? 'Likely Stuck' : 'Sending...'}
-                                    </div>
-                                    <button class="btn btn-danger" onclick="event.stopPropagation(); window.whatsAppSender.stopBroadcast('${log.id}')" 
-                                        style="padding:4px 8px; font-size:0.65rem; border-radius:6px; height:auto;">
-                                        STOP
-                                    </button>
-                                </div>
+                                <button class="btn btn-danger" onclick="event.stopPropagation(); window.whatsAppSender.stopBroadcast('${log.id}')" 
+                                    style="padding:6px 12px; font-size:0.75rem; border-radius:8px; height:auto; width:100%; justify-content:center;">
+                                    <i data-lucide="square" style="width:12px;height:12px;margin-right:4px;"></i> STOP
+                                </button>
                             ` : ''}
-                            <button class="btn btn-primary" style="padding:8px 16px; border-radius:10px; font-size:0.8rem; font-weight:700; gap:6px;">
-                                <i data-lucide="bar-chart-3" style="width:14px;height:14px;"></i> View Report
+                            <button class="btn btn-primary" style="padding:8px 16px; border-radius:10px; font-size:0.8rem; font-weight:700; gap:6px; width:100%; justify-content:center;">
+                                <i data-lucide="bar-chart-3" style="width:14px;height:14px;"></i> Report
+                            </button>
+                            <button class="btn btn-icon" onclick="event.stopPropagation(); window.whatsAppSender.deleteBroadcastHistory('${log.id}', '${log.broadcastId || ''}')" 
+                                title="Delete History" style="color:var(--text-dim); opacity:0.5; margin-top:4px;">
+                                <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
                             </button>
                         </div>
                     </td>
@@ -1183,7 +1213,6 @@ if (!window.whatsAppSender) {
             `;
         }).join('');
     };
-
     window.whatsAppSender.loadHistory = function () {
         const tbody = document.getElementById('wa-history-tbody');
         if (!tbody) return;
@@ -1989,6 +2018,7 @@ if (!window.whatsAppSender) {
                     </div>
                     <div style="display:flex; gap:8px;">
                         <button class="btn btn-secondary" onclick="window.whatsAppSender.viewBroadcastDetails('${broadcastId}', '${logId}')"><i data-lucide="refresh-cw" style="width:14px;height:14px;margin-right:6px;"></i> Refresh</button>
+                        <button class="btn btn-secondary danger" onclick="window.whatsAppSender.deleteBroadcastHistory('${logId}', '${broadcastId}')" title="Delete this broadcast record"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
                     </div>
                 </div>
 
@@ -2265,6 +2295,48 @@ if (!window.whatsAppSender) {
             await firebase.database().ref(`modules/whatsapp_sender/broadcast_history/${logId}`).update({ stopRequested: true });
             AppDialog.toast('Stop signal sent.', 'info');
         } catch (e) { AppDialog.toast('Failed to stop: ' + e.message, 'error'); }
+    };
+
+    window.whatsAppSender.deleteBroadcastHistory = async function (logId, broadcastId) {
+        if (!logId) return;
+        
+        const confirmed = await AppDialog.confirm('Are you sure you want to delete this broadcast instance? This will remove the history record and all associated delivery logs. This action cannot be undone.', {
+            title: 'Delete History',
+            danger: true,
+            confirmText: 'Delete Permanently'
+        });
+
+        if (!confirmed) return;
+
+        try {
+            AppDialog.toast('Deleting history...', 'info');
+
+            // 1. Delete from Firestore History
+            await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).delete();
+
+            // 2. Delete logs from Realtime Database (if broadcastId exists)
+            if (broadcastId) {
+                const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
+                const snap = await logsRef.orderByChild('broadcastId').equalTo(broadcastId).once('value');
+                const logs = snap.val();
+                if (logs) {
+                    const updates = {};
+                    Object.keys(logs).forEach(key => { updates[key] = null; });
+                    await logsRef.update(updates);
+                }
+            }
+
+            AppDialog.toast('History instance deleted successfully.', 'success');
+            
+            // If we are currently viewing this report, go back to history
+            const container = document.getElementById('whatsapp-content-history');
+            if (container && container.getAttribute('data-active-report') === logId) {
+                this.renderHistoryView();
+            }
+        } catch (error) {
+            console.error("Delete Failed:", error);
+            AppDialog.toast('Failed to delete history: ' + error.message, 'error');
+        }
     };
 
     // --- Frequency Protection Feature ---

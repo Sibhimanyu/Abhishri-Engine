@@ -207,10 +207,21 @@ if (!window.whatsAppSender) {
                 .map(inp => inp.value);
                 
             const customMediaUrl = document.getElementById('wa-header-media-url')?.value;
+            const needsImageHeader = selectedOption.getAttribute('data-needs-image') === 'true';
             const headerImageUrl = customMediaUrl || selectedOption.getAttribute('data-header-image') || null;
 
+            // 1. Check for empty variables
             if (variables.some(v => v.trim() === '')) {
                 const proceed = await AppDialog.confirm('Some template variables are empty. Do you want to proceed?', { title: 'Empty Variables', confirmText: 'Proceed Anyway' });
+                if (!proceed) {
+                    if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = originalBtnHtml; if (window.lucide) window.lucide.createIcons({ root: sendBtn }); }
+                    return;
+                }
+            }
+
+            // 2. Check for missing header image if required
+            if (needsImageHeader && !headerImageUrl) {
+                const proceed = await AppDialog.confirm('This template requires a header image, but none is selected. Do you want to proceed without an image?', { title: 'Missing Image', confirmText: 'Proceed Anyway' });
                 if (!proceed) {
                     if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = originalBtnHtml; if (window.lucide) window.lucide.createIcons({ root: sendBtn }); }
                     return;
@@ -310,19 +321,20 @@ if (!window.whatsAppSender) {
             const broadcastRef = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc();
             const broadcastId = broadcastRef.id;
 
-            // CRITICAL: We only want to send to people NOT in the excluded list.
-            // This ensures the progress bar (which uses recipientsCount) is accurate 
-            // and the backend only processes valid targets.
-            const recipientsToProcess = activeRecipients;
+            // We send the FULL list to the backend. The backend will instantly 
+            // batch-log the exclusions and then proceed with active recipients.
+            // This ensures exclusions are ALWAYS in the report even if stopped midway.
+            const fullRecipients = recipients;
             const finalExcluded = excluded;
 
             await broadcastRef.set({
                 template: templateName,
                 campaignName: campaignNameValue,
                 listName: audienceSelect.options[audienceSelect.selectedIndex].text,
-                recipientsCount: recipientsToProcess.length, // Accurate count for progress bar
-                contactsCount: [...new Set(recipientsToProcess.map(r => r.name))].length,
+                recipientsCount: fullRecipients.length, // Total count (including exclusions)
+                contactsCount: contactsCount,
                 sentCount: 0, deliveredCount: 0, readCount: 0, failedCount: 0,
+                excludedCount: finalExcluded.length,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                 status: 'dispatching',
                 broadcastId: broadcastId,
@@ -337,16 +349,16 @@ if (!window.whatsAppSender) {
             this.viewBroadcastDetails(broadcastId, broadcastRef.id);
 
             if (isSimulation) {
-                this.startLocalSimulation(broadcastId, recipientsToProcess);
+                this.startLocalSimulation(broadcastId, activeRecipients);
             } else {
                 this.sendBroadcastAPI({
                     templateName, 
-                    recipients: recipientsToProcess, // ONLY send the filtered list
+                    recipients: fullRecipients, // SEND FULL LIST
                     variables, 
                     broadcastId, 
                     headerImageUrl, 
-                    contactsCount: [...new Set(recipientsToProcess.map(r => r.name))].length, 
-                    excludedNumbers: finalExcluded // Still pass these for logging purposes if needed
+                    contactsCount, 
+                    excludedNumbers: finalExcluded 
                 }).then(() => {
                     this.excludedNumbers = [];
                 }).catch(e => {
