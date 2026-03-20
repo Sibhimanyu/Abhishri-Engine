@@ -1032,6 +1032,12 @@ if (!window.whatsAppSender) {
         const container = document.getElementById('whatsapp-content-history');
         if (!container) return;
 
+        // CRITICAL: Clean up any active listeners from the delivery report 
+        // to prevent background updates from interfering with the history view.
+        if (this._historyDetailsUnsubscribe) { this._historyDetailsUnsubscribe(); this._historyDetailsUnsubscribe = null; }
+        if (this._logsDetailsUnsubscribe) { this._logsDetailsUnsubscribe(); this._logsDetailsUnsubscribe = null; }
+        container.removeAttribute('data-active-report');
+
         // Use cached logs for instant restoration if available
         const cachedLogs = this._cachedHistoryLogs || [];
         const hasCache = cachedLogs.length > 0;
@@ -1051,6 +1057,14 @@ if (!window.whatsAppSender) {
                     <button class="btn btn-secondary" onclick="window.whatsAppSender.loadHistory()">
                         <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Sync Logs
                     </button>
+                </div>
+
+                <!-- Master Metrics Dashboard -->
+                <div id="wa-history-metrics" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:20px; margin-bottom:32px;">
+                    <!-- Will be populated by loadHistory -->
+                    <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; min-height:100px; display:flex; align-items:center; justify-content:center;">
+                        <i data-lucide="loader" style="width:24px;height:24px;animation:spin 1s linear infinite;opacity:0.3;"></i>
+                    </div>
                 </div>
 
                 <div class="table-responsive" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; overflow:hidden;">
@@ -1081,6 +1095,56 @@ if (!window.whatsAppSender) {
         `;
         if (window.lucide) window.lucide.createIcons();
         this.loadHistory();
+    };
+
+    window.whatsAppSender._renderMasterMetrics = function (logs) {
+        const mount = document.getElementById('wa-history-metrics');
+        if (!mount) return;
+
+        if (logs.length === 0) {
+            mount.innerHTML = '';
+            return;
+        }
+
+        let totalSent = 0, totalDelivered = 0, totalRead = 0, totalFailed = 0, totalRecipients = 0;
+        logs.forEach(log => {
+            totalSent += (log.sentCount || 0);
+            totalDelivered += (log.deliveredCount || 0);
+            totalRead += (log.readCount || 0);
+            totalFailed += (log.failedCount || 0);
+            totalRecipients += (log.recipientsCount || 0);
+        });
+
+        const deliveryRate = totalSent > 0 ? Math.round(((totalDelivered + totalRead) / totalSent) * 100) : 0;
+        const openRate = (totalDelivered + totalRead) > 0 ? Math.round((totalRead / (totalDelivered + totalRead)) * 100) : 0;
+
+        mount.innerHTML = `
+            <div class="wa-metric-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
+                <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="send" style="width:48px;height:48px;color:#3b82f6;"></i></div>
+                <div style="color:#3b82f6; font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Total Dispatched</div>
+                <div style="font-size:1.8rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${totalSent.toLocaleString()}</div>
+                <div style="font-size:0.75rem; color:var(--text-dim);">Across ${logs.length} campaigns</div>
+            </div>
+            <div class="wa-metric-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
+                <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="check-check" style="width:48px;height:48px;color:#22c55e;"></i></div>
+                <div style="color:#22c55e; font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Delivery Avg</div>
+                <div style="font-size:1.8rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${deliveryRate}%</div>
+                <div style="font-size:0.75rem; color:var(--text-dim);">${totalDelivered + totalRead} total deliveries</div>
+            </div>
+            <div class="wa-metric-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
+                <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="eye" style="width:48px;height:48px;color:#a855f7;"></i></div>
+                <div style="color:#a855f7; font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Open Rate</div>
+                <div style="font-size:1.8rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${openRate}%</div>
+                <div style="font-size:0.75rem; color:var(--text-dim);">${totalRead} total read receipts</div>
+            </div>
+            <div class="wa-metric-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
+                <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="alert-circle" style="width:48px;height:48px;color:#ef4444;"></i></div>
+                <div style="color:#ef4444; font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Total Failed</div>
+                <div style="font-size:1.8rem; font-weight:900; color:${totalFailed > 0 ? '#ef4444' : 'var(--text-main)'}; line-height:1; margin-bottom:4px;">${totalFailed.toLocaleString()}</div>
+                <div style="font-size:0.75rem; color:var(--text-dim);">Unreachable or API errors</div>
+            </div>
+        `;
+        if (window.lucide) window.lucide.createIcons({ root: mount });
     };
 
     window.whatsAppSender._mapLogsToRows = function (logs) {
@@ -1257,6 +1321,7 @@ if (!window.whatsAppSender) {
 
                 // Update local cache for instant restoration next time
                 this._cachedHistoryLogs = logs;
+                this._renderMasterMetrics(logs);
 
                 if (logs.length === 0) {
                     tbody.innerHTML = `
@@ -2755,37 +2820,53 @@ if (!window.whatsAppSender) {
 
             // 3. Collect all recipient logs for these matching broadcasts from RTDB
             const alreadySentTo = new Set();
+            const failuresByError = {}; // { errorMsg: Set<phone> }
             const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
             const broadcastIds = matchingHistoryDocs.map(doc => doc.id);
             const snapshots = await Promise.all(broadcastIds.map(bId => logsRef.orderByChild('broadcastId').equalTo(bId).once('value')));
             
+            const normalize = (phone) => {
+                let cleaned = String(phone || '').replace(/\D/g, '');
+                if (cleaned.length === 10) cleaned = '91' + cleaned;
+                return cleaned;
+            };
+
             snapshots.forEach(snap => {
                 const logs = snap.val() || {};
                 Object.values(logs).forEach(log => {
                     const status = (log.status || '').toLowerCase();
+                    const phone = log.recipientId || log.phone;
+                    if (!phone) return;
+                    const cleanPhone = normalize(phone);
+
                     if (['sent', 'delivered', 'read', 'processing'].includes(status)) {
-                        const phone = log.recipientId || log.phone;
-                        if (phone) {
-                            alreadySentTo.add(String(phone).replace(/\D/g, ''));
-                        }
+                        alreadySentTo.add(cleanPhone);
+                    } else if (status === 'failed' || status === 'error') {
+                        // Extract a concise error message
+                        let errorMsg = (log.error || 'Unknown Error').split(':')[0].split('.')[0].trim();
+                        if (errorMsg.length > 60) errorMsg = errorMsg.substring(0, 57) + '...';
+                        
+                        if (!failuresByError[errorMsg]) failuresByError[errorMsg] = new Set();
+                        failuresByError[errorMsg].add(cleanPhone);
                     }
                 });
             });
 
             // 4. Filter recipients
-            const duplicates = recipients.filter(r => alreadySentTo.has(r.phone));
-            const fresh = recipients.filter(r => !alreadySentTo.has(r.phone));
+            const successDuplicates = recipients.filter(r => alreadySentTo.has(r.phone));
+            
+            // Map failures to recipients
+            const failureCategories = Object.entries(failuresByError).map(([error, phones]) => {
+                const affectedRecipients = recipients.filter(r => phones.has(r.phone) && !alreadySentTo.has(r.phone));
+                return { error, recipients: affectedRecipients };
+            }).filter(cat => cat.recipients.length > 0);
 
-            if (duplicates.length === 0) {
+            if (successDuplicates.length === 0 && failureCategories.length === 0) {
                 AppDialog.alert('Found ' + recipients.length + ' recipients. None have received this template in the last ' + days + ' days.', { title: 'Frequency Protection', type: 'success' });
             } else {
-                // We create a custom modal instead of AppDialog.confirm because 
-                // AppDialog.confirm removes the DOM immediately after clicking, 
-                // making it impossible to read the checkboxes after 'confirmed' is true.
-                
                 const overlay = document.createElement('div');
                 overlay.className = 'app-dialog-overlay';
-                overlay.style.zIndex = '100000'; // Ensure it's on top
+                overlay.style.zIndex = '100000';
                 
                 overlay.innerHTML = `
                     <div class="app-dialog-box" style="max-width: 520px;">
@@ -2793,46 +2874,55 @@ if (!window.whatsAppSender) {
                             <div style="text-align:center;">
                                 <div style="font-size:3.5rem; margin-bottom:12px; filter: drop-shadow(0 0 15px rgba(239, 68, 68, 0.3));">🛡️</div>
                                 <h3 style="margin:0; color:var(--text-main); font-weight:800; font-size:1.5rem;">Scanner Results</h3>
-                                <p style="font-size:0.85rem; color:var(--text-dim); margin-top:6px;">We identified <strong>${duplicates.length}</strong> recipients who received this template in the last <strong>${days}</strong> days.</p>
+                                <p style="font-size:0.85rem; color:var(--text-dim); margin-top:6px;">We identified potential duplicates in the last <strong>${days}</strong> days.</p>
                             </div>
 
                             <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
-                                <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.15); padding:16px; border-radius:18px; text-align:center;">
-                                    <div style="font-size:0.7rem; color:#ef4444; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Duplicates</div>
-                                    <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${duplicates.length}</div>
+                                <div style="background:rgba(59, 130, 246, 0.08); border:1px solid rgba(59, 130, 246, 0.15); padding:16px; border-radius:18px; text-align:center;">
+                                    <div style="font-size:0.7rem; color:#3b82f6; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Successful</div>
+                                    <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${successDuplicates.length}</div>
                                 </div>
-                                <div style="background:rgba(34, 197, 94, 0.08); border:1px solid rgba(34, 197, 94, 0.15); padding:16px; border-radius:18px; text-align:center;">
-                                    <div style="font-size:0.7rem; color:#4ade80; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Keep Fresh</div>
-                                    <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${fresh.length}</div>
+                                <div style="background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.15); padding:16px; border-radius:18px; text-align:center;">
+                                    <div style="font-size:0.7rem; color:#ef4444; font-weight:800; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px;">Failures</div>
+                                    <div style="font-size:2rem; font-weight:900; color:var(--text-main);">${failureCategories.reduce((sum, c) => sum + c.recipients.length, 0)}</div>
                                 </div>
                             </div>
 
                             <div>
-                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding:0 4px;">
-                                    <div style="font-size:0.85rem; font-weight:700; color:var(--text-main); display:flex; align-items:center; gap:8px;">
-                                        <i data-lucide="list-filter" style="width:14px;height:14px;color:var(--accent-secondary);"></i>
-                                        Exclusion List
-                                    </div>
-                                    <div style="display:flex; gap:12px;">
-                                        <button id="wa-fp-check-all" style="font-size:0.75rem; color:var(--accent-secondary); background:rgba(102, 200, 200, 0.1); border:1px solid rgba(102, 200, 200, 0.2); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700; transition:all 0.2s;">Check All</button>
-                                        <button id="wa-fp-clear" style="font-size:0.75rem; color:var(--text-dim); background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700; transition:all 0.2s;">Clear</button>
-                                    </div>
-                                </div>
-
-                                <div style="max-height:260px; overflow-y:auto; border:1px solid var(--border); border-radius:16px; background:rgba(0,0,0,0.25); padding:6px; scrollbar-width:thin;">
-                                    ${duplicates.map((r, i) => `
-                                        <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; border-radius:10px; transition: background 0.2s; margin-bottom:2px;" class="wa-fp-item">
-                                            <label style="display:flex; align-items:center; gap:14px; cursor:pointer; width:100%;">
-                                                <input type="checkbox" class="wa-fp-check" value="${r.phone}" checked style="width:20px; height:20px; accent-color:var(--accent-secondary); cursor:pointer; border-radius:6px;">
+                                ${successDuplicates.length > 0 ? `
+                                <div style="margin-bottom:20px;">
+                                    <div style="font-size:0.85rem; font-weight:700; color:var(--text-main); margin-bottom:10px;">Recent Successes (Auto-Selected)</div>
+                                    <div style="max-height:150px; overflow-y:auto; border:1px solid var(--border); border-radius:12px; background:rgba(0,0,0,0.15); padding:4px;">
+                                        ${successDuplicates.map(r => `
+                                            <div style="display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px; margin-bottom:2px;" class="wa-fp-item">
+                                                <input type="checkbox" class="wa-fp-success-check" value="${r.phone}" checked style="width:16px; height:16px; accent-color:#3b82f6;">
                                                 <div style="flex:1;">
-                                                    <div style="font-size:0.95rem; font-weight:700; color:var(--text-main);">${r.name}</div>
-                                                    <div style="font-size:0.75rem; color:var(--text-dim); letter-spacing:0.02em;">+${r.phone}</div>
+                                                    <div style="font-size:0.85rem; font-weight:600; color:var(--text-main);">${r.name}</div>
+                                                    <div style="font-size:0.7rem; color:var(--text-dim);">+${r.phone}</div>
                                                 </div>
-                                                <div style="font-size:0.65rem; color:#ef4444; background:rgba(239, 68, 68, 0.1); padding:2px 8px; border-radius:6px; font-weight:800; text-transform:uppercase;">DUP</div>
-                                            </label>
-                                        </div>
-                                    `).join('')}
-                                </div>
+                                                <div style="font-size:0.6rem; color:#3b82f6; font-weight:800; text-transform:uppercase;">SENT</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>` : ''}
+
+                                ${failureCategories.length > 0 ? `
+                                <div>
+                                    <div style="font-size:0.85rem; font-weight:700; color:var(--text-main); margin-bottom:10px;">Include Failed Messages by Error:</div>
+                                    <div style="display:flex; flex-direction:column; gap:8px;">
+                                        ${failureCategories.map((cat, idx) => `
+                                            <div style="background:rgba(239, 68, 68, 0.05); border:1px solid rgba(239, 68, 68, 0.1); border-radius:12px; padding:12px;">
+                                                <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
+                                                    <input type="checkbox" class="wa-fp-error-cat-check" data-idx="${idx}" style="width:18px; height:18px; margin-top:2px; accent-color:#ef4444;">
+                                                    <div style="flex:1;">
+                                                        <div style="font-size:0.85rem; font-weight:700; color:var(--text-main);">${cat.error}</div>
+                                                        <div style="font-size:0.75rem; color:#ef4444; font-weight:600; margin-top:2px;">${cat.recipients.length} recipients affected</div>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>` : ''}
                             </div>
                         </div>
                         <div class="app-dialog-actions" style="margin-top:24px;">
@@ -2844,16 +2934,23 @@ if (!window.whatsAppSender) {
                 document.body.appendChild(overlay);
                 if (window.lucide) window.lucide.createIcons({ root: overlay });
 
-                overlay.querySelector('#wa-fp-check-all').onclick = () => overlay.querySelectorAll('.wa-fp-check').forEach(c => c.checked = true);
-                overlay.querySelector('#wa-fp-clear').onclick = () => overlay.querySelectorAll('.wa-fp-check').forEach(c => c.checked = false);
-                
                 overlay.querySelector('#wa-fp-cancel').onclick = () => overlay.remove();
                 
                 overlay.querySelector('#wa-fp-apply').onclick = () => {
-                    const toExclude = Array.from(overlay.querySelectorAll('.wa-fp-check:checked')).map(c => c.value);
-                    this.excludedNumbers = toExclude;
+                    const excluded = new Set();
+                    
+                    // 1. Get manually selected successes
+                    overlay.querySelectorAll('.wa-fp-success-check:checked').forEach(c => excluded.add(c.value));
+                    
+                    // 2. Get recipients from selected error categories
+                    overlay.querySelectorAll('.wa-fp-error-cat-check:checked').forEach(c => {
+                        const idx = parseInt(c.getAttribute('data-idx'));
+                        failureCategories[idx].recipients.forEach(r => excluded.add(r.phone));
+                    });
+                    
+                    this.excludedNumbers = Array.from(excluded);
                     overlay.remove();
-                    AppDialog.toast(`Successfully applied ${toExclude.length} exclusions to your broadcast selection.`, 'success');
+                    AppDialog.toast(`Successfully applied ${this.excludedNumbers.length} exclusions to your broadcast selection.`, 'success');
                     this.updateRecipientCount();
                 };
             }
