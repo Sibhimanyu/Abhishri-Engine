@@ -120,23 +120,49 @@ window.AppDialog = (() => {
      * @returns {Promise<boolean>}
      */
     function confirm(msg, opts = {}) {
+        // Support calling with single object: AppDialog.confirm({ title, content, ... })
+        if (typeof msg === 'object' && msg !== null && !opts.content) {
+            opts = msg;
+            msg = opts.content || opts.msg || '';
+        }
+
         return new Promise(resolve => {
-            const { title = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel', danger = false, isHtml = false, width = 'auto' } = opts;
+            const { 
+                title = 'Are you sure?', 
+                confirmText = 'Confirm', 
+                cancelText = 'Cancel', 
+                danger = false, 
+                isHtml = false, 
+                width = 'auto',
+                onConfirm = null
+            } = opts;
+            
             const overlay = document.createElement('div');
             overlay.className = 'app-dialog-overlay';
+            const safeMsg = (typeof msg === 'string') ? (isHtml ? msg : msg.replace(/\\n/g, '<br>')) : '';
+            
             overlay.innerHTML = `
                 <div class="app-dialog-box" style="max-width: ${width};">
                     <div class="app-dialog-icon">${danger ? '🗑️' : '❓'}</div>
                     <div class="app-dialog-title">${title}</div>
-                    <div class="app-dialog-msg">${isHtml ? msg : msg.replace(/\\n/g, '<br>')}</div>
+                    <div class="app-dialog-msg">${safeMsg}</div>
                     <div class="app-dialog-actions">
                         <button class="btn btn-secondary" id="app-dialog-cancel" style="min-width:80px;">${cancelText}</button>
                         <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="app-dialog-confirm" style="min-width:80px;">${confirmText}</button>
                     </div>
                 </div>`;
             document.body.appendChild(overlay);
-            const confirmed = () => { overlay.remove(); resolve(true); };
+            
+            const confirmed = async () => {
+                if (typeof onConfirm === 'function') {
+                    const result = await onConfirm();
+                    if (result === false) return; // Keep modal open if onConfirm returns false
+                }
+                overlay.remove(); 
+                resolve(true); 
+            };
             const cancelled = () => { overlay.remove(); resolve(false); };
+            
             overlay.querySelector('#app-dialog-confirm').addEventListener('click', confirmed);
             overlay.querySelector('#app-dialog-cancel').addEventListener('click', cancelled);
             overlay.addEventListener('click', e => { if (e.target === overlay) cancelled(); });
@@ -330,6 +356,14 @@ function navigateTo(route, updateHash = true) {
     } else if (mainRoute === 'students') {
         if (isAdmin || perms.student_directory?.view || perms.student_directory === true) {
             document.getElementById('student-app').classList.add('active');
+            window.studentDirectory.subscribe();
+            
+            // Handle sub-routing for students
+            if (subRoute && window.studentDirectory.switchView) {
+                window.studentDirectory.switchView(subRoute, parts[2]);
+            } else {
+                window.studentDirectory.render();
+            }
         } else {
             AppDialog.toast('Access Denied: You do not have permission to access Student Directory.', 'error');
             window.location.hash = 'portal';
@@ -347,6 +381,20 @@ function navigateTo(route, updateHash = true) {
             }
         } else {
             AppDialog.toast('Access Denied: You do not have permission to access Staff Directory.', 'error');
+            window.location.hash = 'portal';
+        }
+    } else if (mainRoute === 'fees') {
+        if (isAdmin || perms.fees_accounting?.view || perms.fees_accounting === true) {
+            document.getElementById('fees-app').classList.add('active');
+            window.feesManager.subscribe();
+            
+            if (subRoute && window.feesManager.switchView) {
+                window.feesManager.switchView(subRoute, parts[2]);
+            } else {
+                window.feesManager.switchView('overview');
+            }
+        } else {
+            AppDialog.toast('Access Denied: You do not have permission to access Fees & Accounting.', 'error');
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'whatsapp') {
@@ -386,6 +434,10 @@ function renderPortalCards(userData) {
     const staffCard = document.getElementById('card-staff');
     if (isAdmin || perms.staff_directory?.view || perms.staff_directory === true) staffCard.classList.remove('disabled');
     else staffCard.classList.add('disabled');
+
+    const feesCard = document.getElementById('card-fees');
+    if (isAdmin || perms.fees_accounting?.view || perms.fees_accounting === true) feesCard.classList.remove('disabled');
+    else feesCard.classList.add('disabled');
 
     const adminCard = document.getElementById('card-admin');
     if (isAdmin) adminCard.classList.remove('disabled');

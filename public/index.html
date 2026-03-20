@@ -34,6 +34,7 @@
   <link rel="stylesheet" href="css/styles.css?v=3">
   <link rel="stylesheet" href="css/whatsapp_broadcast.css?v=3">
   <link rel="stylesheet" href="css/delivery_report.css?v=3">
+  <link rel="stylesheet" href="css/student_directory.css?v=3">
 
 </head>
 
@@ -146,6 +147,16 @@
           </div>
           <h2>Staff Directory</h2>
           <p>Manage staff profiles and schedules.</p>
+          <div class="lock-overlay"><i data-lucide="lock"></i></div>
+        </div>
+
+        <!-- Fees & Accounting Card -->
+        <div class="portal-card" onclick="navigateTo('fees')" id="card-fees">
+          <div class="portal-icon" style="background: rgba(251, 191, 36, 0.1); color: #fbbf24;">
+            <i data-lucide="wallet"></i>
+          </div>
+          <h2>Fees & Accounting</h2>
+          <p>Manage student fees, payments, and accounting.</p>
           <div class="lock-overlay"><i data-lucide="lock"></i></div>
         </div>
 
@@ -270,12 +281,74 @@
 
   <!-- STUDENT DIRECTORY APP WRAPPER -->
   <div id="student-app" class="app-wrapper">
-    <div style="padding:40px; text-align:center;">
-      <h1>Student Directory</h1>
-      <p style="color:var(--text-dim)">Coming Soon...</p>
-      <button class="btn btn-secondary" onclick="navigateTo('portal')" style="margin: 20px auto;">Back to
-        Portal</button>
+    <aside id="sidebar-students" class="console-sidebar">
+      <div class="sidebar-header">
+        <div class="logo-container">
+          <img src="assets/ENGLISH LOGO-CORAL.png" alt="Logo" class="logo-img" onerror="this.style.display='none';">
+        </div>
+        <div class="sidebar-title">Student Directory</div>
+      </div>
+
+      <nav id="sidebar-nav-students">
+        <div class="nav-item" onclick="navigateTo('portal')">
+          <i data-lucide="arrow-left"></i>
+          <span>Back to Portal</span>
+        </div>
+        <div class="nav-item active" onclick="window.studentDirectory.switchView('directory')" id="nav-student-directory">
+          <i data-lucide="contact"></i>
+          <span>Student Directory</span>
+        </div>
+        <div class="nav-item" onclick="window.studentDirectory.switchView('manage')" id="nav-student-manage">
+          <i data-lucide="user-cog"></i>
+          <span>Manage Students</span>
+        </div>
+        <div class="nav-item" onclick="window.studentDirectory.switchView('attendance')" id="nav-student-attendance">
+          <i data-lucide="calendar-check"></i>
+          <span>Attendance</span>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="mobile-nav-toggle" onclick="toggleSidebar()">
+      <i data-lucide="menu"></i>
     </div>
+
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <main class="console-main">
+      <header>
+        <div class="view-title">
+          <h1 id="student-screen-title">Student Directory</h1>
+          <p id="student-screen-subtitle">Loading student records...</p>
+        </div>
+      </header>
+
+      <div id="student-toolbar" class="console-toolbar">
+        <!-- Student filtering/actions will be injected here -->
+      </div>
+
+      <div id="student-content" class="view active">
+        <!-- Directory View -->
+        <div id="student-view-directory" class="student-subview active">
+          <div id="student-content-directory"></div>
+        </div>
+
+        <!-- Manage View -->
+        <div id="student-view-manage" class="student-subview" style="display:none;">
+          <div id="student-content-manage"></div>
+        </div>
+
+        <!-- Attendance View -->
+        <div id="student-view-attendance" class="student-subview" style="display:none;">
+          <div id="student-content-attendance"></div>
+        </div>
+
+        <!-- Report View (Detailed Profile) -->
+        <div id="student-view-report" class="student-subview" style="display:none;">
+          <div id="student-content-report"></div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <!-- WHATSAPP SENDER APP WRAPPER -->
@@ -415,6 +488,60 @@
         <!-- Attendance View -->
         <div id="staff-view-attendance" class="staff-subview" style="display:none;">
           <div class="attendance-container" id="staff-attendance-list"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- FEES & ACCOUNTING APP WRAPPER -->
+  <div id="fees-app" class="app-wrapper">
+    <aside id="sidebar-fees" class="console-sidebar">
+      <div class="sidebar-header">
+        <div class="logo-container">
+          <img src="assets/ENGLISH LOGO-CORAL.png" alt="Logo" class="logo-img" onerror="this.style.display='none';">
+        </div>
+        <div class="sidebar-title">Fees & Accounting</div>
+      </div>
+
+      <nav id="sidebar-nav-fees">
+        <div class="nav-item" onclick="navigateTo('portal')">
+          <i data-lucide="arrow-left"></i>
+          <span>Back to Portal</span>
+        </div>
+        <div class="nav-item active" onclick="window.feesManager.switchView('overview')" id="nav-fees-overview">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Overview</span>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="mobile-nav-toggle" onclick="toggleSidebar()">
+      <i data-lucide="menu"></i>
+    </div>
+
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <main class="console-main">
+      <header>
+        <div class="view-title">
+          <h1 id="fees-screen-title">Fee Management</h1>
+          <p id="fees-screen-subtitle">Managing student fees and payments</p>
+        </div>
+      </header>
+
+      <div id="fees-toolbar" class="console-toolbar">
+        <!-- Actions will be injected -->
+      </div>
+
+      <div id="fees-content" class="view active">
+        <!-- Overview View -->
+        <div id="fees-view-overview" class="fees-subview active">
+          <div id="fees-content-overview"></div>
+        </div>
+
+        <!-- Student Fee View -->
+        <div id="fees-view-student_fees" class="fees-subview" style="display:none;">
+          <div id="fees-content-student-fees"></div>
         </div>
       </div>
     </main>
@@ -609,6 +736,24 @@
           </div>
         </div>
 
+        <!-- Fees & Accounting -->
+        <div class="perm-group">
+          <div class="perm-group-header">
+            <i data-lucide="wallet"></i>
+            <span>Fees & Accounting</span>
+          </div>
+          <div class="perm-options">
+            <label class="perm-option">
+              <input type="checkbox" id="perm-fees_accounting-view">
+              <span>View Dashboard</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-fees_accounting-manage">
+              <span>Manage Records</span>
+            </label>
+          </div>
+        </div>
+
         <!-- WhatsApp Sender -->
         <div class="perm-group">
           <div class="perm-group-header">
@@ -653,6 +798,8 @@
   <script src="js/auth.js"></script>
   <script src="js/smart-campus.js"></script>
   <script src="js/staff.js"></script>
+  <script src="js/students.js"></script>
+  <script src="js/fees.js"></script>
   <script src="js/admin.js"></script>
   <script src="js/whatsapp/state.js?v=5"></script>
   <script src="js/whatsapp/api.js?v=5"></script>

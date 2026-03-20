@@ -1692,7 +1692,8 @@ header {
 }
 
 #student-app.active {
-  display: block;
+  display: flex;
+  flex-direction: row;
 }
 
 #staff-app.active {
@@ -1934,6 +1935,70 @@ header {
 
   .admin-actions .btn {
     flex: 1;
+  }
+}
+
+/* Console Table Styles */
+.console-table {
+  width: 100% !important;
+  display: table !important;
+  border-collapse: collapse !important;
+  margin-top: 24px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.console-table thead {
+  display: table-header-group !important;
+}
+
+.console-table tbody {
+  display: table-row-group !important;
+}
+
+.console-table tr {
+  display: table-row !important;
+}
+
+.console-table th,
+.console-table td {
+  display: table-cell !important;
+  padding: 16px 24px;
+  text-align: left;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.console-table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.console-table tr:last-child td {
+  border-bottom: none;
+}
+
+.console-table tr:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Responsive Table */
+@media (max-width: 992px) {
+  .console-table {
+    display: block !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 12px;
   }
 }
 
@@ -2460,7 +2525,6 @@ header {
   #whatsapp-app .view-title h1 {
     padding-top: 20px;
   }
-}
   #whatsapp-app .console-main {
     padding: 16px 16px 100px;
   }
