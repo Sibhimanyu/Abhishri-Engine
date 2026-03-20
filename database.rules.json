@@ -51,7 +51,7 @@
           }
         },
         "broadcast_logs": {
-          ".indexOn": ["broadcastId", "timestamp"]
+          ".indexOn": ["broadcastId", "messageId", "timestamp"]
         }
       }
     }

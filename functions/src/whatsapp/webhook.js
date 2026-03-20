@@ -75,14 +75,22 @@ async function processStatus(db, fs, report) {
   const messageId = report.request_id || report.message_id || report.id;
   const status = (report.status || "").toLowerCase();
   const timestamp = (report.timestamp > 10000000000 ? report.timestamp : report.timestamp * 1000);
-  const docId = sanitizeKey(messageId);
+  
+  // Since logs are now keyed by `log_broadcastId_phone`, we must query by messageId
+  const logsRef = db.ref(`modules/whatsapp_sender/broadcast_logs`);
+  const logQuery = await logsRef.orderByChild("messageId").equalTo(messageId).once("value");
+  
+  if (logQuery.exists()) {
+    // There should only be one match, but we use forEach for the snap structure
+    let logData = null;
+    let logRef = null;
+    logQuery.forEach(child => {
+        logData = child.val();
+        logRef = child.ref;
+    });
 
-  const logRef = db.ref(`modules/whatsapp_sender/broadcast_logs/${docId}`);
-  const logSnap = await logRef.once("value");
-  const logData = logSnap.val();
-
-  if (logData) {
-    const currentStatus = (logData.status || "pending").toLowerCase();
+    if (logData) {
+      const currentStatus = (logData.status || "pending").toLowerCase();
     // Rank: processing(1) -> sent(2) -> delivered(3) -> read(4). failed(0) is a special terminal state.
     const STATUS_RANK = { "failed": 0, "processing": 1, "sent": 2, "delivered": 3, "read": 4 };
     const newRank = STATUS_RANK[status] || 0;
@@ -162,6 +170,7 @@ async function processStatus(db, fs, report) {
     }
 
     await Promise.all(updatePromises);
+    }
   }
 }
 

@@ -103,7 +103,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
   const parameters = (variables || []).map((val) => ({ type: "text", text: String(val) }));
   
   let dispatchedCount = 0, failedCount = 0, excludedCount = 0;
-  let processedContactsCount = 0, lastContactName = null;
+  let processedContactsCount = 0, excludedContactsCount = 0, lastContactName = null;
   const db = admin.database(), fs = admin.firestore();
 
   const updateProgress = async (isFinal = false, statusOverride = null, currentName = null) => {
@@ -113,7 +113,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
         failedCount, 
         excludedCount,
         processedNumbersCount: dispatchedCount + failedCount + excludedCount, 
-        processedContactsCount, 
+        processedContactsCount: processedContactsCount + excludedContactsCount, 
         currentContactName: currentName || "" 
     };
     if (statusOverride) update.status = statusOverride;
@@ -121,35 +121,68 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
     await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).update(update);
   };
 
-  // 1. Pre-process Exclusions in a fast batch for instant reporting
+  // 1. Instant Initialization: Bulk log EVERY recipient as 'queued' or 'excluded'
+  // This ensures the delivery report total is accurate from the very first second.
+  const initialLogs = {};
   const activeRecipients = [];
-  const exclusionLogs = {};
-  
+  const ts = Date.now();
+
+  // Track contacts that are entirely excluded
+  const contactExclusionStatus = {}; // { name: { total: 0, excluded: 0 } }
+
   for (const recipient of recipients) {
-    const number = String(recipient.phone).replace(/[^\d]/g, "");
-    if (excludedSet.has(number)) {
-        const ts = Date.now();
-        const logId = `excluded_${broadcastId}_${number}`;
-        exclusionLogs[logId] = {
-            broadcastId, recipientId: recipient.phone, name: recipient.name || number, 
+    const rawPhone = String(recipient.phone).replace(/[^\d]/g, "");
+    const last10 = rawPhone.slice(-10);
+    const logId = `log_${broadcastId}_${rawPhone}`;
+    const name = recipient.name || rawPhone;
+
+    if (!contactExclusionStatus[name]) contactExclusionStatus[name] = { total: 0, excluded: 0 };
+    contactExclusionStatus[name].total++;
+    
+    // Check if this number should be excluded (match full or last 10)
+    let isExcluded = excludedSet.has(rawPhone);
+    if (!isExcluded && last10.length === 10) {
+        // Fallback: check if any excluded number ends with these same 10 digits
+        for (const ex of excludedSet) {
+            if (ex.endsWith(last10)) { isExcluded = true; break; }
+        }
+    }
+
+    if (isExcluded) {
+        initialLogs[logId] = {
+            broadcastId, recipientId: recipient.phone, name: name, 
             status: "excluded", timestamp: ts, sentAt: ts, message: "Skipped (Recent)"
         };
         excludedCount++;
+        contactExclusionStatus[name].excluded++;
     } else {
+        initialLogs[logId] = {
+            broadcastId, recipientId: recipient.phone, name: name, 
+            status: "queued", timestamp: ts
+        };
         activeRecipients.push(recipient);
     }
   }
 
-  // Write all exclusions to RTDB at once (fast)
-  if (excludedCount > 0) {
-      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(exclusionLogs);
-      await updateProgress(); // Initial progress update with exclusions counted
+  // Calculate how many contacts are ENTIRELY excluded
+  for (const name in contactExclusionStatus) {
+    if (contactExclusionStatus[name].excluded === contactExclusionStatus[name].total) {
+        excludedContactsCount++;
+    }
+  }
+
+  // High-speed batch write of ALL initial states
+  if (Object.keys(initialLogs).length > 0) {
+      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(initialLogs);
+      await updateProgress(); 
   }
 
   // 2. Main Dispatch Loop (Only for Active Recipients)
   for (const recipient of activeRecipients) {
     if (recipient.name !== lastContactName) { processedContactsCount++; lastContactName = recipient.name; }
     const number = String(recipient.phone).replace(/[^\d]/g, ""), name = recipient.name || number;
+    const currentLogId = `log_${broadcastId}_${number}`;
+    
     await updateProgress(false, null, name);
 
     const stopSnap = await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).get();
@@ -160,24 +193,28 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
     if (parameters.length > 0) payload.template.components.push({ type: "body", parameters });
 
     try {
+      // Mark as processing just before the API call
+      await db.ref(`modules/whatsapp_sender/broadcast_logs/${currentLogId}`).update({ status: "processing" });
+
       const response = await axios.post(url, payload, { headers: {"Authorization": config.apiKey, "Content-Type": "application/json"} });
       const messageId = response.data.request_id || response.data.messages?.[0]?.id || response.data.id;
       if (messageId) {
-        const ts = Date.now(), docId = sanitizeKey(messageId), rKey = sanitizeKey(recipient.phone);
-        await db.ref(`modules/whatsapp_sender/conversations/${rKey}/messages/${docId}`).set({
-          messageId, from: "business", to: recipient.phone, message: `[Broadcast]: ${templateName}`, type: "template", timestamp: ts, direction: "outbound", status: "processing", broadcastId
-        });
-        await db.ref(`modules/whatsapp_sender/broadcast_logs/${docId}`).set({
-          broadcastId, recipientId: recipient.phone, name, status: "processing", timestamp: ts, messageId
+        const ts2 = Date.now();
+        await db.ref(`modules/whatsapp_sender/broadcast_logs/${currentLogId}`).update({
+          status: "sent", sentAt: ts2, messageId
         });
         dispatchedCount++;
       } else {
-          failedCount++;
+        const ts2 = Date.now();
+        await db.ref(`modules/whatsapp_sender/broadcast_logs/${currentLogId}`).update({
+          status: "failed", timestamp: ts2, error: response.data?.message || "API returned success but no message ID"
+        });
+        failedCount++;
       }
     } catch (error) {
-      const ts = Date.now();
-      await db.ref(`modules/whatsapp_sender/broadcast_logs/fail_${broadcastId}_${number}`).set({
-          broadcastId, recipientId: recipient.phone, name, status: "failed", timestamp: ts, error: error.message
+      const ts2 = Date.now();
+      await db.ref(`modules/whatsapp_sender/broadcast_logs/${currentLogId}`).update({
+          status: "failed", timestamp: ts2, error: error.message
       });
       failedCount++;
     }

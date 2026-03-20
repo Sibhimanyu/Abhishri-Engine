@@ -1290,7 +1290,35 @@ if (!window.whatsAppSender) {
                 btn.classList.remove('wa-filter-active');
             }
         });
+
+        // Show/Hide Error Type filter based on status
+        const errorFilter = document.getElementById('wa-report-error-filter');
+        if (errorFilter) {
+            errorFilter.style.display = (status === 'failed') ? 'block' : 'none';
+        }
+
         window.whatsAppSender._applyReportFilters();
+    };
+
+    window.whatsAppSender.toggleAllExpansions = function () {
+        const rows = document.querySelectorAll('.wa-report-item:not([style*="display: none"])');
+        const expandText = document.getElementById('wa-expand-all-text');
+        const isCurrentlyExpanded = expandText && expandText.innerText === 'Collapse All';
+        
+        rows.forEach(row => {
+            if (isCurrentlyExpanded) {
+                row.classList.remove('expanded');
+            } else {
+                row.classList.add('expanded');
+            }
+        });
+
+        if (expandText) {
+            expandText.innerText = isCurrentlyExpanded ? 'Expand All' : 'Collapse All';
+            const icon = expandText.parentElement.querySelector('i');
+            if (icon) icon.setAttribute('data-lucide', isCurrentlyExpanded ? 'expand' : 'shrink');
+            if (window.lucide) window.lucide.createIcons({ root: expandText.parentElement });
+        }
     };
 
     // Apply both status and search filters
@@ -1299,12 +1327,14 @@ if (!window.whatsAppSender) {
         const status = activeBtn ? activeBtn.getAttribute('data-filter') : 'all';
         const searchInput = document.getElementById('wa-report-search');
         const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        const errorType = document.getElementById('wa-report-error-filter')?.value || 'all';
         
         const rows = document.querySelectorAll('.wa-report-item');
         let visibleCount = 0;
 
         rows.forEach(row => {
             const rowStatus = row.getAttribute('data-status');
+            const rowError = (row.getAttribute('data-error') || '').toLowerCase();
             const phoneEl = row.querySelector('.wa-report-tab-header div div div:nth-child(2)');
             const nameEl = row.querySelector('.wa-report-tab-header div div div:nth-child(1)');
             
@@ -1317,13 +1347,19 @@ if (!window.whatsAppSender) {
             if (status === 'sent' && (rowStatus === 'delivered' || rowStatus === 'read')) statusMatch = true;
             if (status === 'failed' && (rowStatus === 'error' || rowStatus === 'failed')) statusMatch = true;
 
-            // 2. Search Check
+            // 2. Error Type Sub-filter (only if status is failed)
+            let errorMatch = true;
+            if (status === 'failed' && errorType !== 'all') {
+                errorMatch = rowError.includes(errorType.toLowerCase());
+            }
+
+            // 3. Search Check
             let searchMatch = true;
             if (searchTerm) {
                 searchMatch = phoneText.includes(searchTerm) || nameText.includes(searchTerm);
             }
 
-            const isVisible = statusMatch && searchMatch;
+            const isVisible = statusMatch && errorMatch && searchMatch;
 
             if (isVisible) {
                 visibleCount++;
@@ -1930,6 +1966,55 @@ if (!window.whatsAppSender) {
         }
     };
 
+    window.whatsAppSender.deleteIndividualLog = async function (logId, broadcastId, logKey, recipientName, status) {
+        const confirmed = await AppDialog.confirm(`Are you sure you want to delete the delivery record for "${recipientName}"? This will remove it from the report and update the campaign progress counts.`, {
+            title: 'Delete Record',
+            danger: true,
+            confirmText: 'Delete Record'
+        });
+
+        if (!confirmed) return;
+
+        try {
+            // 1. Delete the specific log from Realtime Database
+            await firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${logKey}`).remove();
+
+            // 2. Decrement counts in Firestore to keep progress and stats accurate
+            const update = {
+                processedNumbersCount: firebase.firestore.FieldValue.increment(-1),
+                recipientsCount: firebase.firestore.FieldValue.increment(-1)
+            };
+
+            // Map UI status to Firestore counter fields
+            if (status === 'read') {
+                update.readCount = firebase.firestore.FieldValue.increment(-1);
+                update.deliveredCount = firebase.firestore.FieldValue.increment(-1);
+                update.sentCount = firebase.firestore.FieldValue.increment(-1);
+                update.dispatchedCount = firebase.firestore.FieldValue.increment(-1);
+            } else if (status === 'delivered') {
+                update.deliveredCount = firebase.firestore.FieldValue.increment(-1);
+                update.sentCount = firebase.firestore.FieldValue.increment(-1);
+                update.dispatchedCount = firebase.firestore.FieldValue.increment(-1);
+            } else if (status === 'sent') {
+                update.sentCount = firebase.firestore.FieldValue.increment(-1);
+                update.dispatchedCount = firebase.firestore.FieldValue.increment(-1);
+            } else if (status === 'processing') {
+                update.dispatchedCount = firebase.firestore.FieldValue.increment(-1);
+            } else if (status === 'failed' || status === 'error') {
+                update.failedCount = firebase.firestore.FieldValue.increment(-1);
+            } else if (status === 'excluded') {
+                update.excludedCount = firebase.firestore.FieldValue.increment(-1);
+            }
+
+            await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).update(update);
+
+            AppDialog.toast('Record deleted successfully.', 'success');
+        } catch (error) {
+            console.error("Log Delete Failed:", error);
+            AppDialog.toast('Failed to delete record: ' + error.message, 'error');
+        }
+    };
+
     window.whatsAppSender._getEffectiveStatus = function (m) {
         let status = (m.status || 'unknown').toLowerCase();
         let error = m.error || (status === 'excluded' ? m.message : null);
@@ -1971,12 +2056,33 @@ if (!window.whatsAppSender) {
             if (listEl.innerText !== listName) listEl.innerText = listName;
         }
 
-        const recipientsArray = Object.values(recipients).sort((a,b) => (a.timestamp||0)-(b.timestamp||0));
-        let processing = 0, sent = 0, read = 0, deliv = 0, fail = 0, excluded = 0, total = recipientsArray.length;
+        const sortVal = document.getElementById('wa-report-sort')?.value || 'oldest';
+        
+        // Convert to array and preserve RTDB keys for deletion
+        const recipientsArray = Object.entries(recipients).map(([key, val]) => ({ key, ...val }));
+        
+        // Apply Sorting
+        recipientsArray.sort((a, b) => {
+            if (sortVal === 'newest') return (b.timestamp || 0) - (a.timestamp || 0);
+            if (sortVal === 'name') return (a.name || '').localeCompare(b.name || '');
+            if (sortVal === 'failed') {
+                const statusA = this._getEffectiveStatus(a).status;
+                const statusB = this._getEffectiveStatus(b).status;
+                const isAFail = (statusA === 'failed' || statusA === 'error');
+                const isBFail = (statusB === 'failed' || statusB === 'error');
+                if (isAFail && !isBFail) return -1;
+                if (!isAFail && isBFail) return 1;
+                return (a.timestamp || 0) - (b.timestamp || 0);
+            }
+            return (a.timestamp || 0) - (b.timestamp || 0); // Default 'oldest'
+        });
+
+        let queued = 0, processing = 0, sent = 0, read = 0, deliv = 0, fail = 0, excluded = 0, total = recipientsArray.length;
         
         recipientsArray.forEach(m => {
             const { status } = this._getEffectiveStatus(m);
-            if (status === 'processing') processing++;
+            if (status === 'queued') queued++;
+            else if (status === 'processing') processing++;
             else if (status === 'failed' || status === 'error') fail++;
             else if (status === 'read') read++;
             else if (status === 'delivered') deliv++;
@@ -1986,10 +2092,46 @@ if (!window.whatsAppSender) {
 
         // The 'TOTAL SENT' metric should include everything that reached 'sent', 'delivered' or 'read'
         const totalSentReached = sent + deliv + read;
+        const liveStats = { total, queued, processing, sent: totalSentReached, deliv, read, fail, excluded };
 
-        this._updateReportLiveProgress(logId, meta);
-        this._updateReportStatsDashboard(total, processing, totalSentReached, deliv, read, fail, excluded);
-        this._updateRecipientRowsList(recipientsArray);
+        // Dynamically populate error sub-filter
+        const errorFilter = document.getElementById('wa-report-error-filter');
+        if (errorFilter) {
+            const currentSelection = errorFilter.value;
+            const uniqueErrors = new Set();
+            recipientsArray.forEach(m => {
+                const { status, error } = this._getEffectiveStatus(m);
+                if ((status === 'failed' || status === 'error') && error) {
+                    // Extract first part of error message to group similar errors
+                    const shortError = error.split(':')[0].split('.')[0].trim();
+                    uniqueErrors.add(shortError);
+                }
+            });
+
+            let errorHtml = '<option value="all">All Error Types</option>';
+            uniqueErrors.forEach(err => {
+                errorHtml += `<option value="${err}" ${currentSelection === err ? 'selected' : ''}>${err}</option>`;
+            });
+            errorFilter.innerHTML = errorHtml;
+        }
+
+        this._updateReportLiveProgress(logId, meta, liveStats);
+        this._updateReportStatsDashboard(total, processing, totalSentReached, deliv, read, fail, excluded, queued);
+        this._updateRecipientRowsList(recipientsArray, broadcastId, logId);
+
+        // BACKGROUND SYNC: Update Firestore meta if counts have drifted (e.g. after deletion)
+        // This ensures the History table stays accurate without needing a manual refresh.
+        if (meta.sentCount !== totalSentReached || meta.failedCount !== fail || meta.recipientsCount !== total) {
+            firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).update({
+                sentCount: totalSentReached,
+                deliveredCount: deliv,
+                readCount: read,
+                failedCount: fail,
+                excludedCount: excluded,
+                processedNumbersCount: total - processing,
+                recipientsCount: total // Sync target count if logs were deleted
+            }).catch(e => console.warn("Background stats sync failed:", e));
+        }
 
         if (window.lucide) window.lucide.createIcons({ root: container });
     };
@@ -2026,22 +2168,59 @@ if (!window.whatsAppSender) {
                 <div id="wa-report-dashboard-mount"></div>
 
                 <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:24px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
-                        <div style="display:flex; gap:8px;" id="wa-report-filters">
-                            <button class="btn btn-secondary wa-filter-btn wa-filter-active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')" style="border-radius:20px; padding:6px 16px;">All</button>
-                            <button class="btn btn-secondary wa-filter-btn" data-filter="processing" onclick="window.whatsAppSender._filterReportRows('processing')" style="border-radius:20px; padding:6px 16px;">Processing</button>
-                            <button class="btn btn-secondary wa-filter-btn" data-filter="sent" onclick="window.whatsAppSender._filterReportRows('sent')" style="border-radius:20px; padding:6px 16px;">Sent</button>
-                            <button class="btn btn-secondary wa-filter-btn" data-filter="delivered" onclick="window.whatsAppSender._filterReportRows('delivered')" style="border-radius:20px; padding:6px 16px;">Delivered</button>
-                            <button class="btn btn-secondary wa-filter-btn" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')" style="border-radius:20px; padding:6px 16px;">Read</button>
-                            <button class="btn btn-secondary wa-filter-btn" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')" style="border-radius:20px; padding:6px 16px;">Failed</button>
-                            <button class="btn btn-secondary wa-filter-btn" data-filter="excluded" onclick="window.whatsAppSender._filterReportRows('excluded')" style="border-radius:20px; padding:6px 16px;">Excluded</button>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:280px; justify-content:flex-end;">
-                            <div style="position:relative; flex:1; max-width:300px;">
-                                <i data-lucide="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-dim);"></i>
-                                <input type="text" id="wa-report-search" placeholder="Search phone or name..." oninput="window.whatsAppSender._applyReportFilters()" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:8px 16px 8px 34px; color:var(--text-main); font-size:0.85rem; outline:none; width:100%;">
+                    <div style="display:flex; flex-direction:column; gap:20px;">
+                        <!-- Row 1: Status Filters -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                            <div style="display:flex; flex-wrap:wrap; gap:8px;" id="wa-report-filters">
+                                <button class="btn btn-secondary wa-filter-btn wa-filter-active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')" style="border-radius:20px; padding:6px 16px;">All</button>
+                                <button class="btn btn-secondary wa-filter-btn" data-filter="queued" onclick="window.whatsAppSender._filterReportRows('queued')" style="border-radius:20px; padding:6px 16px;">Queued</button>
+                                <button class="btn btn-secondary wa-filter-btn" data-filter="processing" onclick="window.whatsAppSender._filterReportRows('processing')" style="border-radius:20px; padding:6px 16px;">Processing</button>
+                                <button class="btn btn-secondary wa-filter-btn" data-filter="sent" onclick="window.whatsAppSender._filterReportRows('sent')" style="border-radius:20px; padding:6px 16px;">Sent</button>
+                                <button class="btn btn-secondary wa-filter-btn" data-filter="delivered" onclick="window.whatsAppSender._filterReportRows('delivered')" style="border-radius:20px; padding:6px 16px;">Delivered</button>
+                                <button class="btn btn-secondary wa-filter-btn" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')" style="border-radius:20px; padding:6px 16px;">Read</button>
+                                <button class="btn btn-secondary wa-filter-btn" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')" style="border-radius:20px; padding:6px 16px;">Failed</button>
+                                <button class="btn btn-secondary wa-filter-btn" data-filter="excluded" onclick="window.whatsAppSender._filterReportRows('excluded')" style="border-radius:20px; padding:6px 16px;">Excluded</button>
                             </div>
-                            <div id="wa-report-count" style="font-size:0.85rem; color:var(--text-dim); font-weight:600; white-space:nowrap;"></div>
+                        </div>
+                        
+                        <!-- Row 2: Tools & Search -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; border-top:1px solid rgba(255,255,255,0.05); padding-top:16px;">
+                            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                                <div style="display:flex; align-items:center; gap:8px; padding-right:12px; border-right:1px solid rgba(255,255,255,0.1); margin-right:4px;">
+                                    <input type="checkbox" id="wa-report-select-all" onclick="window.whatsAppSender.toggleAllSelections(this.checked)" style="width:18px; height:18px; cursor:pointer; accent-color:var(--accent);">
+                                    <span style="font-size:0.75rem; color:var(--text-dim); font-weight:700; text-transform:uppercase;">All</span>
+                                </div>
+                                
+                                <div id="wa-bulk-actions" style="display:none; align-items:center; gap:8px; padding:4px 12px; background:var(--accent-faint); border-radius:12px; border:1px solid var(--accent-border);">
+                                    <span id="wa-selection-count" style="font-size:0.75rem; font-weight:800; color:var(--accent); margin-right:4px;">0 Selected</span>
+                                    <button class="btn btn-icon" onclick="window.whatsAppSender.bulkExpandSelected()" title="Expand Selected" style="color:var(--accent);"><i data-lucide="maximize-2" style="width:14px;height:14px;"></i></button>
+                                    <button class="btn btn-icon" onclick="window.whatsAppSender.bulkDeleteSelected('${logId}', '${broadcastId}')" title="Delete Selected" style="color:#ef4444;"><i data-lucide="trash-2" style="width:14px;height:14px;"></i></button>
+                                </div>
+
+                                <button class="btn btn-secondary" onclick="window.whatsAppSender.toggleAllExpansions()" style="border-radius:20px; padding:8px 16px; font-size:0.85rem; display:flex; align-items:center; gap:6px;">
+                                    <i data-lucide="expand" style="width:14px;height:14px;"></i> <span id="wa-expand-all-text">Expand All</span>
+                                </button>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span style="font-size:0.75rem; color:var(--text-dim); font-weight:700; text-transform:uppercase;">Sort:</span>
+                                    <select id="wa-report-sort" onchange="window.whatsAppSender.viewBroadcastDetails('${broadcastId}', '${logId}')" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:8px 12px; color:var(--text-main); font-size:0.85rem; outline:none; cursor:pointer;">
+                                        <option value="oldest">Oldest First</option>
+                                        <option value="newest">Newest First</option>
+                                        <option value="failed">Failures First</option>
+                                        <option value="name">Name (A-Z)</option>
+                                    </select>
+                                </div>
+                                <select id="wa-report-error-filter" onchange="window.whatsAppSender._applyReportFilters()" style="display:none; background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.2); border-radius:20px; padding:8px 12px; color:#ef4444; font-size:0.85rem; outline:none; cursor:pointer;">
+                                    <option value="all">All Error Types</option>
+                                </select>
+                            </div>
+                            
+                            <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:300px; justify-content:flex-end;">
+                                <div style="position:relative; flex:1; max-width:250px;">
+                                    <i data-lucide="search" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-dim);"></i>
+                                    <input type="text" id="wa-report-search" placeholder="Search phone or name..." oninput="window.whatsAppSender._applyReportFilters()" style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:8px 16px 8px 34px; color:var(--text-main); font-size:0.85rem; outline:none; width:100%;">
+                                </div>
+                                <div id="wa-report-count" style="font-size:0.85rem; color:var(--text-dim); font-weight:600; white-space:nowrap;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2050,7 +2229,7 @@ if (!window.whatsAppSender) {
             </div>`;
     };
 
-    window.whatsAppSender._updateReportLiveProgress = function (logId, meta) {
+    window.whatsAppSender._updateReportLiveProgress = function (logId, meta, liveStats) {
         const mount = document.getElementById('wa-live-progress-mount');
         if (!mount) return;
         
@@ -2058,8 +2237,23 @@ if (!window.whatsAppSender) {
         const isStopped = meta.status === 'stopped';
         const isCompleted = meta.status === 'dispatched' || meta.status === 'completed';
 
+        // Use live stats if provided, otherwise fallback to meta
+        const totalNumbers = liveStats ? liveStats.total : (meta.recipientsCount || 0);
+        const excluded = liveStats ? liveStats.excluded : (meta.excludedCount || 0);
+        const queued = liveStats ? liveStats.queued : 0;
+        
+        // "Processed" for the progress bar means messages that have actually been attempted (sent/failed)
+        // We must subtract 'queued' and 'processing' because they are still in the pipeline.
+        // We also subtract 'excluded' because they aren't part of the "Delivery" progress (they are skipped).
+        const processedNumbers = liveStats ? 
+            (liveStats.total - liveStats.queued - liveStats.processing - liveStats.excluded) : 
+            ((meta.processedNumbersCount || 0) - (meta.excludedCount || 0));
+
+        const nPct = totalNumbers > 0 ? Math.round((processedNumbers / (totalNumbers - excluded || 1)) * 100) : 0;
+
+        // Contacts count is harder to recalculate live without unique name mapping,
+        // so we'll approximate or use meta if available.
         const cPct = Math.round(((meta.processedContactsCount || 0) / (meta.contactsCount || 1)) * 100);
-        const nPct = Math.round(((meta.processedNumbersCount || 0) / (meta.recipientsCount || 1)) * 100);
 
         let statusConfig = {
             title: 'Actively Sending Messages',
@@ -2089,7 +2283,7 @@ if (!window.whatsAppSender) {
                 accent: '#22c55e'
             };
         }
-        
+
         mount.innerHTML = `
             <div style="background:${statusConfig.bg}; border:1px solid ${statusConfig.border}; border-radius:20px; padding:24px; margin-bottom:32px; box-shadow:0 10px 30px rgba(0,0,0,0.1);">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px;">
@@ -2127,13 +2321,15 @@ if (!window.whatsAppSender) {
                         <div style="height:10px; background:rgba(255,255,255,0.05); border-radius:5px; overflow:hidden;">
                             <div style="height:100%; background:linear-gradient(90deg, ${statusConfig.accent}, ${statusConfig.accent}cc); width:${nPct}%; transition:width 0.5s ease; box-shadow:0 0 10px ${statusConfig.accent}80;"></div>
                         </div>
-                        <div style="font-size:0.75rem; margin-top:8px; color:var(--text-dim);">${meta.processedNumbersCount || 0} of ${meta.recipientsCount || 0} total phone numbers</div>
+                        <div style="font-size:0.75rem; margin-top:8px; color:var(--text-dim); display:flex; justify-content:space-between; align-items:center;">
+                            <span>${processedNumbers} of ${totalNumbers - excluded} deliverable numbers</span>
+                            ${excluded > 0 ? `<span style="color:#94a3b8; font-weight:700;">${excluded} Excluded</span>` : ''}
+                        </div>
                     </div>
                 </div>
-            </div>`;
-    };
+            </div>`;    };
 
-    window.whatsAppSender._updateReportStatsDashboard = function (total, processing, sent, deliv, read, fail, excluded) {
+    window.whatsAppSender._updateReportStatsDashboard = function (total, processing, sent, deliv, read, fail, excluded, queued = 0) {
         const mount = document.getElementById('wa-report-dashboard-mount');
         if (!mount) return;
         
@@ -2158,9 +2354,9 @@ if (!window.whatsAppSender) {
                 </div>
                 <div class="wa-stat-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
                     <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="loader" style="width:48px;height:48px;color:#f59e0b;"></i></div>
-                    <div style="color:#f59e0b; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Processing</div>
-                    <div style="font-size:2.4rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${processing}</div>
-                    <div style="font-size:0.85rem; color:var(--text-dim);">Awaiting confirmation</div>
+                    <div style="color:#f59e0b; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Pending</div>
+                    <div style="font-size:2.4rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${processing + queued}</div>
+                    <div style="font-size:0.85rem; color:var(--text-dim);">${queued > 0 ? `${queued} queued • ` : ''}${processing} active</div>
                 </div>
                 <div class="wa-stat-card" style="background:var(--card-bg); border:1px solid var(--border); border-radius:20px; padding:24px; position:relative; overflow:hidden;">
                     <div style="position:absolute; top:0; right:0; padding:16px; opacity:0.1;"><i data-lucide="alert-circle" style="width:48px;height:48px;color:#ef4444;"></i></div>
@@ -2174,11 +2370,12 @@ if (!window.whatsAppSender) {
         if (countEl) countEl.innerText = `${total} Recipients`;
     };
 
-    window.whatsAppSender._updateRecipientRowsList = function (recipients) {
+    window.whatsAppSender._updateRecipientRowsList = function (recipients, broadcastId, logId) {
         const grid = document.getElementById('wa-report-recipients-grid');
         if (!grid) return;
         
         const statusConfig = {
+            queued: { color: '#94a3b8', icon: 'clock', label: 'Queued', bg: 'rgba(148,163,184,0.1)' },
             processing: { color: '#f59e0b', icon: 'loader', label: 'Processing', bg: 'rgba(245,158,11,0.1)' },
             sent: { color: '#38bdf8', icon: 'send', label: 'Sent', bg: 'rgba(56,189,248,0.1)' },
             delivered: { color: '#3b82f6', icon: 'check', label: 'Delivered', bg: 'rgba(59,130,246,0.1)' },
@@ -2187,11 +2384,16 @@ if (!window.whatsAppSender) {
             error: { color: '#ef4444', icon: 'alert-circle', label: 'Failed', bg: 'rgba(239,68,68,0.1)' },
             excluded: { color: '#94a3b8', icon: 'slash', label: 'Excluded', bg: 'rgba(148,163,184,0.1)' }
         };
+
+        // 1. Track which IDs are present in the new data
+        const currentDataIds = new Set();
         
         recipients.forEach(m => {
-            const { status, error } = this._getEffectiveStatus(m);
             const cleanPhone = String(m.phone || m.recipientId || '').replace(/\D/g, '');
             const rowId = `wa-row-${m.messageId ? m.messageId.replace(/[.#$/[\]]/g, "_") : cleanPhone}`;
+            currentDataIds.add(rowId);
+
+            const { status, error } = this._getEffectiveStatus(m);
             let row = document.getElementById(rowId);
             
             if (!row) {
@@ -2218,22 +2420,26 @@ if (!window.whatsAppSender) {
             row.innerHTML = `
                 <div class="wa-status-stripe" style="background:${conf.color};"></div>
                 
-                <div class="wa-report-tab-header" onclick="window.whatsAppSender.toggleRecipientExpansion('${rowId}')">
+                <div class="wa-report-tab-header">
                     <div style="display:flex; align-items:center; gap:16px; flex:1;">
-                        <div style="width:36px; height:36px; border-radius:10px; background:${conf.bg}; color:${conf.color}; display:flex; align-items:center; justify-content:center;">
+                        <input type="checkbox" class="wa-row-select" value="${m.key}" onclick="event.stopPropagation(); window.whatsAppSender._onRecipientSelectChange()" style="width:18px; height:18px; cursor:pointer; accent-color:var(--accent);">
+                        <div style="width:36px; height:36px; border-radius:10px; background:${conf.bg}; color:${conf.color}; display:flex; align-items:center; justify-content:center;" onclick="window.whatsAppSender.toggleRecipientExpansion('${rowId}')">
                             <i data-lucide="${conf.icon}" style="width:18px;height:18px;"></i>
                         </div>
-                        <div>
+                        <div onclick="window.whatsAppSender.toggleRecipientExpansion('${rowId}')" style="cursor:pointer; flex:1;">
                             <div style="font-weight:700; color:var(--text-main); font-size:0.95rem;">${m.name || 'Unknown Recipient'}</div>
                             <div style="font-size:0.8rem; color:var(--text-dim); font-family:monospace;">+${cleanPhone}</div>
                         </div>
                     </div>
                     
                     <div style="display:flex; align-items:center; gap:16px;">
-                        <div style="background:${conf.bg}; color:${conf.color}; font-size:0.65rem; font-weight:800; padding:4px 10px; border-radius:8px; text-transform:uppercase; letter-spacing:0.02em; border:1px solid ${conf.color}22;">
+                        <button class="btn btn-icon" onclick="event.stopPropagation(); window.whatsAppSender.deleteIndividualLog('${logId}', '${broadcastId}', '${m.key}', '${(m.name || 'Unknown').replace(/'/g, "\\'").replace(/"/g, "&quot;")}', '${status}')" title="Delete this record" style="color:var(--text-dim); opacity:0.3; padding:4px;">
+                            <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
+                        </button>
+                        <div style="background:${conf.bg}; color:${conf.color}; font-size:0.65rem; font-weight:800; padding:4px 10px; border-radius:8px; text-transform:uppercase; letter-spacing:0.02em; border:1px solid ${conf.color}22;" onclick="window.whatsAppSender.toggleRecipientExpansion('${rowId}')" style="cursor:pointer;">
                             ${conf.label}
                         </div>
-                        <i data-lucide="chevron-down" class="wa-chevron" style="width:16px;height:16px;"></i>
+                        <i data-lucide="chevron-down" class="wa-chevron" style="width:16px;height:16px;" onclick="window.whatsAppSender.toggleRecipientExpansion('${rowId}')" style="cursor:pointer;"></i>
                     </div>
                 </div>
 
@@ -2269,6 +2475,14 @@ if (!window.whatsAppSender) {
             
             if (isExpanded) row.classList.add('expanded');
         });
+
+        // 2. Remove rows from the UI that are no longer in the database
+        const existingRows = grid.querySelectorAll('.wa-report-item');
+        existingRows.forEach(row => {
+            if (!currentDataIds.has(row.id)) {
+                row.remove();
+            }
+        });
         
         if (window.lucide) window.lucide.createIcons({ root: grid });
     };
@@ -2277,14 +2491,118 @@ if (!window.whatsAppSender) {
         const row = document.getElementById(rowId);
         if (!row) return;
         
-        const isExpanding = !row.classList.contains('expanded');
-        
-        // Optional: Close others
-        // document.querySelectorAll('.wa-report-item.expanded').forEach(el => {
-        //     if (el !== row) el.classList.remove('expanded');
-        // });
-        
         row.classList.toggle('expanded');
+    };
+
+    // --- Bulk Action Helpers ---
+
+    window.whatsAppSender.toggleAllSelections = function (checked) {
+        const visibleChecks = document.querySelectorAll('.wa-report-item:not([style*="display: none"]) .wa-row-select');
+        visibleChecks.forEach(c => c.checked = checked);
+        this._onRecipientSelectChange();
+    };
+
+    window.whatsAppSender._onRecipientSelectChange = function () {
+        const checked = document.querySelectorAll('.wa-row-select:checked');
+        const bulkBar = document.getElementById('wa-bulk-actions');
+        const countEl = document.getElementById('wa-selection-count');
+        const selectAll = document.getElementById('wa-report-select-all');
+
+        if (bulkBar) bulkBar.style.display = checked.length > 0 ? 'flex' : 'none';
+        if (countEl) countEl.innerText = `${checked.length} Selected`;
+        
+        // Update Select All state
+        if (selectAll) {
+            const allVisible = document.querySelectorAll('.wa-report-item:not([style*="display: none"]) .wa-row-select');
+            selectAll.checked = allVisible.length > 0 && checked.length === allVisible.length;
+            selectAll.indeterminate = checked.length > 0 && checked.length < allVisible.length;
+        }
+    };
+
+    window.whatsAppSender.bulkExpandSelected = function () {
+        const selectedKeys = Array.from(document.querySelectorAll('.wa-row-select:checked')).map(c => c.value);
+        if (selectedKeys.length === 0) return;
+
+        document.querySelectorAll('.wa-report-item').forEach(row => {
+            const check = row.querySelector('.wa-row-select');
+            if (check && check.checked) {
+                row.classList.add('expanded');
+            }
+        });
+    };
+
+    window.whatsAppSender.bulkDeleteSelected = async function (logId, broadcastId) {
+        const selectedChecks = document.querySelectorAll('.wa-row-select:checked');
+        if (selectedChecks.length === 0) return;
+
+        const confirmed = await AppDialog.confirm(`Are you sure you want to delete ${selectedChecks.length} selected records? This will update the campaign progress accordingly.`, {
+            title: 'Bulk Delete',
+            danger: true,
+            confirmText: `Delete ${selectedChecks.length} Records`
+        });
+
+        if (!confirmed) return;
+
+        try {
+            AppDialog.toast(`Deleting ${selectedChecks.length} records...`, 'info');
+            const updates = {};
+            const keys = Array.from(selectedChecks).map(c => c.value);
+            
+            // Stats aggregation for Firestore update
+            const counts = { read: 0, delivered: 0, sent: 0, processing: 0, failed: 0, excluded: 0 };
+            
+            keys.forEach((key, index) => {
+                updates[`modules/whatsapp_sender/broadcast_logs/${key}`] = null;
+                
+                const row = selectedChecks[index].closest('.wa-report-item');
+                if (row) {
+                    const status = row.getAttribute('data-status');
+                    if (status === 'read') counts.read++;
+                    else if (status === 'delivered') counts.delivered++;
+                    else if (status === 'sent') counts.sent++;
+                    else if (status === 'processing') counts.processing++;
+                    else if (status === 'failed' || status === 'error') counts.failed++;
+                    else if (status === 'excluded') counts.excluded++;
+                }
+            });
+
+            // 1. Bulk remove from Realtime Database
+            await firebase.database().ref().update(updates);
+
+            // 2. Decrement progress and status counts in Firestore
+            const firestoreUpdate = {
+                processedNumbersCount: firebase.firestore.FieldValue.increment(-keys.length),
+                recipientsCount: firebase.firestore.FieldValue.increment(-keys.length)
+            };
+
+            // Hierarchy-aware decrements (mirroring the increment logic in webhooks)
+            const dRead = counts.read;
+            const dDeliv = counts.read + counts.delivered;
+            const dSent = counts.read + counts.delivered + counts.sent;
+            const dDispatched = dSent + counts.processing;
+            const dFailed = counts.failed;
+            const dExcluded = counts.excluded;
+
+            if (dRead > 0) firestoreUpdate.readCount = firebase.firestore.FieldValue.increment(-dRead);
+            if (dDeliv > 0) firestoreUpdate.deliveredCount = firebase.firestore.FieldValue.increment(-dDeliv);
+            if (dSent > 0) firestoreUpdate.sentCount = firebase.firestore.FieldValue.increment(-dSent);
+            if (dDispatched > 0) firestoreUpdate.dispatchedCount = firebase.firestore.FieldValue.increment(-dDispatched);
+            if (dFailed > 0) firestoreUpdate.failedCount = firebase.firestore.FieldValue.increment(-dFailed);
+            if (dExcluded > 0) firestoreUpdate.excludedCount = firebase.firestore.FieldValue.increment(-dExcluded);
+
+            await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).update(firestoreUpdate);
+
+            AppDialog.toast(`Successfully deleted ${keys.length} records.`, 'success');
+            
+            // Clear selection bar
+            const selectAll = document.getElementById('wa-report-select-all');
+            if (selectAll) selectAll.checked = false;
+            this._onRecipientSelectChange();
+
+        } catch (error) {
+            console.error("Bulk Delete Failed:", error);
+            AppDialog.toast('Bulk delete failed: ' + error.message, 'error');
+        }
     };
 
     window.whatsAppSender.stopBroadcast = async function (logId) {

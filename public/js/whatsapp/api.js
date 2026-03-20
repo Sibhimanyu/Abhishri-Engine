@@ -43,7 +43,7 @@ if (!window.whatsAppSender) {
      * @param {string} [options.headerImageUrl] - Optional direct URL for an image header
      * @returns {Promise<object>} - API Response
      */
-    window.whatsAppSender.sendBroadcastAPI = async function ({ templateName, recipients, variables = [], broadcastId = null, headerImageUrl = null }) {
+    window.whatsAppSender.sendBroadcastAPI = async function ({ templateName, recipients, variables = [], broadcastId = null, headerImageUrl = null, excludedNumbers = [], contactsCount = 0 }) {
 
         const sendBroadcastCallable = firebase.functions().httpsCallable('sendWhatsAppBroadcast');
         const result = await sendBroadcastCallable({
@@ -51,7 +51,9 @@ if (!window.whatsAppSender) {
             recipients: recipients,
             variables: variables,
             broadcastId: broadcastId,
-            headerImageUrl: headerImageUrl
+            headerImageUrl: headerImageUrl,
+            excludedNumbers: excludedNumbers,
+            contactsCount: contactsCount
         });
 
         return result.data;
