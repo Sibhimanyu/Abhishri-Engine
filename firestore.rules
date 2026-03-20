@@ -33,9 +33,15 @@ service cloud.firestore {
       }
     }
 
-    match /modules/directory {
-      match /students/{studentId} {
-        allow read, write: if isAuthenticated();
+    match /modules/{moduleId} {
+      allow read: if isAuthenticated();
+    }
+
+    // --- Student Directory Module ---
+    match /modules/student_directory {
+      allow read, write: if request.auth != null;
+      match /{allPaths=**} {
+        allow read, write: if request.auth != null;
       }
     }
 

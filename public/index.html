@@ -298,13 +298,21 @@
           <i data-lucide="contact"></i>
           <span>Student Directory</span>
         </div>
+        <div class="nav-item" onclick="window.studentDirectory.switchView('attendance')" id="nav-student-attendance">
+          <i data-lucide="calendar-check"></i>
+          <span>Mark Attendance</span>
+        </div>
+        <div class="nav-item" onclick="window.studentDirectory.switchView('attendance_reports')" id="nav-student-attendance_reports">
+          <i data-lucide="file-bar-chart"></i>
+          <span>Attendance Reports</span>
+        </div>
+        <div class="nav-item" onclick="window.studentDirectory.switchView('performance')" id="nav-student-performance">
+          <i data-lucide="line-chart"></i>
+          <span>Growth Pulse</span>
+        </div>
         <div class="nav-item" onclick="window.studentDirectory.switchView('manage')" id="nav-student-manage">
           <i data-lucide="user-cog"></i>
           <span>Manage Students</span>
-        </div>
-        <div class="nav-item" onclick="window.studentDirectory.switchView('attendance')" id="nav-student-attendance">
-          <i data-lucide="calendar-check"></i>
-          <span>Attendance</span>
         </div>
       </nav>
     </aside>
@@ -342,6 +350,16 @@
         <div id="student-view-attendance" class="student-subview" style="display:none;">
           <div id="student-content-attendance"></div>
         </div>
+<!-- Attendance Reports View -->
+<div id="student-view-attendance_reports" class="student-subview" style="display:none;">
+  <div id="student-content-attendance-reports"></div>
+</div>
+<!-- Growth Pulse (Performance) View -->
+<div id="student-view-performance" class="student-subview" style="display:none;">
+  <div id="student-content-performance"></div>
+</div>
+
+<!-- Manage View -->
 
         <!-- Report View (Detailed Profile) -->
         <div id="student-view-report" class="student-subview" style="display:none;">
@@ -508,9 +526,25 @@
           <i data-lucide="arrow-left"></i>
           <span>Back to Portal</span>
         </div>
-        <div class="nav-item active" onclick="window.feesManager.switchView('overview')" id="nav-fees-overview">
-          <i data-lucide="layout-dashboard"></i>
-          <span>Overview</span>
+        <div class="nav-item active" onclick="window.feesManager.switchView('collections')" id="nav-fees-collections">
+          <i data-lucide="line-chart"></i>
+          <span>Fee Collections</span>
+        </div>
+        <div class="nav-item" onclick="window.feesManager.switchView('overview')" id="nav-fees-overview">
+          <i data-lucide="users"></i>
+          <span>Student Ledger</span>
+        </div>
+        <div class="nav-item" onclick="window.feesManager.switchView('transactions')" id="nav-fees-transactions">
+          <i data-lucide="receipt"></i>
+          <span>Fee Transactions</span>
+        </div>
+        <div class="nav-item" onclick="window.feesManager.switchView('expenses')" id="nav-fees-expenses">
+          <i data-lucide="wallet"></i>
+          <span>Expense Management</span>
+        </div>
+        <div class="nav-item" onclick="window.feesManager.switchView('plans')" id="nav-fees-plans">
+          <i data-lucide="settings"></i>
+          <span>Fee Configurations</span>
         </div>
       </nav>
     </aside>
@@ -524,8 +558,8 @@
     <main class="console-main">
       <header>
         <div class="view-title">
-          <h1 id="fees-screen-title">Fee Management</h1>
-          <p id="fees-screen-subtitle">Managing student fees and payments</p>
+          <h1 id="fees-screen-title">Fees & Accounting</h1>
+          <p id="fees-screen-subtitle">Financial management and analytics</p>
         </div>
       </header>
 
@@ -534,14 +568,34 @@
       </div>
 
       <div id="fees-content" class="view active">
-        <!-- Overview View -->
-        <div id="fees-view-overview" class="fees-subview active">
+        <!-- Collections (Dashboard) View -->
+        <div id="fees-view-collections" class="fees-subview active">
+          <div id="fees-content-collections"></div>
+        </div>
+
+        <!-- Overview (Student Ledger) View -->
+        <div id="fees-view-overview" class="fees-subview" style="display:none;">
           <div id="fees-content-overview"></div>
+        </div>
+
+        <!-- Global Transactions View -->
+        <div id="fees-view-transactions" class="fees-subview" style="display:none;">
+          <div id="fees-content-transactions"></div>
+        </div>
+
+        <!-- Expenses View -->
+        <div id="fees-view-expenses" class="fees-subview" style="display:none;">
+          <div id="fees-content-expenses"></div>
         </div>
 
         <!-- Student Fee View -->
         <div id="fees-view-student_fees" class="fees-subview" style="display:none;">
           <div id="fees-content-student-fees"></div>
+        </div>
+
+        <!-- Fee Plans View -->
+        <div id="fees-view-plans" class="fees-subview" style="display:none;">
+          <div id="fees-content-plans"></div>
         </div>
       </div>
     </main>
@@ -731,7 +785,33 @@
             </label>
             <label class="perm-option">
               <input type="checkbox" id="perm-student_directory-manage">
-              <span>Manage Records</span>
+              <span>Manage Admissions</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-student_directory-attendance">
+              <span>Mark Attendance</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-student_directory-reports">
+              <span>Attendance Reports</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Growth Pulse -->
+        <div class="perm-group">
+          <div class="perm-group-header">
+            <i data-lucide="line-chart"></i>
+            <span>Growth Pulse</span>
+          </div>
+          <div class="perm-options">
+            <label class="perm-option">
+              <input type="checkbox" id="perm-student_performance-view">
+              <span>View Growth</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-student_performance-log">
+              <span>Log Pulse Entry</span>
             </label>
           </div>
         </div>
@@ -748,8 +828,20 @@
               <span>View Dashboard</span>
             </label>
             <label class="perm-option">
-              <input type="checkbox" id="perm-fees_accounting-manage">
-              <span>Manage Records</span>
+              <input type="checkbox" id="perm-fees_accounting-ledger">
+              <span>Student Ledger</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-fees_accounting-transactions">
+              <span>View Transactions</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-fees_accounting-expenses">
+              <span>Log Expenses</span>
+            </label>
+            <label class="perm-option">
+              <input type="checkbox" id="perm-fees_accounting-config">
+              <span>Configure Plans</span>
             </label>
           </div>
         </div>

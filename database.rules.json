@@ -53,6 +53,10 @@
         "broadcast_logs": {
           ".indexOn": ["broadcastId", "messageId", "timestamp"]
         }
+      },
+      "fees_accounting": {
+        ".read": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('fees_accounting').child('view').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('fees_accounting').val() === true)",
+        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('fees_accounting').child('manage').val() === true)"
       }
     }
   }

@@ -178,6 +178,63 @@ window.AppDialog = (() => {
 })();
 // ─── End AppDialog ─────────────────────────────────────────────────────────
 
+// ─── Student Data Manager (Centralized) ────────────────────────────────────
+window.studentDataManager = {
+    students: {},
+    dataLoaded: false,
+    isSubscribed: false,
+    callbacks: [],
+
+    subscribe() {
+        if (this.isSubscribed) return;
+        this.isSubscribed = true;
+
+        // Small delay to ensure auth state is fully stable across Firebase services
+        setTimeout(() => {
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) {
+                console.warn("Student Sync: No user signed in yet, waiting...");
+                this.isSubscribed = false; // Allow retry
+                return;
+            }
+            
+            console.log("Student Sync: Subscribing for user:", currentUser.email);
+            const modulesCol = firestore.collection('modules');
+            const studentDirDoc = modulesCol.doc('student_directory');
+            const studentsRef = studentDirDoc.collection('students');
+            
+            studentsRef.onSnapshot((querySnapshot) => {
+                const data = {};
+                querySnapshot.forEach((doc) => {
+                    data[doc.id] = doc.data();
+                });
+                this.students = data;
+                this.dataLoaded = true;
+                this.notify();
+            }, (error) => {
+                const authState = firebase.auth().currentUser ? 'Authenticated' : 'Unauthenticated';
+                console.error(`Firestore Sync Error [${authState}]:`, error.code, error.message);
+                
+                let userFriendlyMsg = 'Failed to load student records.';
+                if (error.code === 'permission-denied') userFriendlyMsg = 'Permission Denied: Access to student records restricted.';
+                if (error.code === 'unavailable') userFriendlyMsg = 'Service Unavailable: Check your internet connection.';
+                
+                AppDialog.toast(`Sync Error: ${userFriendlyMsg} (${error.code || 'unknown'})`, 'error');
+            });
+        }, 500);
+    },
+
+    onUpdate(callback) {
+        this.callbacks.push(callback);
+        if (this.dataLoaded) callback(this.students);
+    },
+
+    notify() {
+        this.callbacks.forEach(cb => cb(this.students));
+    }
+};
+// ─── End Student Data Manager ──────────────────────────────────────────────
+
 
 function getAreaIcon(name) {
     const lower = name.toLowerCase();

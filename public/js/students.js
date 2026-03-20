@@ -1,6 +1,6 @@
 /**
  * Student Directory Module (Firestore Version)
- * Handles student record management and rendering
+ * Handles student record management, attendance, and performance
  */
 
 window.studentDirectory = {
@@ -8,46 +8,84 @@ window.studentDirectory = {
     attendance: {},
     isSubscribed: false,
     dataLoaded: false,
-    currentView: 'directory', // directory, manage, attendance, report
+    currentView: 'directory', // directory, manage, attendance, attendance_reports, performance, report
     currentStudentId: null,
+    searchQuery: '',
+    selectedDate: new Date().toISOString().split('T')[0],
+    reportType: 'daily', // daily, weekly, monthly
 
     initialize() {
         // Any initial setup
     },
 
+    seedSampleStudent() {
+        const user = firebase.auth().currentUser;
+        if (!user) {
+            AppDialog.toast('You must be signed in to seed data.', 'error');
+            return;
+        }
+
+        const sample = {
+            name: "Aarav Sharma",
+            dob: "2018-05-15",
+            age: "7",
+            gender: "Male",
+            address: "Flat 402, Lotus Apartments, Mumbai, Maharashtra, 400001",
+            fatherName: "Rajesh Sharma",
+            fatherPhone: "919876543210",
+            motherName: "Priya Sharma",
+            motherPhone: "919876543211",
+            admissionForClass: "Grade 2",
+            bloodGroup: "O+",
+            nationality: "Indian",
+            religion: "Hindu",
+            feePaid: true,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        firestore.collection('modules').doc('student_directory').collection('students').add(sample)
+            .then(() => AppDialog.toast('Sample student added!', 'success'))
+            .catch(err => AppDialog.toast('Error seeding data: ' + err.message, 'error'));
+    },
+
     subscribe() {
         if (this.isSubscribed) return;
+        this.isSubscribed = true;
 
-        const studentsRef = firestore.collection('modules').doc('student_directory').collection('students');
-
-        // --- Subscribe to Students (Firestore) ---
-        // Using Firestore for better scalability and querying
-        studentsRef.onSnapshot((querySnapshot) => {
-            const data = {};
-            querySnapshot.forEach((doc) => {
-                data[doc.id] = doc.data();
-            });
+        // Use Centralized Data Manager
+        window.studentDataManager.subscribe();
+        window.studentDataManager.onUpdate((data) => {
             this.students = data;
             this.dataLoaded = true;
             this.render();
-        }, (error) => {
-            console.error("Firestore Student Error:", error);
-            AppDialog.toast('Error loading students from Firestore', 'error');
         });
 
-        // --- Subscribe to Attendance (Today - RTDB) ---
-        // Keeping attendance in RTDB for real-time "live" status updates
-        const dateKey = new Date().toISOString().split('T')[0];
-        const attendanceRef = db.ref(`modules/student_directory/attendance/${dateKey}`);
-        
-        attendanceRef.on('value', (snapshot) => {
+        // Initial attendance subscription
+        this.subscribeToAttendance(this.selectedDate);
+    },
+
+    subscribeToAttendance(dateKey) {
+        if (this.attendanceRef) {
+            this.attendanceRef.off();
+        }
+
+        this.attendanceRef = db.ref(`modules/student_directory/attendance/${dateKey}`);
+        this.attendanceRef.on('value', (snapshot) => {
             this.attendance = snapshot.val() || {};
             if (this.currentView === 'attendance') {
                 this.renderAttendance();
+            } else if (this.currentView === 'attendance_reports') {
+                this.renderAttendanceReports();
             }
         });
+    },
 
-        this.isSubscribed = true;
+    handleDateChange(date) {
+        this.selectedDate = date;
+        this.subscribeToAttendance(date);
+        if (this.currentView === 'attendance_reports') {
+            this.renderAttendanceReports();
+        }
     },
 
     switchView(viewName, studentId = null) {
@@ -70,7 +108,7 @@ window.studentDirectory = {
         if (typeof closeSidebar === 'function') closeSidebar();
     },
 
-    render() {
+    async render() {
         const hash = window.location.hash.replace('#', '');
         if (!hash.startsWith('students')) return;
 
@@ -80,8 +118,9 @@ window.studentDirectory = {
 
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
-        const perms = userData.permissions?.student_directory || {};
-        const isMaster = isAdmin || perms === true;
+        const studentPerms = userData.permissions?.student_directory || {};
+        const perfPerms = userData.permissions?.student_performance || {};
+        const isMaster = isAdmin === true;
 
         const subtitle = document.getElementById('student-screen-subtitle');
         if (subtitle) {
@@ -89,21 +128,21 @@ window.studentDirectory = {
                 const s = this.students[this.currentStudentId];
                 subtitle.innerText = s ? `Detailed Report for ${s.name}` : 'Student Report';
             } else {
-                subtitle.innerText = `${Object.keys(this.students).length} students registered (Firestore)`;
+                subtitle.innerText = `${Object.keys(this.students).length} students registered`;
             }
         }
 
-        const navManage = document.getElementById('nav-student-manage');
-        const navAttendance = document.getElementById('nav-student-attendance');
+        // Granular Sidebar Visibility
+        const setNavVisible = (id, visible) => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = visible ? 'flex' : 'none';
+        };
 
-        if (navManage) {
-            const canManage = isMaster || perms.manage;
-            navManage.style.display = canManage ? 'flex' : 'none';
-        }
-        if (navAttendance) {
-            const canAttend = isMaster || perms.manage; 
-            navAttendance.style.display = canAttend ? 'flex' : 'none';
-        }
+        setNavVisible('nav-student-directory', isMaster || studentPerms === true || studentPerms.view);
+        setNavVisible('nav-student-manage', isMaster || studentPerms === true || studentPerms.manage);
+        setNavVisible('nav-student-attendance', isMaster || studentPerms === true || studentPerms.attendance);
+        setNavVisible('nav-student-attendance_reports', isMaster || studentPerms === true || studentPerms.reports);
+        setNavVisible('nav-student-performance', isMaster || perfPerms === true || perfPerms.view);
 
         const toolbar = document.getElementById('student-toolbar');
         if (toolbar) toolbar.innerHTML = '';
@@ -114,262 +153,103 @@ window.studentDirectory = {
             this.renderManage();
         } else if (this.currentView === 'attendance') {
             this.renderAttendance();
+        } else if (this.currentView === 'attendance_reports') {
+            this.renderAttendanceReports();
+        } else if (this.currentView === 'performance') {
+            this.renderPerformance();
         } else if (this.currentView === 'report') {
-            this.renderReport(this.currentStudentId);
+            await this.renderReport(this.currentStudentId);
+        }
+
+        // Apply fadeIn to the main content container
+        const studentContent = document.getElementById('student-content');
+        if (studentContent) {
+            studentContent.style.animation = 'none';
+            studentContent.offsetHeight; // trigger reflow
+            studentContent.style.animation = 'fadeIn 0.5s ease-out';
         }
 
         if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    handleSearch(query) {
+        this.searchQuery = query;
+        this.render();
     },
 
     renderDirectory() {
         const container = document.getElementById('student-content-directory');
         if (!container) return;
 
-        if (Object.keys(this.students).length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i data-lucide="users"></i>
-                    <p>No students found in the directory.</p>
+        const toolbar = document.getElementById('student-toolbar');
+        if (toolbar) {
+            toolbar.innerHTML = `
+                <div class="search-box">
+                    <i data-lucide="search"></i>
+                    <input type="text" placeholder="Search by name or ID..." oninput="window.studentDirectory.handleSearch(this.value)" value="${this.searchQuery}">
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="window.studentDirectory.seedSampleStudent()"><i data-lucide="database"></i></button>
+                    <button class="btn btn-primary" onclick="window.studentDirectory.switchView('manage')"><i data-lucide="plus"></i> New Student</button>
                 </div>
             `;
-            return;
         }
 
-        let html = '<div class="directory-grid">';
-        
-        const sortedIds = Object.keys(this.students).sort((a, b) => {
-            return (this.students[a].name || '').localeCompare(this.students[b].name || '');
-        });
+        const filteredIds = Object.keys(this.students).filter(id => {
+            const s = this.students[id];
+            const q = this.searchQuery.toLowerCase();
+            return (s.name || '').toLowerCase().includes(q) || (s.admissionForClass || '').toLowerCase().includes(q);
+        }).sort((a, b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
 
-        sortedIds.forEach(id => {
+        let html = `
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon" style="background: rgba(241, 97, 91, 0.15); color: var(--accent-primary);">
+                        <i data-lucide="users"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3>Total Enrolled</h3>
+                        <div class="metric-value">${Object.keys(this.students).length}</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon" style="background: rgba(115, 199, 200, 0.15); color: var(--accent-secondary);">
+                        <i data-lucide="layers"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3>Active Classes</h3>
+                        <div class="metric-value">${new Set(Object.values(this.students).map(s => s.admissionForClass)).size}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="directory-grid">`;
+
+        filteredIds.forEach(id => {
             const s = this.students[id];
             html += `
                 <div class="directory-card" onclick="window.studentDirectory.switchView('report', '${id}')">
                     <div class="member-header">
-                        <div class="member-avatar">
-                            ${(s.name || 'S').charAt(0).toUpperCase()}
-                        </div>
+                        <div class="member-avatar">${(s.name || 'S').charAt(0).toUpperCase()}</div>
                         <div class="member-info">
-                            <h3>${s.name || 'Unknown Student'}</h3>
-                            <p>${s.admissionForClass || 'N/A'} - ${s.gender || 'N/A'}</p>
+                            <h3>${s.name}</h3>
+                            <p>${s.admissionForClass || 'No Class'}</p>
                         </div>
                     </div>
                     <div class="member-details">
-                        <div class="detail-item">
-                            <i data-lucide="hash"></i>
-                            <span>ID: ${s.studentId || id.substring(0, 8)}</span>
-                        </div>
-                        <div class="detail-item">
-                            <i data-lucide="phone"></i>
-                            <span>Father: ${s.fatherPhone || 'N/A'}</span>
-                        </div>
-                        <div class="detail-item">
-                            <i data-lucide="phone"></i>
-                            <span>Mother: ${s.motherPhone || 'N/A'}</span>
-                        </div>
+                        <div class="detail-item"><i data-lucide="phone"></i><span>${s.fatherPhone || s.motherPhone || 'No Phone'}</span></div>
+                        <div class="detail-item"><i data-lucide="map-pin"></i><span class="text-truncate">${s.address || 'No Address'}</span></div>
                     </div>
                     <div class="member-actions">
-                        <button class="btn btn-secondary btn-sm">
-                            <i data-lucide="file-text" style="width:14px;height:14px;margin-right:6px;"></i> Full Report
+                        <button class="btn btn-ghost btn-sm" style="width:100%; justify-content:center; color: var(--accent-secondary); font-weight: 800; letter-spacing: 0.5px;">
+                            VIEW PROFILE <i data-lucide="chevron-right" style="width:16px; height:16px; margin-left:4px;"></i>
                         </button>
                     </div>
-                </div>
-            `;
+                </div>`;
         });
 
-        html += '</div>';
-        container.innerHTML = html;
-        if (typeof lucide !== 'undefined') lucide.createIcons();
-    },
-
-    renderReport(id) {
-        const container = document.getElementById('student-content-report');
-        if (!container) return;
-
-        // If data hasn't arrived yet, show loading
-        if (!this.dataLoaded) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i data-lucide="loader" style="animation: spin 1s linear infinite;"></i>
-                    <p>Loading student record...</p>
-                </div>
-            `;
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-            return;
-        }
-
-        const s = this.students[id];
-        if (!s) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i data-lucide="alert-circle"></i>
-                    <p>Student record not found.</p>
-                    <button class="btn btn-primary" onclick="window.studentDirectory.switchView('directory')">Back to Directory</button>
-                </div>
-            `;
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-            return;
-        }
-
-        const toolbar = document.getElementById('student-toolbar');
-        if (toolbar) {
-            toolbar.innerHTML = `
-                <button class="btn btn-secondary" onclick="window.studentDirectory.switchView('directory')" style="margin-right:12px;">
-                    <i data-lucide="arrow-left"></i> Back to Directory
-                </button>
-                <button class="btn btn-primary" onclick="window.studentDirectory.showStudentForm('${id}')" style="margin-right:12px;">
-                    <i data-lucide="edit-3"></i> Edit Record
-                </button>
-                <button class="btn btn-secondary" onclick="window.studentDirectory.printStudentReport('${id}')">
-                    <i data-lucide="printer"></i> Print Full Report
-                </button>
-            `;
-        }
-
-        const renderDataCard = (label, value) => `
-            <div class="data-card">
-                <div class="data-label">${label}</div>
-                <div class="data-value">${value || 'N/A'}</div>
-            </div>
-        `;
-
-        container.innerHTML = `
-            <div class="report-page">
-                <div class="report-hero">
-                    <div class="profile-image-container">
-                        ${s.photoUrl ? `<img src="${s.photoUrl}" alt="${s.name}">` : `<div class="profile-image-placeholder">${(s.name || 'S').charAt(0).toUpperCase()}</div>`}
-                    </div>
-                    <div class="hero-content">
-                        <div class="hero-badges">
-                            <span class="badge badge-success">Active Student</span>
-                            <span class="badge badge-gray">Class: ${s.admissionForClass || 'N/A'}</span>
-                        </div>
-                        <h1>${s.name || 'Unknown Student'}</h1>
-                        <div class="hero-meta">
-                            <div class="meta-item"><i data-lucide="hash"></i> ID: ${s.studentId || id.substring(0, 8)}</div>
-                            <div class="meta-item"><i data-lucide="calendar"></i> Born: ${s.dob || 'N/A'}</div>
-                            <div class="meta-item"><i data-lucide="user"></i> ${s.gender || 'N/A'}</div>
-                            <div class="meta-item"><i data-lucide="map-pin"></i> ${s.address?.split(',')[0] || 'Address'}</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="report-body">
-                    <div class="info-section">
-                        <div class="section-header">
-                            <i data-lucide="user-check"></i>
-                            <h2>Student Profile</h2>
-                        </div>
-                        <div class="data-grid">
-                            ${renderDataCard('Age (as on Jun 1)', s.age)}
-                            ${renderDataCard('Mother Tongue', s.motherTongue)}
-                            ${renderDataCard('Nationality', s.nationality)}
-                            ${renderDataCard('Religion', s.religion)}
-                            ${renderDataCard('Caste/Community', s.caste)}
-                            ${renderDataCard('Aadhaar Number', s.aadhaar)}
-                            ${renderDataCard('Blood Group', s.bloodGroup)}
-                            ${renderDataCard('Identification Marks', s.idMarks)}
-                        </div>
-                        <div style="margin-top:24px;">
-                            ${renderDataCard('Home Address', s.address)}
-                        </div>
-                    </div>
-
-                    <div class="info-section">
-                        <div class="section-header">
-                            <i data-lucide="users"></i>
-                            <h2>Parent Information</h2>
-                        </div>
-                        <div class="parent-info-grid">
-                            <div class="parent-column">
-                                <div style="color:var(--accent-secondary); font-size:0.75rem; font-weight:700; margin-bottom:16px; letter-spacing:1px;">FATHER'S DETAILS</div>
-                                <div style="display:flex; flex-direction:column; gap:12px;">
-                                    ${renderDataCard('Full Name', s.fatherName)}
-                                    ${renderDataCard('Occupation', s.fatherOcc)}
-                                    ${renderDataCard('Qualification', s.fatherQual)}
-                                    ${renderDataCard('Phone Number', s.fatherPhone)}
-                                    ${renderDataCard('Email Address', s.fatherEmail)}
-                                </div>
-                            </div>
-                            <div class="parent-column">
-                                <div style="color:var(--accent-secondary); font-size:0.75rem; font-weight:700; margin-bottom:16px; letter-spacing:1px;">MOTHER'S DETAILS</div>
-                                <div style="display:flex; flex-direction:column; gap:12px;">
-                                    ${renderDataCard('Full Name', s.motherName)}
-                                    ${renderDataCard('Occupation', s.motherOcc)}
-                                    ${renderDataCard('Qualification', s.motherQual)}
-                                    ${renderDataCard('Phone Number', s.motherPhone)}
-                                    ${renderDataCard('Email Address', s.motherEmail)}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="info-section">
-                        <div class="section-header">
-                            <i data-lucide="shield-alert"></i>
-                            <h2>Emergency & Medical</h2>
-                        </div>
-                        <div class="data-grid">
-                            ${renderDataCard('Emergency Contact', s.emergencyName)}
-                            ${renderDataCard('Relationship', s.emergencyRel)}
-                            ${renderDataCard('Emergency Phone', s.emergencyPhone)}
-                            ${renderDataCard('Physician Name', s.physicianName)}
-                            ${renderDataCard('Physician Phone', s.physicianPhone)}
-                            ${renderDataCard('Immunization Status', s.immunizationStatus ? 'Up-to-date' : 'Not marked')}
-                        </div>
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-top:24px;">
-                            ${renderDataCard('Allergies', s.hasAllergies ? (s.allergiesList || 'Yes') : 'None')}
-                            ${renderDataCard('Medical Conditions', s.hasConditions ? (s.conditionsList || 'Yes') : 'None')}
-                        </div>
-                    </div>
-
-                    <div class="info-section">
-                        <div class="section-header">
-                            <i data-lucide="link"></i>
-                            <h2>Sibling & Other Details</h2>
-                        </div>
-                        <div class="data-grid">
-                            ${renderDataCard('Has Siblings', s.hasSiblings ? 'Yes' : 'No')}
-                            ${renderDataCard('Sibling 1', s.sib1Name ? `${s.sib1Name} (${s.sib1Age} yrs)` : 'N/A')}
-                            ${renderDataCard('Sibling 1 School', s.sib1School)}
-                            ${renderDataCard('Sibling 2', s.sib2Name ? `${s.sib2Name} (${s.sib2Age} yrs)` : 'N/A')}
-                            ${renderDataCard('Sibling 2 School', s.sib2School)}
-                            ${renderDataCard('Household Income', s.income)}
-                        </div>
-                    </div>
-
-                    <div class="info-section">
-                        <div class="section-header">
-                            <i data-lucide="truck"></i>
-                            <h2>Authorized Pickup Persons</h2>
-                        </div>
-                        <div class="data-grid">
-                            ${renderDataCard('Person 1 Name', s.pickup1Name)}
-                            ${renderDataCard('Relationship', s.pickup1Rel)}
-                            ${renderDataCard('Phone', s.pickup1Phone)}
-                            ${renderDataCard('Person 2 Name', s.pickup2Name)}
-                            ${renderDataCard('Relationship', s.pickup2Rel)}
-                            ${renderDataCard('Phone', s.pickup2Phone)}
-                        </div>
-                    </div>
-
-                    <div class="office-use-section" style="margin-top:40px; padding:30px; background:rgba(255,255,255,0.03); border-radius:16px; border:1px dashed var(--card-border);">
-                        <div style="color:var(--text-dim); text-transform:uppercase; font-size:0.7rem; font-weight:700; letter-spacing:1px; margin-bottom:20px;">Office Administration Records</div>
-                        <div class="data-grid" style="grid-template-columns: repeat(4, 1fr);">
-                            ${renderDataCard('Application No', s.appNo)}
-                            ${renderDataCard('Date Received', s.appDate)}
-                            ${renderDataCard('Verified By', s.staffVerify)}
-                            ${renderDataCard('Fee Status', s.feePaid ? 'Paid' : 'Pending')}
-                        </div>
-                        <div style="margin-top:24px; color:var(--text-dim); font-size:0.75rem;">
-                            Profile created/updated: ${s.updatedAt ? new Date(s.updatedAt).toLocaleString() : 'N/A'}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        if (typeof lucide !== 'undefined') lucide.createIcons();
+        if (filteredIds.length === 0) html = '<div class="empty-state"><i data-lucide="users"></i><p>No students match your search.</p></div>';
+        
+        container.innerHTML = html + '</div>';
     },
 
     renderManage() {
@@ -379,627 +259,495 @@ window.studentDirectory = {
         const toolbar = document.getElementById('student-toolbar');
         if (toolbar) {
             toolbar.innerHTML = `
-                <button class="btn btn-primary" onclick="window.studentDirectory.showStudentForm()">
-                    <i data-lucide="plus"></i> Add New Admission
-                </button>
+                <div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search admissions..." oninput="window.studentDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>
+                <button class="btn btn-primary" onclick="window.studentDirectory.showStudentForm()"><i data-lucide="user-plus"></i> New Admission</button>
             `;
         }
 
+        const filteredIds = Object.keys(this.students).filter(id => {
+            const s = this.students[id];
+            const q = this.searchQuery.toLowerCase();
+            return (s.name || '').toLowerCase().includes(q) || (s.fatherName || '').toLowerCase().includes(q);
+        }).sort((a, b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
+
         let html = `
+            <div class="section-title">Admission Records</div>
             <table class="console-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Student ID</th>
-                        <th>Class</th>
-                        <th>Gender</th>
-                        <th>Parent Phone</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
+                <thead><tr><th>Student</th><th>Parent</th><th>Contact</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+                <tbody>`;
 
-        const sortedIds = Object.keys(this.students).sort((a, b) => {
-            return (this.students[a].name || '').localeCompare(this.students[b].name || '');
-        });
-
-        sortedIds.forEach(id => {
+        filteredIds.forEach(id => {
             const s = this.students[id];
             html += `
                 <tr>
-                    <td><strong>${s.name || 'N/A'}</strong></td>
-                    <td>${s.studentId || 'N/A'}</td>
-                    <td>${s.admissionForClass || 'N/A'}</td>
-                    <td>${s.gender || 'N/A'}</td>
-                    <td>${s.fatherPhone || s.motherPhone || 'N/A'}</td>
                     <td>
-                        <div class="table-actions">
-                            <button class="btn-icon" onclick="window.studentDirectory.switchView('report', '${id}')" title="View Report">
-                                <i data-lucide="file-text"></i>
-                            </button>
-                            <button class="btn-icon" onclick="window.studentDirectory.showStudentForm('${id}')" title="Edit">
-                                <i data-lucide="edit-3"></i>
-                            </button>
-                            <button class="btn-icon btn-icon-danger" onclick="window.studentDirectory.deleteStudent('${id}')" title="Delete">
-                                <i data-lucide="trash-2"></i>
-                            </button>
+                        <div style="font-weight:700; color:var(--text-main);">${s.name}</div>
+                        <div style="font-size:0.75rem; color:var(--text-dim)">${s.admissionForClass}</div>
+                    </td>
+                    <td>${s.fatherName || s.motherName || 'N/A'}</td>
+                    <td>${s.fatherPhone || s.motherPhone || 'N/A'}</td>
+                    <td><span class="status-pill ${s.feePaid ? 'status-success' : 'status-warning'}">${s.feePaid ? 'Enrolled' : 'Pending'}</span></td>
+                    <td style="text-align:right">
+                        <div class="table-actions" style="justify-content:flex-end; gap:12px;">
+                            <button class="btn-icon" onclick="window.studentDirectory.renderReport('${id}')" title="Profile View"><i data-lucide="user"></i></button>
+                            <button class="btn-icon" onclick="window.studentDirectory.showStudentForm('${id}')" title="Edit Record"><i data-lucide="edit-3"></i></button>
+                            <button class="btn-icon btn-icon-danger" onclick="window.studentDirectory.deleteStudent('${id}')" title="Remove student"><i data-lucide="trash-2"></i></button>
                         </div>
                     </td>
-                </tr>
-            `;
+                </tr>`;
         });
 
-        if (sortedIds.length === 0) {
-            html += '<tr><td colspan="6" style="text-align:center; padding: 40px;">No students to display.</td></tr>';
-        }
-
-        html += `
-                </tbody>
-            </table>
-        `;
-
-        container.innerHTML = html;
+        if (filteredIds.length === 0) html += '<tr><td colspan="5" style="text-align:center; padding: 40px;">No admission records found.</td></tr>';
+        
+        container.innerHTML = html + '</tbody></table>';
     },
 
     renderAttendance() {
         const container = document.getElementById('student-content-attendance');
         if (!container) return;
 
-        const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const toolbar = document.getElementById('student-toolbar');
+        if (toolbar) {
+            toolbar.innerHTML = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Quick find student..." oninput="window.studentDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>`;
+        }
+
+        const filteredIds = Object.keys(this.students).filter(id => (this.students[id].name || '').toLowerCase().includes(this.searchQuery.toLowerCase())).sort((a,b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
+
+        container.innerHTML = `
+            <div class="report-page">
+                <div class="report-hero">
+                    <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Attendance Marker</h2>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Mark daily presence for ${new Date().toLocaleDateString('en-US', {month: 'long', day: 'numeric', year: 'numeric'})}</p>
+                </div>
+                <div class="report-body">
+                    <table class="console-table">
+                        <thead><tr><th>Student</th><th>Class</th><th style="text-align:right; min-width:280px;">Quick Actions</th></tr></thead>
+                        <tbody>${filteredIds.map(id => {
+                            const s = this.students[id];
+                            const att = this.attendance[id] || { status: 'none' };
+                            return `
+                                <tr>
+                                    <td><strong>${s.name}</strong></td>
+                                    <td>${s.admissionForClass || 'N/A'}</td>
+                                    <td style="text-align:right">
+                                        <div class="attendance-actions" style="justify-content:flex-end; gap:10px;">
+                                            <button class="btn-chip ${att.status === 'present' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'present')">PRESENT</button>
+                                            <button class="btn-chip btn-chip-danger ${att.status === 'absent' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'absent')">ABSENT</button>
+                                            <button class="btn-chip btn-chip-warning ${att.status === 'late' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'late')">LATE</button>
+                                        </div>
+                                    </td>
+                                </tr>`;
+                        }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>`;
+    },
+
+    renderAttendanceReports() {
+        const container = document.getElementById('student-content-attendance-reports');
+        if (!container) return;
+
+        const toolbar = document.getElementById('student-toolbar');
+        if (toolbar) {
+            toolbar.innerHTML = `
+                <div class="report-controls" style="display:flex; gap:16px; align-items:center;">
+                    <div class="search-box"><i data-lucide="calendar"></i><input type="date" class="form-control" value="${this.selectedDate}" onchange="window.studentDirectory.handleDateChange(this.value)"></div>
+                    <div class="segment-controller">
+                        <button class="segment-btn ${this.reportType === 'daily' ? 'active' : ''}" onclick="window.studentDirectory.switchReportType('daily')">Daily</button>
+                        <button class="segment-btn ${this.reportType === 'weekly' ? 'active' : ''}" onclick="window.studentDirectory.switchReportType('weekly')">Weekly</button>
+                        <button class="segment-btn ${this.reportType === 'monthly' ? 'active' : ''}" onclick="window.studentDirectory.switchReportType('monthly')">Monthly</button>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="window.studentDirectory.printCurrentReport()"><i data-lucide="printer"></i> Print Analysis</button>
+            `;
+        }
+
+        if (this.reportType === 'daily') this.renderDailyReport(container);
+        else if (this.reportType === 'weekly') this.renderWeeklyReport(container);
+        else if (this.reportType === 'monthly') this.renderMonthlyReport(container);
+    },
+
+    renderDailyReport(container) {
+        let p = 0, a = 0, l = 0;
+        Object.values(this.attendance).forEach(val => { if (val.status === 'present') p++; else if (val.status === 'absent') a++; else if (val.status === 'late') l++; });
+        const dateDisplay = new Date(this.selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        container.innerHTML = `
+            <div class="report-page">
+                <div class="report-hero">
+                    <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Daily Attendance Insight</h2>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Detailed breakdown for ${dateDisplay}</p>
+                </div>
+                <div class="report-body">
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-icon" style="background: rgba(115, 199, 200, 0.1); color: var(--accent-secondary);"><i data-lucide="users"></i></div>
+                            <div class="metric-info"><h3>Expected</h3><div class="metric-value">${Object.keys(this.students).length}</div></div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon" style="background: rgba(74, 222, 128, 0.1); color: var(--success);"><i data-lucide="check-circle"></i></div>
+                            <div class="metric-info"><h3>Present</h3><div class="metric-value" style="color:var(--success)">${p}</div></div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon" style="background: rgba(241, 97, 91, 0.1); color: var(--accent-primary);"><i data-lucide="user-x"></i></div>
+                            <div class="metric-info"><h3>Absent</h3><div class="metric-value" style="color:var(--accent-primary)">${a}</div></div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon" style="background: rgba(251, 191, 36, 0.1); color: #fbbf24;"><i data-lucide="clock"></i></div>
+                            <div class="metric-info"><h3>Late</h3><div class="metric-value" style="color:#fbbf24">${l}</div></div>
+                        </div>
+                    </div>
+                    <table class="console-table">
+                        <thead><tr><th>Student</th><th>Class</th><th>Status</th><th style="text-align:right">Time</th></tr></thead>
+                        <tbody>${Object.keys(this.students).sort((a,b) => (this.students[a].name || '').localeCompare(this.students[b].name || '')).map(id => {
+                            const att = this.attendance[id] || { status: 'none' };
+                            const labels = { 'present': 'Present', 'absent': 'Absent', 'late': 'Late', 'none': 'Not Marked' };
+                            const classes = { 'present': 'status-success', 'absent': 'status-danger', 'late': 'status-warning', 'none': 'status-none' };
+                            return `<tr><td><strong>${this.students[id].name}</strong></td><td>${this.students[id].admissionForClass || 'N/A'}</td><td><span class="status-pill ${classes[att.status]}">${labels[att.status]}</span></td><td style="text-align:right; font-size:0.85rem; color:var(--text-dim)">${att.timestamp ? new Date(att.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}</td></tr>`;
+                        }).join('')}</tbody>
+                    </table>
+                </div>
+            </div>`;
+    },
+
+    async renderWeeklyReport(container) {
+        container.innerHTML = '<div class="empty-state"><i data-lucide="loader" style="animation:spin 1s linear infinite"></i><p>Compiling weekly matrix...</p></div>';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        const dates = []; for (let i = 6; i >= 0; i--) { const d = new Date(this.selectedDate); d.setDate(d.getDate() - i); dates.push(d.toISOString().split('T')[0]); }
+        const weeklyData = {};
+        for (const d of dates) { const snap = await db.ref(`modules/student_directory/attendance/${d}`).once('value'); weeklyData[d] = snap.val() || {}; }
+
+        container.innerHTML = `
+            <div class="report-page">
+                <div class="report-hero">
+                    <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Weekly Attendance Matrix</h2>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Performance overview for the last 7 days</p>
+                </div>
+                <div class="report-body" style="padding:0;">
+                    <div style="overflow-x:auto;">
+                        <table class="console-table" style="margin-top:0; border:none; border-radius:0;">
+                            <thead><tr><th style="width:250px;">Student</th>${dates.map(d => `<th style="text-align:center; font-size:0.7rem">${d.split('-').slice(1).reverse().join('/')}</th>`).join('')}<th style="text-align:right; width:80px;">Rate</th></tr></thead>
+                            <tbody>${Object.keys(this.students).sort((a,b) => (this.students[a].name || '').localeCompare(this.students[b].name || '')).map(id => {
+                                let p = 0; let row = `<tr><td><strong>${this.students[id].name}</strong></td>`;
+                                dates.forEach(d => { const s = weeklyData[d][id]?.status; if (s === 'present') { p++; row += '<td><div class="attendance-matrix-cell matrix-present">P</div></td>'; } else if (s === 'late') { p++; row += '<td><div class="attendance-matrix-cell matrix-late">L</div></td>'; } else if (s === 'absent') row += '<td><div class="attendance-matrix-cell matrix-absent">A</div></td>'; else row += '<td><div class="attendance-matrix-cell matrix-empty">-</div></td>'; });
+                                row += `<td style="text-align:right; font-weight:800; color:var(--accent-secondary);">${Math.round((p/7)*100)}%</td></tr>`;
+                                return row;
+                            }).join('')}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    async renderMonthlyReport(container) {
+        const monthKey = this.selectedDate.slice(0, 7);
+        container.innerHTML = '<div class="empty-state"><i data-lucide="loader" style="animation:spin 1s linear infinite"></i><p>Compiling monthly analytics...</p></div>';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        const snap = await db.ref('modules/student_directory/attendance').orderByKey().startAt(monthKey).endAt(`${monthKey}-\uf8ff`).once('value');
+        const monthData = snap.val() || {};
+
+        const monthDisplay = new Date(this.selectedDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        container.innerHTML = `
+            <div class="report-page">
+                <div class="report-hero">
+                    <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Monthly Performance Audit</h2>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Attendance summary for ${monthDisplay}</p>
+                </div>
+                <div class="report-body">
+                    <table class="console-table">
+                        <thead><tr><th>Student</th><th>Present</th><th>Absent</th><th>Late</th><th style="text-align:right">Rate</th></tr></thead>
+                        <tbody>${Object.keys(this.students).sort((a,b) => (this.students[a].name || '').localeCompare(this.students[b].name || '')).map(id => {
+                            const stats = { p: 0, a: 0, l: 0 };
+                            Object.keys(monthData).forEach(d => { const s = monthData[d][id]?.status; if (s === 'present') stats.p++; else if (s === 'absent') stats.a++; else if (s === 'late') stats.l++; });
+                            const total = stats.p + stats.a + stats.l;
+                            return `<tr><td><strong>${this.students[id].name}</strong></td><td>${stats.p}</td><td>${stats.a}</td><td>${stats.l}</td><td style="text-align:right; font-weight:800; color:var(--accent-secondary)">${total > 0 ? Math.round(((stats.p+stats.l)/total)*100) : 0}%</td></tr>`;
+                        }).join('')}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    switchReportType(type) { this.reportType = type; this.renderAttendanceReports(); },
+
+    printCurrentReport() {
+        const type = this.reportType.toUpperCase();
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`<html><head><title>${type} Report</title><style>body { font-family: sans-serif; padding: 40px; } .header { border-bottom: 3px solid #F1615B; padding-bottom: 20px; margin-bottom: 30px; } table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #eee; padding: 12px; text-align: left; }</style></head><body><div class="header"><h1>ABHISHRI ACADEMY</h1><p>Attendance ${type} Audit</p></div>${document.querySelector('#student-content-attendance-reports table').outerHTML}</body></html>`);
+        printWindow.document.close();
+        setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+    },
+
+    renderPerformance() {
+        const id = this.currentStudentId;
+        if (id) { this.renderStudentPulse(id); return; }
+        const container = document.getElementById('student-content-performance');
+        const toolbar = document.getElementById('student-toolbar');
+        if (toolbar) toolbar.innerHTML = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Filter by name..." oninput="window.studentDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>`;
+
+        const filteredIds = Object.keys(this.students).filter(id => (this.students[id].name || '').toLowerCase().includes(this.searchQuery.toLowerCase()));
         
         let html = `
-            <div class="attendance-header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h2 style="font-size: 1.25rem;">Daily Attendance</h2>
-                    <p style="color: var(--text-dim)">${today}</p>
-                </div>
-            </div>
-            <table class="console-table">
-                <thead>
-                    <tr>
-                        <th>Student Name</th>
-                        <th>Class</th>
-                        <th>Status</th>
-                        <th>Last Updated</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        const sortedIds = Object.keys(this.students).sort((a, b) => {
-            return (this.students[a].name || '').localeCompare(this.students[b].name || '');
-        });
-
-        sortedIds.forEach(id => {
-            const s = this.students[id];
-            const att = this.attendance[id] || { status: 'none' };
-            
-            html += `
-                <tr>
-                    <td><strong>${s.name || 'N/A'}</strong></td>
-                    <td>${s.admissionForClass || 'N/A'}</td>
-                    <td>
-                        <div class="attendance-actions">
-                            <button class="btn-chip ${att.status === 'present' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'present')">P</button>
-                            <button class="btn-chip btn-chip-danger ${att.status === 'absent' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'absent')">A</button>
-                            <button class="btn-chip btn-chip-warning ${att.status === 'late' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'late')">L</button>
-                        </div>
-                    </td>
-                    <td style="font-size: 0.85rem; color: var(--text-dim)">
-                        ${att.timestamp ? new Date(att.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
-                    </td>
-                </tr>
-            `;
-        });
-
-        html += `
-                </tbody>
-            </table>
-        `;
-
-        container.innerHTML = html;
-    },
-
-    showStudentForm(id = null) {
-        if (typeof AppDialog === 'undefined') return;
-        const s = id ? this.students[id] : {};
-
-        const content = `
-            <div class="form-scroll-container">
-                <!-- Section 1: Student Information -->
-                <div class="form-section-title">Student Information</div>
-                <div class="form-group">
-                    <label>Full Name of Child</label>
-                    <input type="text" id="sf-name" class="form-control" value="${s.name || ''}" placeholder="Full Name">
-                </div>
-                <div class="form-grid-3">
-                    <div class="form-group">
-                        <label>Date of Birth</label>
-                        <input type="date" id="sf-dob" class="form-control" value="${s.dob || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Age (as on June 1)</label>
-                        <input type="number" id="sf-age" class="form-control" value="${s.age || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Gender</label>
-                        <select id="sf-gender" class="form-control">
-                            <option value="">Select</option>
-                            <option value="Male" ${s.gender === 'Male' ? 'selected' : ''}>Male</option>
-                            <option value="Female" ${s.gender === 'Female' ? 'selected' : ''}>Female</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Home Address</label>
-                    <input type="text" id="sf-address" class="form-control" value="${s.address || ''}" placeholder="Street Address, City, State, Pin Code">
-                </div>
-
-                <!-- Section 2: Parent Details -->
-                <div class="form-section-title">Parent Details (Father)</div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Father's Name</label>
-                        <input type="text" id="sf-father-name" class="form-control" value="${s.fatherName || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Occupation</label>
-                        <input type="text" id="sf-father-occ" class="form-control" value="${s.fatherOcc || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Qualification</label>
-                        <input type="text" id="sf-father-qual" class="form-control" value="${s.fatherQual || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Phone Number</label>
-                        <input type="text" id="sf-father-phone" class="form-control" value="${s.fatherPhone || ''}">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Email Address</label>
-                    <input type="email" id="sf-father-email" class="form-control" value="${s.fatherEmail || ''}">
-                </div>
-
-                <div class="form-section-title">Parent Details (Mother)</div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Mother's Name</label>
-                        <input type="text" id="sf-mother-name" class="form-control" value="${s.motherName || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Occupation</label>
-                        <input type="text" id="sf-mother-occ" class="form-control" value="${s.motherOcc || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Qualification</label>
-                        <input type="text" id="sf-mother-qual" class="form-control" value="${s.motherQual || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Phone Number</label>
-                        <input type="text" id="sf-mother-phone" class="form-control" value="${s.motherPhone || ''}">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Email Address</label>
-                    <input type="email" id="sf-mother-email" class="form-control" value="${s.motherEmail || ''}">
-                </div>
-
-                <!-- Section 3: Emergency Contact -->
-                <div class="form-section-title">Emergency Contact Information</div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Contact Name</label>
-                        <input type="text" id="sf-emergency-name" class="form-control" value="${s.emergencyName || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Relationship</label>
-                        <input type="text" id="sf-emergency-rel" class="form-control" value="${s.emergencyRel || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Phone Number</label>
-                        <input type="text" id="sf-emergency-phone" class="form-control" value="${s.emergencyPhone || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Address</label>
-                        <input type="text" id="sf-emergency-addr" class="form-control" value="${s.emergencyAddr || ''}">
-                    </div>
-                </div>
-
-                <!-- Section 4: Siblings -->
-                <div class="form-section-title">Sibling Details</div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="sf-has-siblings" ${s.hasSiblings ? 'checked' : ''}>
-                    <label for="sf-has-siblings">Does the child have siblings?</label>
-                </div>
-                <div class="form-grid-3">
-                    <div class="form-group">
-                        <label>Sibling 1 Name</label>
-                        <input type="text" id="sf-sib1-name" class="form-control" value="${s.sib1Name || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Age</label>
-                        <input type="number" id="sf-sib1-age" class="form-control" value="${s.sib1Age || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>School</label>
-                        <input type="text" id="sf-sib1-school" class="form-control" value="${s.sib1School || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-3">
-                    <div class="form-group">
-                        <label>Sibling 2 Name</label>
-                        <input type="text" id="sf-sib2-name" class="form-control" value="${s.sib2Name || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Age</label>
-                        <input type="number" id="sf-sib2-age" class="form-control" value="${s.sib2Age || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>School</label>
-                        <input type="text" id="sf-sib2-school" class="form-control" value="${s.sib2School || ''}">
-                    </div>
-                </div>
-
-                <!-- Section 5: Additional Details -->
-                <div class="form-section-title">Additional & Background Details</div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Aadhaar No</label>
-                        <input type="text" id="sf-aadhaar" class="form-control" value="${s.aadhaar || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Admission for Class</label>
-                        <input type="text" id="sf-admission-class" class="form-control" value="${s.admissionForClass || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Mother Tongue</label>
-                        <input type="text" id="sf-mother-tongue" class="form-control" value="${s.motherTongue || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Blood Group</label>
-                        <input type="text" id="sf-blood-group" class="form-control" value="${s.bloodGroup || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Previous School</label>
-                        <input type="text" id="sf-prev-school" class="form-control" value="${s.prevSchool || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Nationality</label>
-                        <input type="text" id="sf-nationality" class="form-control" value="${s.nationality || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-3">
-                    <div class="form-group">
-                        <label>Religion</label>
-                        <input type="text" id="sf-religion" class="form-control" value="${s.religion || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Caste/Community</label>
-                        <input type="text" id="sf-caste" class="form-control" value="${s.caste || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Household Income</label>
-                        <input type="text" id="sf-income" class="form-control" value="${s.income || ''}">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Identification Marks</label>
-                    <input type="text" id="sf-id-marks" class="form-control" value="${s.idMarks || ''}">
-                </div>
-
-                <!-- Section 6: Medical Information -->
-                <div class="form-section-title">Medical Information</div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="sf-has-allergies" ${s.hasAllergies ? 'checked' : ''}>
-                    <label for="sf-has-allergies">Has Allergies?</label>
-                </div>
-                <div class="form-group">
-                    <label>List Allergies</label>
-                    <input type="text" id="sf-allergies-list" class="form-control" value="${s.allergiesList || ''}">
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="sf-has-conditions" ${s.hasConditions ? 'checked' : ''}>
-                    <label for="sf-has-conditions">Medical Conditions?</label>
-                </div>
-                <div class="form-group">
-                    <label>Specify Conditions</label>
-                    <input type="text" id="sf-conditions-list" class="form-control" value="${s.conditionsList || ''}">
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Primary Physician Name</label>
-                        <input type="text" id="sf-physician-name" class="form-control" value="${s.physicianName || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Physician Phone</label>
-                        <input type="text" id="sf-physician-phone" class="form-control" value="${s.physicianPhone || ''}">
-                    </div>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="sf-immunization" ${s.immunizationStatus ? 'checked' : ''}>
-                    <label for="sf-immunization">Immunization Up-to-date?</label>
-                </div>
-
-                <!-- Section 7: Pickup Persons -->
-                <div class="form-section-title">Authorized Pickup Persons</div>
-                <div class="form-grid-3">
-                    <div class="form-group">
-                        <label>Pickup 1 Name</label>
-                        <input type="text" id="sf-pickup1-name" class="form-control" value="${s.pickup1Name || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Relationship</label>
-                        <input type="text" id="sf-pickup1-rel" class="form-control" value="${s.pickup1Rel || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Phone</label>
-                        <input type="text" id="sf-pickup1-phone" class="form-control" value="${s.pickup1Phone || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-3">
-                    <div class="form-group">
-                        <label>Pickup 2 Name</label>
-                        <input type="text" id="sf-pickup2-name" class="form-control" value="${s.pickup2Name || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Relationship</label>
-                        <input type="text" id="sf-pickup2-rel" class="form-control" value="${s.pickup2Rel || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Phone</label>
-                        <input type="text" id="sf-pickup2-phone" class="form-control" value="${s.pickup2Phone || ''}">
-                    </div>
-                </div>
-
-                <!-- Section 8: Office Use -->
-                <div class="form-section-title">For Office Use Only</div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Application Number</label>
-                        <input type="text" id="sf-app-no" class="form-control" value="${s.appNo || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Date Received</label>
-                        <input type="date" id="sf-app-date" class="form-control" value="${s.appDate || ''}">
-                    </div>
-                </div>
-                <div class="form-grid-2">
-                    <div class="form-group">
-                        <label>Receiving Staff</label>
-                        <input type="text" id="sf-staff-recv" class="form-control" value="${s.staffRecv || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label>Verifying Staff</label>
-                        <input type="text" id="sf-staff-verify" class="form-control" value="${s.staffVerify || ''}">
-                    </div>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="sf-fee-paid" ${s.feePaid ? 'checked' : ''}>
-                    <label for="sf-fee-paid">Application Fee Paid?</label>
-                </div>
-            </div>
-        `;
-
-        AppDialog.confirm({
-            title: id ? 'Edit Admission Record' : 'New School Admission',
-            content: content,
-            width: '800px',
-            confirmText: id ? 'Update Record' : 'Save Admission',
-            onConfirm: () => {
-                const getVal = (id) => document.getElementById(id).value;
-                const getCheck = (id) => document.getElementById(id).checked;
-
-                const data = {
-                    name: getVal('sf-name'),
-                    dob: getVal('sf-dob'),
-                    age: getVal('sf-age'),
-                    gender: getVal('sf-gender'),
-                    address: getVal('sf-address'),
-                    
-                    fatherName: getVal('sf-father-name'),
-                    fatherOcc: getVal('sf-father-occ'),
-                    fatherQual: getVal('sf-father-qual'),
-                    fatherPhone: getVal('sf-father-phone'),
-                    fatherEmail: getVal('sf-father-email'),
-
-                    motherName: getVal('sf-mother-name'),
-                    motherOcc: getVal('sf-mother-occ'),
-                    motherQual: getVal('sf-mother-qual'),
-                    motherPhone: getVal('sf-mother-phone'),
-                    motherEmail: getVal('sf-mother-email'),
-
-                    emergencyName: getVal('sf-emergency-name'),
-                    emergencyRel: getVal('sf-emergency-rel'),
-                    emergencyPhone: getVal('sf-emergency-phone'),
-                    emergencyAddr: getVal('sf-emergency-addr'),
-
-                    hasSiblings: getCheck('sf-has-siblings'),
-                    sib1Name: getVal('sf-sib1-name'),
-                    sib1Age: getVal('sf-sib1-age'),
-                    sib1School: getVal('sf-sib1-school'),
-                    sib2Name: getVal('sf-sib2-name'),
-                    sib2Age: getVal('sf-sib2-age'),
-                    sib2School: getVal('sf-sib2-school'),
-
-                    aadhaar: getVal('sf-aadhaar'),
-                    admissionForClass: getVal('sf-admission-class'),
-                    motherTongue: getVal('sf-mother-tongue'),
-                    bloodGroup: getVal('sf-blood-group'),
-                    prevSchool: getVal('sf-prev-school'),
-                    nationality: getVal('sf-nationality'),
-                    religion: getVal('sf-religion'),
-                    caste: getVal('sf-caste'),
-                    idMarks: getVal('sf-id-marks'),
-                    income: getVal('sf-income'),
-
-                    hasAllergies: getCheck('sf-has-allergies'),
-                    allergiesList: getVal('sf-allergies-list'),
-                    hasConditions: getCheck('sf-has-conditions'),
-                    conditionsList: getVal('sf-conditions-list'),
-                    physicianName: getVal('sf-physician-name'),
-                    physicianPhone: getVal('sf-physician-phone'),
-                    immunizationStatus: getCheck('sf-immunization'),
-
-                    pickup1Name: getVal('sf-pickup1-name'),
-                    pickup1Rel: getVal('sf-pickup1-rel'),
-                    pickup1Phone: getVal('sf-pickup1-phone'),
-                    pickup2Name: getVal('sf-pickup2-name'),
-                    pickup2Rel: getVal('sf-pickup2-rel'),
-                    pickup2Phone: getVal('sf-pickup2-phone'),
-
-                    appNo: getVal('sf-app-no'),
-                    appDate: getVal('sf-app-date'),
-                    staffRecv: getVal('sf-staff-recv'),
-                    staffVerify: getVal('sf-staff-verify'),
-                    feePaid: getCheck('sf-fee-paid'),
-                    
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                };
-
-                if (!data.name) {
-                    AppDialog.toast('Student name is required', 'error');
-                    return false;
-                }
-
-                this.saveStudent(id, data);
-                return true;
-            }
-        });
-    },
-
-    saveStudent(id, data) {
-        const studentsRef = firestore.collection('modules').doc('student_directory').collection('students');
-        const promise = id ? studentsRef.doc(id).update(data) : studentsRef.add(data);
+            <div class="report-header" style="margin-bottom:32px;"><h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Growth Pulse Dashboard</h2><p style="color:var(--text-dim); font-size:1.1rem;">Select a student to log activities and track skill development timeline.</p></div>
+            <div class="directory-grid">`;
         
-        promise
-            .then(() => AppDialog.toast(id ? 'Record updated' : 'Admission saved', 'success'))
-            .catch(err => AppDialog.toast('Error saving record: ' + err.message, 'error'));
-    },
-
-    deleteStudent(id) {
-        AppDialog.confirm({
-            title: 'Delete Record',
-            content: `<p>Are you sure you want to delete <strong>${this.students[id].name}</strong>? This will permanently remove all admission data.</p>`,
-            confirmText: 'Delete Permanently',
-            danger: true,
-            onConfirm: () => {
-                firestore.collection('modules').doc('student_directory').collection('students').doc(id).delete()
-                    .then(() => AppDialog.toast('Record deleted', 'success'))
-                    .catch(err => AppDialog.toast('Error deleting record: ' + err.message, 'error'));
-                return true;
-            }
+        filteredIds.forEach(id => {
+            const s = this.students[id];
+            html += `
+                <div class="directory-card" onclick="window.studentDirectory.switchView('performance', '${id}')" style="border-left:4px solid var(--accent-secondary); display:flex; flex-direction:column; justify-content:space-between; height:100%;">
+                    <div class="member-header">
+                        <div class="member-avatar" style="background:rgba(115, 199, 200, 0.15); color:var(--accent-secondary); font-size:1.5rem;">${(s.name || 'S')[0]}</div>
+                        <div class="member-info"><h3>${s.name}</h3><p>${s.admissionForClass || 'No Class'}</p></div>
+                    </div>
+                    <div class="member-actions" style="margin-top:auto; padding-top:12px; border-top:1px solid var(--card-border);">
+                        <span style="color:var(--accent-secondary); font-size:0.85rem; font-weight:700; display:flex; align-items:center; gap:6px;">VIEW TIMELINE <i data-lucide="arrow-right-circle" style="width:16px; height:16px;"></i></span>
+                    </div>
+                </div>`;
         });
+        container.innerHTML = html + '</div>';
     },
 
-    printStudentReport(id) {
+    async renderStudentPulse(id) {
+        const container = document.getElementById('student-content-performance');
         const s = this.students[id];
         if (!s) return;
 
+        const toolbar = document.getElementById('student-toolbar');
+        if (toolbar) {
+            toolbar.innerHTML = `
+                <button class="btn btn-secondary" onclick="window.studentDirectory.switchView('performance')"><i data-lucide="arrow-left"></i> Dashboard</button>
+                <button class="btn btn-primary" onclick="window.studentDirectory.showPulseEntryForm('${id}')"><i data-lucide="plus-circle"></i> Log Daily Pulse</button>
+            `;
+        }
+        
+        const snap = await firestore.collection('modules').doc('student_directory').collection('students').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(15).get();
+        let logsHtml = ''; snap.forEach(doc => {
+            const d = doc.data();
+            logsHtml += `
+                <div class="console-card" style="margin-bottom:20px; border-left:4px solid var(--accent-secondary); padding:20px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                        <span style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase;">${d.date}</span>
+                        <div style="color:#fbbf24">${'★'.repeat(d.engagement)}${'☆'.repeat(5-d.engagement)}</div>
+                    </div>
+                    <h4 style="margin-bottom:8px; font-size:1.1rem;">${d.title}</h4>
+                    <p style="color:var(--text-dim); line-height:1.5; font-size:0.95rem;">${d.summary}</p>
+                </div>`;
+        });
+
+        container.innerHTML = `
+            <div class="profile-card-main" style="margin-top:0; margin-bottom:32px; display:flex; align-items:center; gap:32px;">
+                <div class="profile-avatar-wrapper" style="margin-bottom:0; width:80px; height:80px; font-size:2rem;">${(s.name || 'S')[0]}</div>
+                <div>
+                    <h2 style="font-size:2rem; font-weight:800; margin-bottom:4px;">${s.name}'s Growth</h2>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Comprehensive timeline of academic learning and skill development</p>
+                </div>
+            </div>
+            <div class="pulse-timeline">${logsHtml || '<div class="empty-state"><i data-lucide="activity"></i><p>No activity logs found for this student.</p></div>'}</div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    showPulseEntryForm(studentId) {
+        AppDialog.confirm({
+            title: 'Record Daily Pulse',
+            content: `
+                <div class="form-group" style="margin-bottom:15px;"><label>Activity Title</label><input type="text" id="p-title" class="form-control" placeholder="Today's learning moment..."></div>
+                <div class="form-group" style="margin-bottom:15px;"><label>Summary / Achievement</label><textarea id="p-summary" class="form-control" rows="4"></textarea></div>
+                <div class="form-grid-2">
+                    <div class="form-group"><label>Engagement Level (1-5)</label><input type="number" id="p-eng" class="form-control" value="3" min="1" max="5"></div>
+                    <div class="form-group"><label>Activity Date</label><input type="date" id="p-date" class="form-control" value="${new Date().toISOString().split('T')[0]}"></div>
+                </div>`,
+            onConfirm: () => {
+                const data = { title: document.getElementById('p-title').value, summary: document.getElementById('p-summary').value, engagement: parseInt(document.getElementById('p-eng').value), date: document.getElementById('p-date').value, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+                if (!data.title || !data.summary) { AppDialog.toast('Title and summary required', 'error'); return false; }
+                firestore.collection('modules').doc('student_directory').collection('students').doc(studentId).collection('performance_logs').add(data).then(() => this.renderStudentPulse(studentId));
+                return true;
+            }
+        });
+    },
+
+    async renderReport(id) {
+        const container = document.getElementById('student-content-report');
+        if (!container || !id) return;
+        this.switchView('report');
+        container.innerHTML = '<div class="report-page" style="padding:100px; text-align:center; margin-top: 40px;"><div class="loading-spinner" style="margin:0 auto 20px;"></div><p style="color:var(--text-dim); font-size:1.1rem; font-weight:600;">Generating comprehensive student insight...</p></div>';
+        const s = this.students[id];
+        if (!s) return;
+
+        const feeData = window.feesManager?.fees?.[id] || { total: 0, paid: 0 };
+        const balance = (feeData.total || 0) - (feeData.paid || 0);
+        
+        const pulseSnap = await firestore.collection('modules').doc('student_directory').collection('students').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(3).get();
+        const latestPulses = [];
+        pulseSnap.forEach(doc => latestPulses.push(doc.data()));
+
+        const toolbar = document.getElementById('student-toolbar');
+        if (toolbar) {
+            toolbar.innerHTML = `
+                <button class="btn btn-secondary" onclick="window.studentDirectory.switchView('directory')"><i data-lucide="arrow-left"></i> Back</button>
+                <button class="btn btn-secondary" onclick="window.studentDirectory.printStudentReport('${id}')"><i data-lucide="printer"></i> Print Report</button>
+            `;
+        }
+
+        container.innerHTML = `
+            <div class="report-page" style="margin-top: 20px; border: none; background: transparent; box-shadow: none;">
+                <div class="report-hero" style="background: linear-gradient(135deg, rgba(232, 105, 102, 0.2) 0%, rgba(115, 199, 200, 0.15) 100%); border-radius: 24px; padding: 48px; border: 1px solid var(--card-border); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 32px;">
+                    <div style="display: flex; gap: 32px; align-items: center;">
+                        <div class="profile-avatar-wrapper" style="margin: 0; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1);">${(s.name || 'S')[0]}</div>
+                        <div>
+                            <h1 style="font-size: 3.5rem; font-weight: 900; margin: 0 0 8px 0; letter-spacing: -2px; line-height: 1;">${s.name}</h1>
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <span class="badge badge-success" style="font-size: 0.85rem; padding: 6px 18px; background: var(--success); color: #000; font-weight: 800;">ACTIVE STUDENT</span>
+                                <span style="color: var(--text-main); font-size: 1.2rem; font-weight: 600; opacity: 0.8;">${s.admissionForClass || 'No Class Assigned'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="profile-actions" style="display: flex; gap: 16px;">
+                        <button class="btn btn-secondary" style="padding: 14px 28px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);" onclick="window.studentDirectory.showStudentForm('${id}')">
+                            <i data-lucide="edit-3" style="width: 18px; height: 18px; margin-right: 8px;"></i> EDIT PROFILE
+                        </button>
+                        <button class="btn btn-primary" style="padding: 14px 28px; font-weight: 800; background: var(--accent-secondary); color: #000; border: none;" onclick="window.print()">
+                            <i data-lucide="printer" style="width: 18px; height: 18px; margin-right: 8px;"></i> PRINT REPORT
+                        </button>
+                    </div>
+                </div>
+
+                <div class="profile-card-main" style="margin-top: 0; border-radius: 24px;">
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-icon" style="background: rgba(115, 199, 200, 0.1); color: var(--accent-secondary);"><i data-lucide="calendar"></i></div>
+                            <div class="metric-info"><h3>Attendance</h3><div class="metric-value">94%</div></div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon" style="background: ${balance > 0 ? 'rgba(251, 191, 36, 0.1)' : 'rgba(74, 222, 128, 0.1)'}; color: ${balance > 0 ? '#fbbf24' : 'var(--success)'};"><i data-lucide="wallet"></i></div>
+                            <div class="metric-info"><h3>Fee Status</h3><div class="metric-value" style="color:${balance > 0 ? '#fbbf24' : 'var(--success)'}">${balance > 0 ? 'Pending' : 'Cleared'}</div></div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon" style="background: rgba(241, 97, 91, 0.1); color: var(--accent-primary);"><i data-lucide="activity"></i></div>
+                            <div class="metric-info"><h3>Growth Pulse</h3><div class="metric-value">${latestPulses.length} Logged</div></div>
+                        </div>
+                    </div>
+
+                    <div class="profile-info-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:32px; margin-top: 40px;">
+                        <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
+                            <div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="user"></i> Basic Information</div>
+                            <div class="data-grid" style="grid-template-columns: 1fr 1fr;">
+                                <div class="data-item"><div class="data-label">Full Name</div><div class="data-value">${s.name}</div></div>
+                                <div class="data-item"><div class="data-label">DOB</div><div class="data-value">${s.dob || 'N/A'}</div></div>
+                                <div class="data-item"><div class="data-label">Gender</div><div class="data-value">${s.gender || 'N/A'}</div></div>
+                                <div class="data-item"><div class="data-label">Blood Group</div><div class="data-value">${s.bloodGroup || 'N/A'}</div></div>
+                            </div>
+                        </div>
+                        <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
+                            <div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="users"></i> Family Details</div>
+                            <div class="data-grid" style="grid-template-columns: 1fr 1fr;">
+                                <div class="data-item"><div class="data-label">Father</div><div class="data-value">${s.fatherName || 'N/A'}</div></div>
+                                <div class="data-item"><div class="data-label">Mother</div><div class="data-value">${s.motherName || 'N/A'}</div></div>
+                                <div class="data-item"><div class="data-label">Contact</div><div class="data-value">${s.fatherPhone || s.motherPhone || 'N/A'}</div></div>
+                                <div class="data-item"><div class="data-label">Religion</div><div class="data-value">${s.religion || 'N/A'}</div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-info-grid" style="display:grid; grid-template-columns: 1.5fr 1fr; gap:32px; margin-top: 32px;">
+                        <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
+                            <div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="sparkles"></i> Recent Growth Pulse</div>
+                            <div class="pulse-mini-list">${latestPulses.length > 0 ? latestPulses.map(p => `
+                                <div style="padding:16px; background:rgba(255,255,255,0.03); border-radius:12px; margin-bottom:12px; border-left:4px solid var(--accent-secondary)">
+                                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><strong>${p.title}</strong><small style="color:var(--text-dim)">${p.date}</small></div>
+                                    <p style="font-size:0.9rem; color:var(--text-dim); margin:0; line-height:1.5;">${p.summary}</p>
+                                </div>`).join('') : '<div class="empty-state" style="padding:20px;"><p style="color:var(--text-dim);">No pulses logged yet.</p></div>'}
+                            </div>
+                        </div>
+                        <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
+                            <div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="wallet"></i> Financial Summary</div>
+                            <div class="fee-summary-mini">
+                                <div style="display:flex; justify-content:space-between; margin-bottom:16px;"><span>Annual Fee</span><strong>₹${feeData.total || 0}</strong></div>
+                                <div style="display:flex; justify-content:space-between; margin-bottom:16px;"><span>Total Paid</span><strong style="color:var(--success)">₹${feeData.paid || 0}</strong></div>
+                                <div style="height:1px; background:var(--card-border); margin-bottom:16px;"></div>
+                                <div style="display:flex; justify-content:space-between;"><span>Outstanding</span><strong style="color:var(--accent-primary); font-size:1.2rem;">₹${balance}</strong></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+    },
+
+    printStudentReport(id) {
+        const s = this.students[id]; if (!s) return;
+        const feeData = window.feesManager?.fees?.[id] || { total: 0, paid: 0 };
         const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <html>
-            <head>
-                <title>Admission Report - ${s.name}</title>
-                <style>
-                    body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; }
-                    .header { text-align: center; border-bottom: 2px solid #F1615B; padding-bottom: 20px; margin-bottom: 30px; }
-                    .header h1 { margin: 0; color: #F1615B; }
-                    .section { margin-bottom: 25px; page-break-inside: avoid; }
-                    .section-title { font-weight: bold; text-transform: uppercase; background: #f0f0f0; padding: 5px 10px; margin-bottom: 10px; border-left: 4px solid #F1615B; }
-                    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                    .field { margin-bottom: 5px; }
-                    .label { font-weight: bold; min-width: 150px; display: inline-block; }
-                    @media print {
-                        .no-print { display: none; }
-                        body { padding: 0; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h1>Abhishri Academy</h1>
-                    <p>Student Admission Report</p>
-                </div>
-
-                <div class="section">
-                    <div class="section-title">Student Information</div>
-                    <div class="grid">
-                        <div class="field"><span class="label">Name:</span> ${s.name || 'N/A'}</div>
-                        <div class="field"><span class="label">Gender:</span> ${s.gender || 'N/A'}</div>
-                        <div class="field"><span class="label">DOB:</span> ${s.dob || 'N/A'}</div>
-                        <div class="field"><span class="label">Age (Jun 1):</span> ${s.age || 'N/A'}</div>
-                        <div class="field" style="grid-column:span 2"><span class="label">Address:</span> ${s.address || 'N/A'}</div>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <div class="section-title">Parent Information</div>
-                    <div class="grid">
-                        <div class="field"><span class="label">Father Name:</span> ${s.fatherName || 'N/A'}</div>
-                        <div class="field"><span class="label">Father Phone:</span> ${s.fatherPhone || 'N/A'}</div>
-                        <div class="field"><span class="label">Mother Name:</span> ${s.motherName || 'N/A'}</div>
-                        <div class="field"><span class="label">Mother Phone:</span> ${s.motherPhone || 'N/A'}</div>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <div class="section-title">Emergency Contact</div>
-                    <div class="grid">
-                        <div class="field"><span class="label">Contact Name:</span> ${s.emergencyName || 'N/A'}</div>
-                        <div class="field"><span class="label">Relationship:</span> ${s.emergencyRel || 'N/A'}</div>
-                        <div class="field"><span class="label">Phone:</span> ${s.emergencyPhone || 'N/A'}</div>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <div class="section-title">Background & Medical</div>
-                    <div class="grid">
-                        <div class="field"><span class="label">Aadhaar:</span> ${s.aadhaar || 'N/A'}</div>
-                        <div class="field"><span class="label">Admission Class:</span> ${s.admissionForClass || 'N/A'}</div>
-                        <div class="field"><span class="label">Allergies:</span> ${s.hasAllergies ? (s.allergiesList || 'Yes') : 'None'}</div>
-                        <div class="field"><span class="label">Immunization:</span> ${s.immunizationStatus ? 'Up-to-date' : 'No'}</div>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <div class="section-title">Office Records</div>
-                    <div class="grid">
-                        <div class="field"><span class="label">App No:</span> ${s.appNo || 'N/A'}</div>
-                        <div class="field"><span class="label">Date Received:</span> ${s.appDate || 'N/A'}</div>
-                        <div class="field"><span class="label">Fee Paid:</span> ${s.feePaid ? 'Yes' : 'No'}</div>
-                    </div>
-                </div>
-
-                <script>
-                    window.onload = () => {
-                        window.print();
-                        setTimeout(() => { window.close(); }, 500);
-                    };
-                </script>
-            </body>
-            </html>
-        `);
+        printWindow.document.write(`<html><head><title>Report - ${s.name}</title><style>body { font-family: sans-serif; padding: 40px; color: #333; } .header { border-bottom: 3px solid #F1615B; padding-bottom: 20px; margin-bottom: 30px; } .info-section { margin-bottom: 30px; } .info-title { font-weight: bold; border-bottom: 1px solid #eee; margin-bottom: 10px; padding-bottom: 5px; } .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; } label { color: #888; font-size: 12px; display: block; }</style></head><body><div class="header"><h1>ABHISHRI ACADEMY</h1><p>Student Comprehensive Profile Report</p></div><div class="info-section"><div class="info-title">Basic Information</div><div class="grid"><div><label>Name</label>${s.name}</div><div><label>Class</label>${s.admissionForClass}</div><div><label>DOB</label>${s.dob}</div><div><label>Phone</label>${s.fatherPhone || s.motherPhone}</div></div></div><div class="info-section"><div class="info-title">Fee Summary</div><div class="grid"><div><label>Total Fee</label>₹${feeData.total}</div><div><label>Total Paid</label>₹${feeData.paid}</div><div><label>Balance</label>₹${feeData.total - feeData.paid}</div></div></div><div class="footer" style="margin-top:50px; font-size:10px; color:#aaa; text-align:center;">Generated on ${new Date().toLocaleString()}</div><script>window.onload=()=>{window.print(); setTimeout(()=>window.close(),500);};</script></body></html>`);
         printWindow.document.close();
+    },
+
+    showStudentForm(id = null) {
+        const s = id ? this.students[id] : {};
+        const content = `
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" id="sf-name" class="form-control" value="${s.name || ''}" />
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Grade</label>
+                    <input type="text" id="sf-class" class="form-control" value="${s.admissionForClass || ''}" />
+                </div>
+                <div class="form-group">
+                    <label>DOB</label>
+                    <input type="date" id="sf-dob" class="form-control" value="${s.dob || ''}" />
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Father</label>
+                    <input type="text" id="sf-father" class="form-control" value="${s.fatherName || ''}" />
+                </div>
+                <div class="form-group">
+                    <label>Mother</label>
+                    <input type="text" id="sf-mother" class="form-control" value="${s.motherName || ''}" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Contact</label>
+                <input type="text" id="sf-phone" class="form-control" value="${s.fatherPhone || s.motherPhone || ''}" />
+            </div>
+            <div class="form-group">
+                <label>Address</label>
+                <textarea id="sf-addr" class="form-control">${s.address || ''}</textarea>
+            </div>`;
+        
+        AppDialog.confirm({ 
+            title: id ? 'Edit Profile' : 'New Admission', 
+            content, 
+            width: '600px', 
+            onConfirm: () => {
+                const data = { 
+                    name: document.getElementById('sf-name').value, 
+                    admissionForClass: document.getElementById('sf-class').value, 
+                    dob: document.getElementById('sf-dob').value, 
+                    fatherName: document.getElementById('sf-father').value, 
+                    motherName: document.getElementById('sf-mother').value, 
+                    fatherPhone: document.getElementById('sf-phone').value, 
+                    address: document.getElementById('sf-addr').value, 
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+                };
+                if (!data.name) return false;
+                const ref = firestore.collection('modules').doc('student_directory').collection('students');
+                (id ? ref.doc(id).update(data) : ref.add(data)).then(() => AppDialog.toast('Saved', 'success'));
+                return true;
+            }
+        });
+    },
+
+    deleteStudent(id) {
+        AppDialog.confirm({ title: 'Delete Student', content: 'Permanent action. Proceed?', confirmClass: 'btn-danger', onConfirm: () => { firestore.collection('modules').doc('student_directory').collection('students').doc(id).delete().then(() => { this.switchView('directory'); }); return true; }});
     },
 
     markAttendance(studentId, status) {
         const dateKey = new Date().toISOString().split('T')[0];
-        const ref = db.ref(`modules/student_directory/attendance/${dateKey}/${studentId}`);
-        
-        ref.set({
-            status,
-            timestamp: firebase.database.ServerValue.TIMESTAMP
-        }).catch(err => AppDialog.toast('Error marking attendance: ' + err.message, 'error'));
+        db.ref(`modules/student_directory/attendance/${dateKey}/${studentId}`).set({ status, timestamp: firebase.database.ServerValue.TIMESTAMP });
     }
 };

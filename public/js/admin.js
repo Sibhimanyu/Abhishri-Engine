@@ -454,7 +454,20 @@ window.openPermissionModal = (emailKey) => {
 
     // Student Directory
     setCheck('perm-student_directory-view', perms.student_directory?.view || (perms.student_directory === true));
-    setCheck('perm-student_directory-manage', perms.student_directory?.manage);
+    setCheck('perm-student_directory-manage', perms.student_directory?.manage || (perms.student_directory === true));
+    setCheck('perm-student_directory-attendance', perms.student_directory?.attendance || (perms.student_directory === true));
+    setCheck('perm-student_directory-reports', perms.student_directory?.reports || (perms.student_directory === true));
+
+    // Growth Pulse
+    setCheck('perm-student_performance-view', perms.student_performance?.view || (perms.student_performance === true));
+    setCheck('perm-student_performance-log', perms.student_performance?.log || (perms.student_performance === true));
+
+    // Fees & Accounting
+    setCheck('perm-fees_accounting-view', perms.fees_accounting?.view || (perms.fees_accounting === true));
+    setCheck('perm-fees_accounting-ledger', perms.fees_accounting?.ledger || (perms.fees_accounting === true));
+    setCheck('perm-fees_accounting-transactions', perms.fees_accounting?.transactions || (perms.fees_accounting === true));
+    setCheck('perm-fees_accounting-expenses', perms.fees_accounting?.expenses || (perms.fees_accounting === true));
+    setCheck('perm-fees_accounting-config', perms.fees_accounting?.config || (perms.fees_accounting === true));
 
     // WhatsApp Sender
     setCheck('perm-whatsapp_sender-access', perms.whatsapp_sender?.access || (perms.whatsapp_sender === true));
@@ -490,7 +503,20 @@ document.getElementById('save-permissions-btn').onclick = () => {
         },
         student_directory: {
             view: getVal('perm-student_directory-view'),
-            manage: getVal('perm-student_directory-manage')
+            manage: getVal('perm-student_directory-manage'),
+            attendance: getVal('perm-student_directory-attendance'),
+            reports: getVal('perm-student_directory-reports')
+        },
+        student_performance: {
+            view: getVal('perm-student_performance-view'),
+            log: getVal('perm-student_performance-log')
+        },
+        fees_accounting: {
+            view: getVal('perm-fees_accounting-view'),
+            ledger: getVal('perm-fees_accounting-ledger'),
+            transactions: getVal('perm-fees_accounting-transactions'),
+            expenses: getVal('perm-fees_accounting-expenses'),
+            config: getVal('perm-fees_accounting-config')
         },
         whatsapp_sender: {
             access: getVal('perm-whatsapp_sender-access'),
