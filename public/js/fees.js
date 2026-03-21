@@ -466,27 +466,104 @@ window.feesManager = {
     },
 
     showAddPlanForm() {
-        const renderRow = (c = { name: '', amount: 0, frequency: 'onetime', type: 'tuition' }) => `<div class="form-row plan-component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 1fr 40px; gap:10px; margin-bottom:10px; align-items:center;"><input type="text" class="form-control pc-name" value="${c.name}"><select class="form-control pc-type"><option value="tuition">Tuition</option><option value="lunch">Lunch</option><option value="material">Material</option><option value="other">Other</option></select><select class="form-control pc-freq"><option value="onetime">One-time</option><option value="monthly">Monthly</option></select><input type="number" class="form-control pc-amount" value="${c.amount}"><button class="btn-icon text-danger" onclick="this.parentElement.remove(); window.feesManager.updatePlanTotal();"><i data-lucide="x"></i></button></div>`;
+        const renderRow = (c = { name: '', amount: 0, frequency: 'onetime', type: 'tuition' }) => `
+            <div class="form-row plan-component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 1fr 40px; gap:15px; margin-bottom:20px; align-items:start; background:rgba(255,255,255,0.02); padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);">
+                <div class="form-group" style="margin:0"><label style="font-size:0.65rem; text-transform:uppercase; margin-bottom:8px; font-weight:700; color:var(--text-dim); display:block; letter-spacing:0.5px;">Fee Name</label><input type="text" class="form-control pc-name" placeholder="e.g. Tuition" value="${c.name}" style="height:38px; font-size:0.85rem;"></div>
+                <div class="form-group" style="margin:0"><label style="font-size:0.65rem; text-transform:uppercase; margin-bottom:8px; font-weight:700; color:var(--text-dim); display:block; letter-spacing:0.5px;">Category</label><select class="form-control pc-type" style="height:38px; font-size:0.75rem;"><option value="tuition">Tuition</option><option value="lunch">Lunch</option><option value="material">Material</option><option value="other">Other</option></select></div>
+                <div class="form-group" style="margin:0"><label style="font-size:0.65rem; text-transform:uppercase; margin-bottom:8px; font-weight:700; color:var(--text-dim); display:block; letter-spacing:0.5px;">Frequency</label><select class="form-control pc-freq" style="height:38px; font-size:0.75rem;"><option value="onetime">One-time</option><option value="monthly">Monthly</option></select></div>
+                <div class="form-group" style="margin:0"><label style="font-size:0.65rem; text-transform:uppercase; margin-bottom:8px; font-weight:700; color:var(--text-dim); display:block; letter-spacing:0.5px;">Amount (₹)</label><input type="number" class="form-control pc-amount" placeholder="0" value="${c.amount}" style="height:38px; font-weight:700; text-align:right;"></div>
+                <button class="btn-icon text-danger" onclick="this.parentElement.remove(); window.feesManager.updatePlanTotal();" style="margin-top:28px; width:32px; height:32px;"><i data-lucide="trash-2" style="width:16px; height:16px;"></i></button>
+            </div>`;
+
         AppDialog.confirm({
-            title: 'Define Fee Package', width: '850px',
-            content: `<div style="display:grid; grid-template-columns: 1fr 180px; gap:20px; align-items:flex-end;"><div class="form-group"><label>Package Name</label><input type="text" id="plan-name" class="form-control"></div><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="plan-cycle" class="form-control" value="12"></div></div>
-                      <div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin-top:25px;"><span>Components</span><button class="btn btn-secondary btn-sm" id="add-plan-comp-btn">Add Item</button></div>
-                      <div id="plan-components-container" style="max-height:350px; overflow-y:auto;">${renderRow()}</div>
-                      <div style="margin-top:20px; padding:15px; background:rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;"><span>Calculated Revenue:</span><span id="plan-total-display" style="font-weight:900; font-size:1.2rem; color:var(--accent-secondary);">₹0</span></div>`,
+            title: 'Define Fee Package Template', width: '850px',
+            content: `
+                <div style="display:grid; grid-template-columns: 1fr 200px; gap:24px; align-items:flex-end; margin-bottom:20px;">
+                    <div class="form-group">
+                        <label>Package Identity</label>
+                        <p style="font-size:0.65rem; color:var(--text-dim); margin-bottom:8px;">Give this fee bundle a clear name (e.g., "Full Day Standard - 2026")</p>
+                        <input type="text" id="plan-name" class="form-control" style="height:42px; font-weight:600;" placeholder="Enter template name...">
+                    </div>
+                    <div class="form-group">
+                        <label>Academic Duration</label>
+                        <p style="font-size:0.65rem; color:var(--text-dim); margin-bottom:8px;">Standard cycle (Months)</p>
+                        <input type="number" id="plan-cycle" class="form-control" value="12" min="1" max="12" style="height:42px; font-weight:800; text-align:center; border-color:var(--accent-secondary);">
+                    </div>
+                </div>
+                
+                <div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin-top:25px; border-bottom:1px solid var(--card-border); padding-bottom:10px;">
+                    <span>Template Structure</span>
+                    <button class="btn btn-secondary btn-sm" id="add-plan-comp-btn" style="padding:5px 12px; font-size:0.75rem;"><i data-lucide="plus"></i> Add Fee Component</button>
+                </div>
+                <p style="font-size:0.7rem; color:var(--text-dim); margin:10px 0 15px;">Define the components that will be bulk-applied to students using this template.</p>
+                
+                <div id="plan-components-container" style="max-height:350px; overflow-y:auto; padding-right:10px;">
+                    ${renderRow()}
+                </div>
+                
+                <div id="plan-summary-card" style="margin-top:25px; padding:20px; background:var(--sidebar-bg); border-radius:16px; border:1px solid var(--card-border); display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:4px;">Projected Revenue Value</div>
+                        <div style="font-size:0.65rem; opacity:0.6;">(Annual value per student based on frequency math)</div>
+                    </div>
+                    <div id="plan-total-display" style="font-size:1.8rem; font-weight:900; color:var(--accent-secondary);">₹0</div>
+                </div>`,
             onOpen: () => {
                 const cont = document.getElementById('plan-components-container'), cyc = document.getElementById('plan-cycle');
-                this.updatePlanTotal = () => { let t = 0; const c = parseInt(cyc.value) || 12; document.querySelectorAll('.plan-component-row').forEach(row => { const aInput = row.querySelector('.pc-amount'); if(!aInput) return; const a = parseFloat(aInput.value) || 0; const f = row.querySelector('.pc-freq').value; t += f === 'monthly' ? (a*c) : a; }); document.getElementById('plan-total-display').innerText = `₹${t.toLocaleString()}`; };
-                document.getElementById('add-plan-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow(); const row = div.firstElementChild; cont.appendChild(row); if (window.lucide) window.lucide.createIcons({ root: row }); this.updatePlanTotal(); };
+                this.updatePlanTotal = () => { 
+                    let t = 0; const c = parseInt(cyc.value) || 12; 
+                    document.querySelectorAll('.plan-component-row').forEach(row => { 
+                        const aInput = row.querySelector('.pc-amount'); if(!aInput) return; 
+                        const a = parseFloat(aInput.value) || 0; const f = row.querySelector('.pc-freq').value; 
+                        t += f === 'monthly' ? (a*c) : a; 
+                    }); 
+                    document.getElementById('plan-total-display').innerText = `₹${t.toLocaleString()}`; 
+                };
+                document.getElementById('add-plan-comp-btn').onclick = () => { 
+                    const div = document.createElement('div'); div.innerHTML = renderRow(); 
+                    const row = div.firstElementChild; cont.appendChild(row); 
+                    if (window.lucide) window.lucide.createIcons({ root: row }); 
+                    this.updatePlanTotal(); 
+                };
                 cont.addEventListener('input', this.updatePlanTotal); cyc.oninput = this.updatePlanTotal; this.updatePlanTotal();
             },
             onConfirm: () => {
                 const name = document.getElementById('plan-name').value, components = [];
-                document.querySelectorAll('.plan-component-row').forEach(row => { const n = row.querySelector('.pc-name').value; if (n) components.push({ name: n, amount: parseFloat(row.querySelector('.pc-amount').value) || 0, frequency: row.querySelector('.pc-freq').value, type: row.querySelector('.pc-type').value }); });
+                document.querySelectorAll('.plan-component-row').forEach(row => { 
+                    const nInput = row.querySelector('.pc-name'); if (!nInput) return;
+                    const n = nInput.value;
+                    if (n) components.push({ name: n, amount: parseFloat(row.querySelector('.pc-amount').value) || 0, frequency: row.querySelector('.pc-freq').value, type: row.querySelector('.pc-type').value }); 
+                });
                 if (!name || components.length === 0) { AppDialog.toast('Valid name & components required', 'error'); return false; }
-                firestore.collection('modules').doc('fees_accounting').collection('plans').add({ name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12 });
+                firestore.collection('modules').doc('fees_accounting').collection('plans').add({ 
+                    name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => AppDialog.toast('Fee Template successfully saved to cloud', 'success'));
                 return true;
             }
         });
+    },
+
+    deleteTransaction(tid, studentId, amount) {
+        AppDialog.confirm({
+            title: 'Reverse Transaction',
+            content: `<p>Delete payment of <strong>₹${amount.toLocaleString()}</strong>?</p>`,
+            confirmClass: 'btn-danger', confirmText: 'Delete & Rebalance',
+            onConfirm: async () => {
+                try {
+                    await firestore.collection('modules').doc('fees_accounting').collection('transactions').doc(tid).delete();
+                    const curr = this.fees[studentId]?.paid || 0;
+                    await firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ paid: Math.max(0, curr - amount) }, { merge: true });
+                    return true;
+                } catch (err) { AppDialog.toast(err.message, 'error'); return false; }
+            }
+        });
+    },
+
+    getAcademicCycleRange(months) {
+        const start = 3, d = new Date(); d.setMonth(start);
+        const sName = d.toLocaleString('default', { month: 'long' }), sYear = d.getFullYear();
+        d.setMonth(start + (months - 1));
+        return `${sName} ${sYear} – ${d.toLocaleString('default', { month: 'long' })} ${d.getFullYear()}`;
     },
 
     savePayment(studentId, paymentData) {

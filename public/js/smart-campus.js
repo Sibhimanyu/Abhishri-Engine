@@ -32,6 +32,23 @@ window.smartCampus = {
         if (view === 'room' && areaId) this.renderAreaDetails(areaId);
         if (view === 'scenes') this.renderScenes();
         
+        // Update Screen Title
+        const titleEl = document.getElementById('screen-title');
+        const subtitleEl = document.getElementById('screen-subtitle');
+        if (titleEl && subtitleEl) {
+            if (view === 'overview') {
+                titleEl.innerText = 'Campus Overview';
+                subtitleEl.innerText = 'Monitoring all smart systems';
+            } else if (view === 'scenes') {
+                titleEl.innerText = 'Smart Scenes';
+                subtitleEl.innerText = 'Automated campus actions';
+            } else if (view === 'room' && areaId) {
+                const area = this.areas[areaId];
+                titleEl.innerText = formatName(area?.name || areaId);
+                subtitleEl.innerText = 'Room control and monitoring';
+            }
+        }
+        
         this.renderDashboard(); // Update sidebar active states
         if (typeof closeSidebar === 'function') closeSidebar();
     },
@@ -155,10 +172,17 @@ window.smartCampus = {
         const overviewItem = nav.querySelector('div[onclick*="overview"]');
         const scenesItem = document.getElementById('nav-item-scenes');
         const adminSideItem = document.getElementById('nav-item-admin');
+        
         nav.innerHTML = '';
         if (backToPortalItem) nav.appendChild(backToPortalItem);
-        if (overviewItem) nav.appendChild(overviewItem);
-        if (scenesItem) nav.appendChild(scenesItem);
+        if (overviewItem) {
+            overviewItem.className = `nav-item ${this.currentView === 'overview' ? 'active' : ''}`;
+            nav.appendChild(overviewItem);
+        }
+        if (scenesItem) {
+            scenesItem.className = `nav-item ${this.currentView === 'scenes' ? 'active' : ''}`;
+            nav.appendChild(scenesItem);
+        }
         if (adminSideItem) {
             nav.appendChild(adminSideItem);
             const userData = window.currentUserData || {};
