@@ -1,46 +1,27 @@
 {
   "rules": {
-    "allowedUsers": {
-      ".read": "auth != null",
-      "$emailKey": {
-        ".write": "auth != null && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true"
-      }
-    },
     "users": {
-      ".read": "auth != null && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true",
+      ".read": "auth != null",
       "$uid": {
-        ".read": "auth != null && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).exists()",
-        ".write": "auth != null && auth.uid == $uid && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).exists()"
+        ".write": "auth != null && auth.uid == $uid"
       }
     },
     "modules": {
       "smart_campus": {
-        ".read": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('smart_campus').child('view').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('smart_campus').val() === true)",
-        "commands": {
-          ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('smart_campus').child('control').val() === true)"
-        },
-        "areas": {
-          ".write": "auth != null && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true"
-        }
+        ".read": "auth != null",
+        ".write": "auth != null"
       },
       "student_directory": {
-        ".read": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('student_directory').child('view').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('student_directory').val() === true)",
-        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('student_directory').child('manage').val() === true)"
+        ".read": "auth != null",
+        ".write": "auth != null"
       },
       "staff_directory": {
-        ".read": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('staff_directory').child('view').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('staff_directory').val() === true)",
-        "staff": {
-          "$staffId": {
-            ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || (!data.exists() && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('staff_directory').child('add').val() === true) || (data.exists() && newData.exists() && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('staff_directory').child('manage').val() === true) || (data.exists() && !newData.exists() && root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('staff_directory').child('delete').val() === true))"
-          }
-        },
-        "attendance": {
-          ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('staff_directory').child('attendance').val() === true)"
-        }
+        ".read": "auth != null",
+        ".write": "auth != null"
       },
       "whatsapp_sender": {
-        ".read": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').child('access').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').val() === true)",
-        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').child('access').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('whatsapp_sender').val() === true)",
+        ".read": "auth != null",
+        ".write": "auth != null",
         "conversations": {
           "$recipientId": {
             "metadata": {
@@ -56,8 +37,8 @@
         }
       },
       "fees_accounting": {
-        ".read": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('fees_accounting').child('view').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('fees_accounting').val() === true)",
-        ".write": "auth != null && (root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('isAdmin').val() === true || root.child('allowedUsers').child(auth.token.email.replace('.', '_').replace('@', '_')).child('permissions').child('fees_accounting').child('manage').val() === true)"
+        ".read": "auth != null",
+        ".write": "auth != null"
       }
     }
   }

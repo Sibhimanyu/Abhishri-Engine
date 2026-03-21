@@ -306,9 +306,9 @@ async function copyToClipboard(text) {
 }
 
 // ─── View Management ────────────────────────────────────────────────────────
-function switchView(viewId, entityId = null) {
-    const hash = window.location.hash.split('/')[0];
-    navigateTo(`${hash.substring(1)}/${viewId}${entityId ? '/' + entityId : ''}`);
+function switchAppSubView(viewId, entityId = null) {
+    const hash = window.location.hash.substring(1).split('/')[0];
+    navigateTo(`${hash}/${viewId}${entityId ? '/' + entityId : ''}`);
 }
 
 function closeSidebar() {
@@ -343,8 +343,8 @@ function navigateTo(route, updateHash = true) {
         if (isAdmin || perms.smart_campus?.view || perms.smart_campus === true) {
             document.getElementById('smart-campus-app').classList.add('active');
             window.smartCampus.subscribe();
-            if (subRoute) switchView(subRoute, parts[2]); 
-            else switchView('overview');
+            if (subRoute) window.smartCampus.switchView(subRoute, parts[2]); 
+            else window.smartCampus.switchView('overview');
         } else {
             AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
@@ -392,9 +392,14 @@ function navigateTo(route, updateHash = true) {
         }
     } else if (mainRoute === 'whatsapp') {
         if (isAdmin || perms.whatsapp_sender?.access || perms.whatsapp_sender === true) {
-            document.getElementById('wa-app-wrapper').classList.add('active');
-            if (subRoute) window.whatsappMain.switchView(subRoute);
-            else window.whatsappMain.switchView('broadcast');
+            const waApp = document.getElementById('whatsapp-app');
+            if (waApp) waApp.classList.add('active');
+            
+            if (subRoute && window.whatsAppSender && window.whatsAppSender.switchView) {
+                window.whatsAppSender.switchView(subRoute);
+            } else if (window.whatsAppSender) {
+                window.whatsAppSender.switchView('chats');
+            }
         } else {
             AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
@@ -404,3 +409,44 @@ function navigateTo(route, updateHash = true) {
     if (window.innerWidth <= 1024) closeSidebar();
     lucide.createIcons();
 }
+
+function renderPortalCards(userData) {
+    const perms = userData.permissions || {};
+    const isAdmin = userData.isAdmin;
+
+    const cards = [
+        { id: 'card-smart-campus', access: isAdmin || perms.smart_campus?.view || perms.smart_campus === true },
+        { id: 'card-students', access: isAdmin || perms.student_directory?.view || perms.student_directory === true },
+        { id: 'card-staff', access: isAdmin || perms.staff_directory?.view || perms.staff_directory === true },
+        { id: 'card-fees', access: isAdmin || perms.fees_accounting?.view || perms.fees_accounting === true },
+        { id: 'card-admin', access: isAdmin },
+        { id: 'card-whatsapp', access: isAdmin || perms.whatsapp_sender?.access || perms.whatsapp_sender === true }
+    ];
+
+    cards.forEach(card => {
+        const el = document.getElementById(card.id);
+        if (el) {
+            if (card.access) el.classList.remove('disabled');
+            else el.classList.add('disabled');
+        }
+    });
+}
+
+function getAreaIcon(name) {
+    const lower = (name || '').toLowerCase();
+    if (lower.includes('ground floor')) return 'home';
+    if (lower.includes('first floor')) return 'layers';
+    if (lower.includes('terrace')) return 'cloud';
+    if (lower.includes('kitchen')) return 'utensils';
+    if (lower.includes('auditorium')) return 'mic';
+    if (lower.includes('reception')) return 'info';
+    if (lower.includes('bathroom') || lower.includes('toilet')) return 'bath';
+    if (lower.includes('office')) return 'briefcase';
+    if (lower.includes('classroom')) return 'graduation-cap';
+    if (lower.includes('library')) return 'book-open';
+    if (lower.includes('gym')) return 'dumbbell';
+    if (lower.includes('garden')) return 'tree-pine';
+    if (lower.includes('gate') || lower.includes('security')) return 'shield';
+    return 'box';
+}
+

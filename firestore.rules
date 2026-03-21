@@ -45,6 +45,14 @@ service cloud.firestore {
       }
     }
 
+    // --- Staff Directory Module ---
+    match /modules/staff_directory {
+      allow read, write: if isAuthenticated();
+      match /{allPaths=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
     match /modules/smart_campus {
       match /areas/{areaId} {
         allow read, write: if isAuthenticated();
@@ -66,9 +74,28 @@ service cloud.firestore {
     }
 
     // --- Global Collections ---
-    match /allowedUsers/{id} {
-      allow read: if isAuthenticated();
-      allow write: if false; // Only manageable via Firebase Console or Admin SDK
+    match /allowedUsers/{email} {
+      // Allow any authenticated user to check their own status
+      allow read: if request.auth != null && (request.auth.token.email.lower() == email.lower() || isAdmin());
+      
+      // Allow auto-provisioning for specific domains
+      allow create: if request.auth != null && (
+        request.auth.token.email.lower() == email.lower() && (
+          email.lower().endsWith('@abhishriacademy.in') || 
+          email.lower().endsWith('@zoho.com') || 
+          email.lower().endsWith('@zoho.in') ||
+          email.lower() == 'sibhi.gv@gmail.com'
+        )
+      );
+
+      // Only admins can update or delete users
+      allow update, delete: if isAdmin();
+    }
+
+    // Helper for Admin check
+    function isAdmin() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.isAdmin == true;
     }
   }
 }

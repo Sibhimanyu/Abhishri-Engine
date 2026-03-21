@@ -1,16 +1,13 @@
-// Authentication Module
+// Authentication and Access Control - Firestore Edition
 
-function encodeEmail(email) {
-    return email.replace(/\./g, '_').replace(/@/g, '_');
-}
+// Global User Data
+window.currentUserData = null;
 
 // Splash Screen Logic
 window.hideSplash = function () {
     const splash = document.getElementById('splash-screen');
     if (splash && !splash.classList.contains('hidden') && !splash.classList.contains('fading')) {
         splash.classList.add('fading');
-
-        // Wait for CSS transition (1s) before applying display: none
         setTimeout(() => {
             splash.classList.add('hidden');
             splash.classList.remove('fading');
@@ -22,97 +19,62 @@ window.hideSplash = function () {
 document.addEventListener('DOMContentLoaded', () => {
     const video = document.getElementById('splash-video');
     if (video) {
-        // Trigger fade out roughly 0.6s before video ends for a smooth transition
         video.addEventListener('timeupdate', () => {
-            if (video.duration > 0 && video.currentTime >= video.duration - 0.6) {
-                hideSplash();
-            }
+            if (video.duration > 0 && video.currentTime >= video.duration - 0.6) hideSplash();
         });
-
         video.addEventListener('ended', hideSplash);
         video.addEventListener('error', () => {
-            console.warn('Splash video failed to load or play');
+            console.warn('Splash video failed');
             hideSplash();
         });
     }
-    // Failsafe: hide splash after 6 seconds no matter what
     setTimeout(hideSplash, 6000);
 });
 
 // Auth State Observer
 auth.onAuthStateChanged(user => {
-    const modal = document.getElementById('login-modal');
-
+    const authModal = document.getElementById('login-modal');
     if (user) {
-        checkUserAccess(user, modal);
+        // User is signed in, check if they are authorized
+        checkUserAccess(user, authModal);
     } else {
-        modal.classList.remove('hidden');
+        // No user is signed in
+        authModal.classList.remove('hidden');
         document.getElementById('user-widget').style.display = 'none';
-
-        // Hide Splash Screen
         hideSplash();
-
-        // Don't clear hash here, it breaks deep linking and reloads.
-        // It will be cleared if needed in the logout function.
     }
 });
 
-// Login Handler
+// Login Handlers
 const googleLoginBtn = document.getElementById('google-login-btn');
 const emailAuthForm = document.getElementById('email-auth-form');
 const authToggleLink = document.getElementById('auth-toggle-link');
-const authToggleText = document.getElementById('auth-toggle-text');
 const emailSubmitBtn = document.getElementById('email-submit-btn');
 const forgotPasswordLink = document.getElementById('forgot-password-link');
 let isSignUp = false;
 
 if (googleLoginBtn) {
     googleLoginBtn.addEventListener('click', () => {
-        clearError();
         const provider = new firebase.auth.GoogleAuthProvider();
-        auth.signInWithPopup(provider)
-            .catch(handleAuthError);
+        auth.signInWithPopup(provider).catch(handleAuthError);
     });
 }
 
 if (emailAuthForm) {
     emailAuthForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        clearError();
-
         const email = document.getElementById('email-input').value;
         const password = document.getElementById('password-input').value;
 
         if (isSignUp) {
             auth.createUserWithEmailAndPassword(email, password)
-                .then((userCredential) => {
-                    // Send verification email
-                    userCredential.user.sendEmailVerification();
-                    AppDialog.toast('Account created! Please check your email for verification before signing in.', 'success');
-                    // Optionally sign them out immediately until verified, but for now we'll let checkUserAccess handle it
-                })
-                .catch(handleAuthError);
+                .then(cred => {
+                    cred.user.sendEmailVerification();
+                    AppDialog.toast('Account created! Please verify your email.', 'success');
+                }).catch(handleAuthError);
         } else {
-            auth.signInWithEmailAndPassword(email, password)
-                .catch(handleAuthError);
+            auth.signInWithEmailAndPassword(email, password).catch(handleAuthError);
         }
-    });
-}
-
-if (forgotPasswordLink) {
-    forgotPasswordLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        const email = document.getElementById('email-input').value;
-        if (!email) {
-            AppDialog.toast('Please enter your email address first.', 'warn');
-            return;
-        }
-
-        auth.sendPasswordResetEmail(email)
-            .then(() => {
-                AppDialog.toast('Password reset email sent! Please check your inbox.', 'success');
-            })
-            .catch(handleAuthError);
     });
 }
 
@@ -120,21 +82,17 @@ if (authToggleLink) {
     authToggleLink.addEventListener('click', (e) => {
         e.preventDefault();
         isSignUp = !isSignUp;
+        const toggleText = document.getElementById('auth-toggle-text');
         if (isSignUp) {
-            authToggleText.innerText = 'Already have an account?';
+            toggleText.innerText = 'Already have an account?';
             authToggleLink.innerText = 'Sign In';
             emailSubmitBtn.innerText = 'Sign Up';
         } else {
-            authToggleText.innerText = "Don't have an account?";
+            toggleText.innerText = "Don't have an account?";
             authToggleLink.innerText = 'Sign Up';
             emailSubmitBtn.innerText = 'Sign In';
         }
-        clearError();
     });
-}
-
-function clearError() {
-    document.getElementById('login-error').innerText = '';
 }
 
 function handleAuthError(error) {
@@ -142,52 +100,53 @@ function handleAuthError(error) {
     document.getElementById('login-error').innerText = error.message;
 }
 
-// Updated Access Control
+// ─── Access Control Engine (Firestore) ──────────────────────────────────────
 async function checkUserAccess(user, modal) {
-    const emailKey = encodeEmail(user.email);
     const email = user.email.toLowerCase();
-
-    // Check allowed domains
     const isAllowedDomain = email.endsWith('@abhishriacademy.in') || email.endsWith('@zoho.com') || email.endsWith('@zoho.in');
+    const isMasterEmail = email === 'sibhi.gv@gmail.com';
 
-    db.ref(`allowedUsers/${emailKey}`).once('value', snap => {
-        if (snap.exists()) {
-            // User is explicitly allowed (or was auto-created previously)
-            grantAccess(user, modal, snap.val());
-        } else if (isAllowedDomain) {
-            // User is from an allowed domain but not in DB yet -> Auto-create
+    try {
+        const userDoc = await firestore.collection('allowedUsers').doc(email).get();
+
+        if (userDoc.exists) {
+            // User exists in whitelist
+            grantAccess(user, modal, userDoc.data());
+        } else if (isAllowedDomain || isMasterEmail) {
+            // Auto-provision user
             const newUserData = {
                 email: email,
-                isAdmin: false,
+                isAdmin: isMasterEmail ? true : false,
                 permissions: {
-                    smart_campus: { view: false, control: false },
-                    staff_directory: { view: false, add: false, manage: false, delete: false, attendance: false },
-                    student_directory: { view: false, manage: false },
-                    whatsapp_sender: { access: false, broadcast: false, connect: false }
+                    smart_campus: { view: true, control: isMasterEmail },
+                    staff_directory: { view: true, add: isMasterEmail, manage: isMasterEmail, delete: isMasterEmail, attendance: true },
+                    student_directory: { view: true, manage: isMasterEmail },
+                    whatsapp_sender: { access: isMasterEmail, broadcast: isMasterEmail, connect: isMasterEmail },
+                    fees_accounting: { view: true, manage: isMasterEmail }
                 },
-                addedAt: Date.now(),
-                addedBy: 'system_auto_domain'
+                addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                addedBy: 'system_auto_provision'
             };
 
-            db.ref(`allowedUsers/${emailKey}`).set(newUserData)
-                .then(() => grantAccess(user, modal, newUserData))
-                .catch(err => {
-                    console.error("Error creating user data", err);
-                    AppDialog.toast('System Error: Could not create user profile.', 'error');
-                    auth.signOut();
-                });
+            await firestore.collection('allowedUsers').doc(email).set(newUserData);
+            grantAccess(user, modal, newUserData);
         } else {
-            // Not allowed
+            // Block access
             AppDialog.toast('Access Denied: Your email is not authorized.', 'error');
             auth.signOut();
         }
-    });
+    } catch (err) {
+        console.error("Access Check Error:", err);
+        AppDialog.toast('System Error: Could not verify authorization.', 'error');
+        auth.signOut();
+    }
 }
 
 function grantAccess(user, modal, userData) {
     modal.classList.add('hidden');
+    window.currentUserData = userData;
 
-    // Save Login Stats
+    // Sync non-critical profile data to RTDB for live visibility
     db.ref(`users/${user.uid}`).update({
         email: user.email,
         displayName: user.displayName || user.email.split('@')[0],
@@ -195,36 +154,22 @@ function grantAccess(user, modal, userData) {
         photoURL: user.photoURL || ''
     });
 
-    // Store User Permissions Global
-    window.currentUserData = userData;
-
-    // Update User Widget
     updateUserWidget(user, userData);
-
-    // Initialize Routing
     handleRouting();
 
-    // Hide Splash Screen with logic
     const video = document.getElementById('splash-video');
-    if (video && !video.paused && video.currentTime < video.duration) {
-        // Video is playing, let the 'ended' listener handle it
-    } else {
-        // Video not playing or finished, hide after a small buffer
-        setTimeout(hideSplash, 1000);
+    if (!(video && !video.paused && video.currentTime < video.duration)) {
+        setTimeout(hideSplash, 800);
     }
 }
 
-// Routing Logic
 window.addEventListener('hashchange', handleRouting);
 
 function handleRouting() {
     const hash = window.location.hash.replace('#', '') || 'portal';
-    if (typeof navigateTo === 'function') {
-        navigateTo(hash, false);
-    }
+    if (typeof navigateTo === 'function') navigateTo(hash, false);
 }
 
-// Logout Handler
 window.logout = () => {
     auth.signOut().then(() => {
         window.location.hash = '';
@@ -232,16 +177,12 @@ window.logout = () => {
     });
 };
 
-// User Widget
 function updateUserWidget(user, userData) {
     const widget = document.getElementById('user-widget');
     const emailEl = document.getElementById('widget-user-email');
     const avatarEl = document.getElementById('widget-user-avatar');
 
-    if (!user) {
-        widget.style.display = 'none';
-        return;
-    }
+    if (!user) { widget.style.display = 'none'; return; }
 
     widget.style.display = 'block';
     emailEl.innerText = userData.isAdmin ? `Admin (${user.email})` : user.email;
@@ -249,8 +190,7 @@ function updateUserWidget(user, userData) {
     if (user.photoURL) {
         avatarEl.innerHTML = `<img src="${user.photoURL}" alt="Avatar">`;
     } else {
-        const initial = (user.email[0] || 'U').toUpperCase();
-        avatarEl.innerHTML = initial;
+        avatarEl.innerText = (user.email[0] || 'U').toUpperCase();
     }
     lucide.createIcons();
 }

@@ -9,6 +9,33 @@ window.smartCampus = {
     areasListener: null,
     scenesListener: null,
 
+    switchView(view, areaId = null) {
+        this.currentView = view;
+        this.activeAreaId = areaId;
+
+        // Update URL hash only if needed to avoid infinite recursion
+        let hash = `smart-campus/${view}`;
+        if (areaId) hash += `/${areaId}`;
+        if (window.location.hash !== `#${hash}`) {
+            window.location.hash = hash;
+        }
+
+        // Update View Containers
+        const overviewEl = document.getElementById('view-overview');
+        const roomEl = document.getElementById('view-room');
+        const scenesEl = document.getElementById('view-scenes');
+
+        if (overviewEl) overviewEl.style.display = view === 'overview' ? 'block' : 'none';
+        if (roomEl) roomEl.style.display = view === 'room' ? 'block' : 'none';
+        if (scenesEl) scenesEl.style.display = view === 'scenes' ? 'block' : 'none';
+
+        if (view === 'room' && areaId) this.renderAreaDetails(areaId);
+        if (view === 'scenes') this.renderScenes();
+        
+        this.renderDashboard(); // Update sidebar active states
+        if (typeof closeSidebar === 'function') closeSidebar();
+    },
+
     subscribe() {
         if (!this.areasListener) {
             this.areasListener = db.ref('modules/smart_campus/areas').on('value', snap => {
@@ -63,6 +90,59 @@ window.smartCampus = {
         }
     },
 
+    renderAdminScenes() {
+        const container = document.getElementById('admin-scenes-list');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const sceneIds = Object.keys(this.scenes).sort((a, b) => (this.scenes[a].name || '').localeCompare(this.scenes[b].name || ''));
+
+        if (sceneIds.length === 0) {
+            container.innerHTML = '<div class="empty-state">No scenes found. Click "Create Scene" to begin.</div>';
+            return;
+        }
+
+        let html = `<table class="console-table">
+            <thead>
+                <tr>
+                    <th>Scene Name</th>
+                    <th>Icon</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+        sceneIds.forEach(id => {
+            const scene = this.scenes[id];
+            html += `
+                <tr>
+                    <td><strong>${scene.name}</strong></td>
+                    <td><i data-lucide="${scene.icon || 'zap'}"></i></td>
+                    <td>
+                        <div class="table-actions">
+                            <button class="btn-icon" onclick="window.openCreateSceneModal('${id}')"><i data-lucide="edit-3"></i></button>
+                            <button class="btn-icon text-danger" onclick="window.smartCampus.deleteScene('${id}')"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
+        });
+
+        container.innerHTML = html + '</tbody></table>';
+        if (window.lucide) lucide.createIcons({ root: container });
+    },
+
+    deleteScene(id) {
+        AppDialog.confirm({
+            title: 'Delete Scene',
+            msg: 'Are you sure you want to permanently delete this scene?',
+            danger: true,
+            onConfirm: async () => {
+                await db.ref('modules/smart_campus/scenes').child(id).remove();
+                return true;
+            }
+        });
+    },
+
     renderDashboard() {
         const nav = document.getElementById('sidebar-nav');
         const roomsGrid = document.getElementById('rooms-grid');
@@ -91,7 +171,7 @@ window.smartCampus = {
             const item = document.createElement('div');
             item.className = `nav-item ${this.activeAreaId === id ? 'active' : ''}`;
             item.dataset.areaId = id;
-            item.onclick = () => switchView('room', id);
+            item.onclick = () => window.smartCampus.switchView('room', id);
             item.innerHTML = `
         <i data-lucide="${getAreaIcon(area.name || id)}"></i>
         <span>${areaName}</span>
@@ -125,7 +205,7 @@ window.smartCampus = {
 
             const card = document.createElement('div');
             card.className = 'card';
-            card.onclick = () => switchView('room', id);
+            card.onclick = () => window.smartCampus.switchView('room', id);
             card.innerHTML = `
         <div class="card-header">
           <div class="card-icon">

@@ -39,8 +39,11 @@ window.staffDirectory = {
     switchView(viewName) {
         this.currentView = viewName;
 
-        // Update URL hash to persist state on reload (e.g., #staff/attendance)
-        window.location.hash = `staff/${viewName}`;
+        // Update URL hash only if needed
+        let hash = `staff/${viewName}`;
+        if (window.location.hash !== `#${hash}`) {
+            window.location.hash = hash;
+        }
 
         // Update Sidebar
         document.querySelectorAll('#sidebar-nav-staff .nav-item').forEach(el => el.classList.remove('active'));

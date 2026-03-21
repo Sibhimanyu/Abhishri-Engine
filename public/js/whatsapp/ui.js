@@ -65,11 +65,14 @@ if (!window.whatsAppSender) {
 
     window.whatsAppSender.switchView = function (viewName) {
         this.currentView = viewName;
-        
-        // Update URL hash to persist state on reload (e.g., #whatsapp/broadcast)
-        window.location.hash = `whatsapp/${viewName}`;
 
-        // Update Sidebar
+        // Update URL hash only if needed
+        let hash = `whatsapp/${viewName}`;
+        if (window.location.hash !== `#${hash}`) {
+            window.location.hash = hash;
+        }
+
+        // Update Sidebar and UI visibility
         document.querySelectorAll('#sidebar-nav-whatsapp .nav-item').forEach(el => el.classList.remove('active'));
         const activeNav = document.getElementById(`nav-whatsapp-${viewName}`);
         if (activeNav) activeNav.classList.add('active');

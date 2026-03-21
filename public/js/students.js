@@ -94,7 +94,10 @@ window.studentDirectory = {
 
         let hash = `students/${viewName}`;
         if (studentId) hash += `/${studentId}`;
-        window.location.hash = hash;
+        
+        if (window.location.hash !== `#${hash}`) {
+            window.location.hash = hash;
+        }
 
         document.querySelectorAll('#sidebar-nav-students .nav-item').forEach(el => el.classList.remove('active'));
         const activeNav = document.getElementById(`nav-student-${viewName}`);

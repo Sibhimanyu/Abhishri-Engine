@@ -28,9 +28,9 @@ function deepSanitize(obj, isInsideArray = false) {
 
 async function verifyAdmin(auth) {
   if (!auth || !auth.uid || !auth.token.email) throw new HttpsError("unauthenticated", "User must be logged in.");
-  const emailKey = auth.token.email.replace(/\./g, "_").replace(/@/g, "_");
-  const snap = await admin.database().ref(`allowedUsers/${emailKey}`).once("value");
-  if (!snap.exists() || (!snap.val().isAdmin && !snap.val().permissions?.whatsapp_sender)) {
+  const email = auth.token.email.toLowerCase();
+  const userDoc = await admin.firestore().collection("allowedUsers").doc(email).get();
+  if (!userDoc.exists || (!userDoc.data().isAdmin && !userDoc.data().permissions?.whatsapp_sender)) {
     throw new HttpsError("permission-denied", "User does not have required permissions.");
   }
 }
