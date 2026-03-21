@@ -280,7 +280,7 @@ window.feesManager = {
         const container = document.getElementById('fees-content-transactions');
         if (!container) return;
 
-        let html = `<table class="console-table"><thead><tr><th>Date</th><th>Student</th><th>Amount</th><th>Method</th><th>Reference</th><th>Proof</th></tr></thead><tbody>`;
+        let html = `<table class="console-table"><thead><tr><th>Date</th><th>Student</th><th>Amount</th><th>Method</th><th>Reference</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
 
         const query = this.searchQuery;
         const filteredTransactions = this.transactions.filter(t => {
@@ -299,7 +299,13 @@ window.feesManager = {
                     <td><strong style="color:var(--success)">₹${t.amount.toLocaleString()}</strong></td>
                     <td>${t.method}</td>
                     <td><small style="color:var(--text-dim)">${t.reference || '-'}</small></td>
-                    <td>${t.attachmentUrl ? `<a href="${t.attachmentUrl}" target="_blank" class="btn-icon"><i data-lucide="external-link"></i></a>` : '-'}</td>
+                    <td>
+                        <div class="table-actions" style="justify-content:flex-end">
+                            <button class="btn-icon" onclick="window.feesManager.printTransactionReceipt('${t.id}')" title="Print Receipt"><i data-lucide="printer"></i></button>
+                            ${t.attachmentUrl ? `<a href="${t.attachmentUrl}" target="_blank" class="btn-icon"><i data-lucide="external-link"></i></a>` : ''}
+                            <button class="btn-icon text-danger" onclick="window.feesManager.deleteTransaction('${t.id}', '${t.studentId}', ${t.amount})" title="Delete"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </td>
                 </tr>
             `;
         });
@@ -313,7 +319,23 @@ window.feesManager = {
         if (!container) return;
 
         const toolbar = document.getElementById('fees-toolbar');
-        if (toolbar) toolbar.innerHTML = `<button class="btn btn-primary" onclick="window.feesManager.showExpenseForm()"><i data-lucide="plus"></i> Log Expense</button>`;
+        if (toolbar) {
+            toolbar.innerHTML = '';
+            // Re-add search
+            const searchContainer = document.createElement('div');
+            searchContainer.className = 'search-box';
+            searchContainer.style.maxWidth = '400px';
+            searchContainer.style.marginRight = 'auto';
+            searchContainer.innerHTML = `<i data-lucide="search"></i><input type="text" placeholder="Search expenses..." value="${this.searchQuery || ''}">`;
+            searchContainer.querySelector('input').oninput = (e) => { this.searchQuery = e.target.value.toLowerCase(); this.renderExpenses(); };
+            toolbar.appendChild(searchContainer);
+
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-primary';
+            btn.innerHTML = '<i data-lucide="plus"></i> Log Expense';
+            btn.onclick = () => this.showExpenseForm();
+            toolbar.appendChild(btn);
+        }
 
         let html = `<table class="console-table"><thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Details</th><th>Actions</th></tr></thead><tbody>`;
 
@@ -379,46 +401,104 @@ window.feesManager = {
         if (!container || !id) return;
 
         const s = this.students[id] || { name: 'Student' };
-        const f = this.fees[id] || { total: 0, paid: 0, components: [] };
+        const f = this.fees[id] || { total: 0, paid: 0, components: [], billingCycle: 12 };
 
         let html = `
             <div class="fee-profile-header">
                 <h2>${s.name}</h2>
-                <p>Comprehensive Fee Ledger</p>
+                <p>Comprehensive Ledger & Billing Structure</p>
                 <div class="highlights" style="margin-top:20px;">
                     <div class="highlight-item" style="border-left: 4px solid var(--accent-secondary);"><h3>Total Payable</h3><div>₹${(f.total || 0).toLocaleString()}</div></div>
                     <div class="highlight-item" style="border-left: 4px solid var(--success);"><h3>Total Paid</h3><div style="color: var(--success)">₹${(f.paid || 0).toLocaleString()}</div></div>
                     <div class="highlight-item" style="border-left: 4px solid var(--accent-primary);"><h3>Balance Due</h3><div style="color: var(--accent-primary)">₹${((f.total || 0) - (f.paid || 0)).toLocaleString()}</div></div>
                 </div>
             </div>
-        `;
+
+            <div class="section-title" style="margin-top:40px; display:flex; justify-content:space-between; align-items:center;">
+                <span>Detailed Fee Breakdown</span>
+                <span style="font-size:0.75rem; background:rgba(255,255,255,0.05); padding:4px 12px; border-radius:8px; color:var(--text-dim);">Cycle: ${f.billingCycle || 12} Months</span>
+            </div>
+            
+            <div class="console-card" style="padding:0; overflow:hidden; margin-bottom:40px;">
+                <table class="console-table" style="margin:0;">
+                    <thead style="background:rgba(255,255,255,0.02);">
+                        <tr>
+                            <th>Component Name</th>
+                            <th>Type</th>
+                            <th>Frequency</th>
+                            <th style="text-align:right;">Standard Rate</th>
+                            <th style="text-align:right;">Waiver/Adj.</th>
+                            <th style="text-align:right;">Actual Payable</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
 
         if (f.components && f.components.length > 0) {
-            html += `<div class="section-title" style="margin-top:30px;"><span>Fee Breakdown</span></div><div class="dashboard-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 30px;">`;
             f.components.forEach(c => {
-                const disc = (c.originalAmount || 0) - (c.amount || 0);
-                html += `<div class="console-card" style="padding: 15px;">
-                            <div style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase; font-weight:700;">${c.type}</div>
-                            <div style="font-size: 1.25rem; font-weight: 800; margin: 5px 0;">₹${c.amount.toLocaleString()} ${c.frequency === 'monthly' ? `<small style="font-size:0.7rem; font-weight:400;">/mo (${f.billingCycle || 12}m)</small>` : ''}</div>
-                            <div style="font-size: 0.85rem;">${c.name}</div>
-                            ${disc > 0 ? `<div style="font-size:0.7rem; color:var(--accent-primary); margin-top:5px;">Modified (Waiver: ₹${disc.toLocaleString()})</div>` : ''}
-                         </div>`;
+                const isMonthly = c.frequency === 'monthly';
+                const orig = c.originalAmount || c.amount || 0;
+                const pay = c.amount || 0;
+                const waiver = Math.max(0, orig - pay);
+                
+                html += `
+                    <tr>
+                        <td><strong>${c.name}</strong></td>
+                        <td><span style="text-transform:uppercase; font-size:0.7rem; opacity:0.7;">${c.type}</span></td>
+                        <td><span class="status-pill" style="background:rgba(255,255,255,0.05); font-size:0.65rem;">${c.frequency}</span></td>
+                        <td style="text-align:right; opacity:0.6;">₹${orig.toLocaleString()}</td>
+                        <td style="text-align:right; color:var(--accent-primary); font-weight:600;">${waiver > 0 ? `-₹${waiver.toLocaleString()}` : '—'}</td>
+                        <td style="text-align:right;"><strong>₹${pay.toLocaleString()}</strong> ${isMonthly ? `<small style="opacity:0.5">/mo</small>` : ''}</td>
+                    </tr>`;
             });
-            if (f.discount > 0) html += `<div class="console-card" style="padding: 15px; border: 1px dashed var(--accent-primary);"><div style="color:var(--accent-primary); font-size:0.75rem; text-transform:uppercase; font-weight:700;">Additional Global Waiver</div><div style="font-size: 1.25rem; font-weight: 800; margin: 5px 0; color:var(--accent-primary)">- ₹${f.discount.toLocaleString()}</div><div style="font-size: 0.85rem;">${f.discountRemarks || 'Adjustment'}</div></div>`;
-            html += `</div>`;
+            
+            if (f.discount > 0) {
+                html += `
+                    <tr style="background:rgba(241, 97, 91, 0.03);">
+                        <td colspan="4"><strong>Global Structural Discount</strong> <small style="color:var(--text-dim); margin-left:10px;">${f.discountRemarks || 'Adjustment'}</small></td>
+                        <td style="text-align:right; color:var(--accent-primary); font-weight:800;">-₹${f.discount.toLocaleString()}</td>
+                        <td style="text-align:right; color:var(--accent-primary);"><strong>Applied</strong></td>
+                    </tr>`;
+            }
+        } else {
+            html += '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">No components configured for this student.</td></tr>';
         }
 
         html += `
-            <div class="section-title" style="margin-top:30px; display:flex; justify-content:space-between; align-items:center;">
+                    </tbody>
+                    <tfoot style="background:rgba(115, 199, 200, 0.05);">
+                        <tr>
+                            <td colspan="5" style="text-align:right; font-weight:700; padding:20px;">CALCULATED ANNUAL STRUCTURE TOTAL:</td>
+                            <td style="text-align:right; font-size:1.4rem; font-weight:900; color:var(--accent-secondary); padding:20px;">₹${(f.total || 0).toLocaleString()}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        `;
+
+        html += `
+            <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
                 <span>Transaction History</span>
                 <button class="btn btn-primary btn-sm" onclick="window.feesManager.showPaymentForm('${id}')"><i data-lucide="plus"></i> Add Payment</button>
             </div>
-            <table class="console-table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Proof</th></tr></thead><tbody>`;
+            <table class="console-table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
 
         const studentTrans = this.transactions.filter(t => t.studentId === id);
         studentTrans.forEach(t => {
             const date = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
-            html += `<tr><td>${date.toLocaleDateString()}</td><td><strong>₹${t.amount}</strong></td><td>${t.method}</td><td><small>${t.reference || '-'}</small></td><td>${t.attachmentUrl ? `<a href="${t.attachmentUrl}" target="_blank" class="btn-icon"><i data-lucide="file-text"></i></a>` : '-'}</td></tr>`;
+            html += `
+                <tr>
+                    <td>${date.toLocaleDateString()}</td>
+                    <td><strong>₹${t.amount.toLocaleString()}</strong></td>
+                    <td>${t.method}</td>
+                    <td><small>${t.reference || '-'}</small></td>
+                    <td>
+                        <div class="table-actions" style="justify-content:flex-end">
+                            <button class="btn-icon" onclick="window.feesManager.printTransactionReceipt('${t.id}')" title="Print Receipt"><i data-lucide="printer"></i></button>
+                            ${t.attachmentUrl ? `<a href="${t.attachmentUrl}" target="_blank" class="btn-icon"><i data-lucide="file-text"></i></a>` : ''}
+                            <button class="btn-icon text-danger" onclick="window.feesManager.deleteTransaction('${t.id}', '${id}', ${t.amount})" title="Delete"><i data-lucide="trash-2"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
         });
         if (studentTrans.length === 0) html += '<tr><td colspan="5" style="text-align:center; padding: 20px;">No transactions found.</td></tr>';
 
@@ -428,6 +508,143 @@ window.feesManager = {
         const toolbar = document.getElementById('fees-toolbar');
         if (toolbar) toolbar.innerHTML = `<button class="btn btn-secondary" onclick="window.feesManager.switchView('overview')"><i data-lucide="arrow-left"></i> Back to Ledger</button> <button class="btn btn-primary" onclick="window.feesManager.showSetupFeesForm('${id}')"><i data-lucide="settings"></i> Configure Fees</button>`;
         if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    deleteTransaction(tid, studentId, amount) {
+        AppDialog.confirm({
+            title: 'Reverse Transaction',
+            content: `<p>Are you sure you want to delete this payment of <strong>₹${amount.toLocaleString()}</strong>?</p><p style="color:var(--accent-primary); font-size:0.8rem; margin-top:10px;">This will automatically increase the student's balance due.</p>`,
+            confirmClass: 'btn-danger',
+            confirmText: 'Delete & Rebalance',
+            onConfirm: async () => {
+                try {
+                    // 1. Remove from global transactions
+                    await firestore.collection('modules').doc('fees_accounting').collection('transactions').doc(tid).delete();
+                    
+                    // 2. Adjust student ledger 'paid' amount
+                    const currentPaid = this.fees[studentId]?.paid || 0;
+                    const newPaid = Math.max(0, currentPaid - amount);
+                    await firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({
+                        paid: newPaid
+                    }, { merge: true });
+
+                    AppDialog.toast('Transaction reversed successfully', 'success');
+                    return true;
+                } catch (err) {
+                    AppDialog.toast('Error reversing transaction: ' + err.message, 'error');
+                    return false;
+                }
+            }
+        });
+    },
+
+    printTransactionReceipt(transactionId) {
+        const t = this.transactions.find(item => item.id === transactionId);
+        if (!t) return;
+        const s = this.students[t.studentId] || { name: 'Student' };
+        const date = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <html>
+            <head>
+                <title>Fee Receipt - ${s.name}</title>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #000; line-height: 1.6; }
+                    .receipt-header { border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
+                    .academy-name { font-size: 24px; font-weight: 900; text-transform: uppercase; margin: 0; }
+                    .receipt-title { font-size: 18px; font-weight: 700; margin: 0; opacity: 0.7; }
+                    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; }
+                    .info-label { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #666; margin-bottom: 4px; }
+                    .info-value { font-size: 16px; font-weight: 600; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+                    .payment-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+                    .payment-table th { text-align: left; background: #f5f5f5; padding: 12px; border: 1px solid #000; font-size: 12px; text-transform: uppercase; }
+                    .payment-table td { padding: 12px; border: 1px solid #000; font-size: 14px; }
+                    .amount-box { text-align: right; margin-top: 20px; }
+                    .total-label { font-size: 14px; font-weight: 700; }
+                    .total-amount { font-size: 24px; font-weight: 900; margin-left: 10px; }
+                    .footer { margin-top: 100px; border-top: 1px solid #eee; padding-top: 20px; font-size: 10px; text-align: center; color: #999; }
+                    @media print { body { padding: 20px; } .no-print { display: none; } }
+                </style>
+            </head>
+            <body>
+                <div class="receipt-header">
+                    <div>
+                        <h1 class="academy-name">ABHISHRI ACADEMY</h1>
+                        <p style="margin: 0; font-size: 12px;">Empowering Young Minds</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <h2 class="receipt-title">FEE RECEIPT</h2>
+                        <p style="margin: 0; font-size: 12px;">No: ${transactionId.slice(-8).toUpperCase()}</p>
+                    </div>
+                </div>
+
+                <div class="info-grid">
+                    <div>
+                        <div class="info-label">Student Name</div>
+                        <div class="info-value">${s.name}</div>
+                        <div style="margin-top: 15px;">
+                            <div class="info-label">Class/Grade</div>
+                            <div class="info-value">${s.admissionForClass || 'N/A'}</div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="info-label">Date of Payment</div>
+                        <div class="info-value">${date.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                        <div style="margin-top: 15px;">
+                            <div class="info-label">Parent/Guardian</div>
+                            <div class="info-value">${s.fatherName || s.motherName || 'N/A'}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <table class="payment-table">
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th>Mode</th>
+                            <th>Reference</th>
+                            <th style="text-align: right;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>School Fees / Academic Charges</td>
+                            <td>${t.method}</td>
+                            <td>${t.reference || 'N/A'}</td>
+                            <td style="text-align: right; font-weight: 700;">₹${t.amount.toLocaleString()}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="amount-box">
+                    <span class="total-label">TOTAL PAID:</span>
+                    <span class="total-amount">₹${t.amount.toLocaleString()}</span>
+                </div>
+
+                <div style="margin-top: 60px; display: flex; justify-content: space-between;">
+                    <div style="text-align: center; width: 200px;">
+                        <div style="border-top: 1px solid #000; padding-top: 10px; font-size: 12px; font-weight: 700;">PARENTS SIGNATURE</div>
+                    </div>
+                    <div style="text-align: center; width: 200px;">
+                        <div style="border-top: 1px solid #000; padding-top: 10px; font-size: 12px; font-weight: 700;">OFFICE STAMP/SIGN</div>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    Generated Digitally on ${new Date().toLocaleString()} | Abhishri Engine Accounting Module
+                </div>
+
+                <script>
+                    window.onload = () => {
+                        window.print();
+                        setTimeout(() => window.close(), 500);
+                    };
+                </script>
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
     },
 
     showPaymentForm(studentId) {
@@ -486,11 +703,34 @@ window.feesManager = {
         const container = document.getElementById('fees-content-plans');
         if (!container) return;
         const toolbar = document.getElementById('fees-toolbar');
-        if (toolbar) toolbar.innerHTML = `<button class="btn btn-primary" onclick="window.feesManager.showAddPlanForm()"><i data-lucide="plus"></i> Create Fee Package</button>`;
+        if (toolbar) {
+            toolbar.innerHTML = '';
+            // Re-add search
+            const searchContainer = document.createElement('div');
+            searchContainer.className = 'search-box';
+            searchContainer.style.maxWidth = '400px';
+            searchContainer.style.marginRight = 'auto';
+            searchContainer.innerHTML = `<i data-lucide="search"></i><input type="text" placeholder="Search packages..." value="${this.searchQuery || ''}">`;
+            searchContainer.querySelector('input').oninput = (e) => { this.searchQuery = e.target.value.toLowerCase(); this.renderPlans(); };
+            toolbar.appendChild(searchContainer);
+
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-primary';
+            btn.innerHTML = '<i data-lucide="plus"></i> Create Fee Package';
+            btn.onclick = () => this.showAddPlanForm();
+            toolbar.appendChild(btn);
+        }
+
         if (Object.keys(this.plans).length === 0) { container.innerHTML = '<div class="empty-state"><p>No fee package templates defined yet.</p></div>'; return; }
 
         let html = `<div class="plans-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 24px;">`;
-        Object.keys(this.plans).forEach(id => {
+        const query = this.searchQuery;
+        const filteredPlanIds = Object.keys(this.plans).filter(id => {
+            if (!query) return true;
+            return this.plans[id].name.toLowerCase().includes(query);
+        });
+
+        filteredPlanIds.forEach(id => {
             const p = this.plans[id];
             const cycle = p.billingCycle || 12;
             let annualTotal = 0;
@@ -571,13 +811,6 @@ window.feesManager = {
                 return true;
             }
         });
-    },
-
-    deletePlan(id) {
-        AppDialog.confirm({ title: 'Delete Package', content: '<p>Permanently remove this template?</p>', confirmClass: 'btn-danger', onConfirm: () => { 
-            firestore.collection('modules').doc('fees_accounting').collection('plans').doc(id).delete(); 
-            return true; 
-        }});
     },
 
     showSetupFeesForm(studentId) {
@@ -661,7 +894,8 @@ window.feesManager = {
                     const cycle = parseInt(cycleInput.value) || 12;
                     
                     document.querySelectorAll('.component-row').forEach(row => {
-                        const origAmt = parseFloat(row.querySelector('.c-orig').value) || 0;
+                        const origInput = row.querySelector('.c-orig'); if (!origInput) return;
+                        const origAmt = parseFloat(origInput.value) || 0;
                         const payableAmt = parseFloat(row.querySelector('.c-amount').value) || 0;
                         const freq = row.querySelector('.c-freq')?.value || row.querySelector('.c-freq-static')?.value || 'onetime';
                         const multiplier = freq === 'monthly' ? cycle : 1;
@@ -706,7 +940,8 @@ window.feesManager = {
             onConfirm: () => {
                 const components = [];
                 document.querySelectorAll('.component-row').forEach(row => {
-                    const name = row.querySelector('.c-name').value;
+                    const nameInput = row.querySelector('.c-name'); if (!nameInput) return;
+                    const name = nameInput.value;
                     const amount = parseFloat(row.querySelector('.c-amount').value) || 0;
                     const originalAmount = parseFloat(row.querySelector('.c-orig').value) || amount;
                     if (name) components.push({ name, amount, originalAmount, type: row.querySelector('.c-type').value, frequency: row.querySelector('.c-freq').value });

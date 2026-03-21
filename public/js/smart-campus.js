@@ -202,8 +202,9 @@ window.smartCampus = {
 
         AppDialog.toast(`Activating scene: ${scene.name}`, 'info');
 
-        Object.keys(scene.devices).forEach(entityId => {
-            const target = scene.devices[entityId];
+        Object.keys(scene.devices).forEach(escapedEntityId => {
+            const target = scene.devices[escapedEntityId];
+            const entityId = escapedEntityId.replace(/:/g, '.');
             const domain = entityId.split('.')[0];
             
             const service = target.state === 'on' ? (domain === 'fan' && target.percentage !== undefined ? 'set_percentage' : 'turn_on') : 'turn_off';

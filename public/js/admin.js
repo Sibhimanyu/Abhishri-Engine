@@ -178,6 +178,7 @@ window.adminPanel = {
         firebase.database().ref('users').once('value', snap => {
             this.usersData = snap.val() || {};
             const tbody = document.getElementById('users-table-body');
+            if (!tbody) return;
             tbody.innerHTML = '';
 
             Object.keys(this.usersData).forEach(uid => {
@@ -196,6 +197,10 @@ window.adminPanel = {
         `;
                 tbody.appendChild(tr);
             });
+        }, err => {
+            console.warn("Could not load users table:", err.message);
+            const tbody = document.getElementById('users-table-body');
+            if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-dim);">Access Restricted</td></tr>';
         });
     },
 
@@ -668,8 +673,17 @@ window.handleSyncTemplates = async (btn) => {
 
 window.openCreateSceneModal = (sceneId = null) => {
     const isEdit = !!sceneId;
-    const scene = isEdit ? window.smartCampus.scenes[sceneId] : { name: '', icon: 'zap', devices: {} };
+    let scene = isEdit ? window.smartCampus.scenes[sceneId] : { name: '', icon: 'zap', devices: {} };
     
+    // Unescape keys if loading for edit
+    if (isEdit && scene.devices) {
+        const unescapedDevices = {};
+        Object.keys(scene.devices).forEach(key => {
+            unescapedDevices[key.replace(/:/g, '.')] = scene.devices[key];
+        });
+        scene = { ...scene, devices: unescapedDevices };
+    }
+
     // Prepare all devices list
     let allDevices = [];
     Object.keys(window.smartCampus.areas).forEach(areaId => {
@@ -698,15 +712,19 @@ window.openCreateSceneModal = (sceneId = null) => {
             <label>Icon (Lucide name)</label>
             <input type="text" id="scene-icon" class="form-control" value="${scene.icon || 'zap'}" placeholder="zap, moon, sun, coffee...">
         </div>
-        <div class="section-title" style="margin-top:20px; font-size:0.9rem;">
+        <div class="section-title" style="margin-top:20px; font-size:0.9rem; display:flex; justify-content:space-between; align-items:center;">
             <span>Configure Devices</span>
+            <div class="search-box" style="max-width:200px; height:32px; padding:0 8px; background:rgba(255,255,255,0.05);">
+                <i data-lucide="search" style="width:14px; height:14px; color:var(--text-dim);"></i>
+                <input type="text" id="scene-device-search" placeholder="Filter devices..." style="font-size:0.8rem; background:transparent; border:none; color:white; width:100%;" oninput="window.filterSceneDevices(this.value)">
+            </div>
         </div>
         <div id="scene-devices-list" style="max-height: 400px; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 8px;">
             ${allDevices.map(d => {
                 const isConfigured = scene.devices && scene.devices[d.entity_id] !== undefined;
                 const config = isConfigured ? scene.devices[d.entity_id] : { state: 'off' };
                 return `
-                    <div class="scene-device-row" data-entity-id="${d.entity_id}" style="display:flex; align-items:center; gap:12px; padding:10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <div class="scene-device-row" data-entity-id="${d.entity_id}" data-search-text="${(d.name + ' ' + d.areaName).toLowerCase()}" style="display:flex; align-items:center; gap:12px; padding:10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
                         <input type="checkbox" class="scene-device-check" ${isConfigured ? 'checked' : ''} onchange="this.parentElement.querySelector('.scene-device-info').style.opacity = this.checked ? 1 : 0.6; this.parentElement.querySelector('.scene-device-controls').style.display = this.checked ? 'flex' : 'none';">
                         <div class="scene-device-info" style="flex:1; opacity: ${isConfigured ? 1 : 0.6}">
                             <div style="font-weight:500; font-size:0.95rem;">${formatName(d.name)}</div>
@@ -732,6 +750,18 @@ window.openCreateSceneModal = (sceneId = null) => {
         confirmText: isEdit ? 'Save Changes' : 'Create Scene',
         width: '600px',
         isHtml: true,
+        onOpen: (overlay) => {
+            if (window.lucide) window.lucide.createIcons({ root: overlay });
+            
+            // Define the filter function globally so it can be called from oninput
+            window.filterSceneDevices = (query) => {
+                const q = query.toLowerCase();
+                overlay.querySelectorAll('.scene-device-row').forEach(row => {
+                    const text = row.dataset.searchText;
+                    row.style.display = text.includes(q) ? 'flex' : 'none';
+                });
+            };
+        },
         onConfirm: async () => {
             const name = document.getElementById('scene-name').value.trim();
             const icon = document.getElementById('scene-icon').value.trim() || 'zap';
@@ -751,7 +781,8 @@ window.openCreateSceneModal = (sceneId = null) => {
                     if (percentageInput) {
                         config.percentage = parseInt(percentageInput.value);
                     }
-                    devices[entityId] = config;
+                    // Escape dots for Firebase keys
+                    devices[entityId.replace(/\./g, ':')] = config;
                 }
             });
 
