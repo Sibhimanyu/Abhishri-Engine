@@ -77,6 +77,16 @@ window.feesManager = {
         if (studentId) hash += `/${studentId}`;
         window.location.hash = hash;
 
+        // Update Subtitle based on domain
+        const subtitle = document.getElementById('fees-screen-subtitle');
+        if (subtitle) {
+            if (['collections', 'overview', 'transactions', 'plans', 'student_fees'].includes(viewName)) {
+                subtitle.innerText = 'Revenue & Fee Management';
+            } else if (viewName === 'expenses') {
+                subtitle.innerText = 'Operational Expense Tracking';
+            }
+        }
+
         document.querySelectorAll('#sidebar-nav-fees .nav-item').forEach(el => el.classList.remove('active'));
         const activeNav = document.getElementById(`nav-fees-${viewName}`);
         if (activeNav) activeNav.classList.add('active');
@@ -96,17 +106,6 @@ window.feesManager = {
         const isAdmin = userData.isAdmin;
         const perms = userData.permissions?.fees_accounting || {};
         const isMaster = isAdmin === true;
-
-        const setNavVisible = (id, visible) => {
-            const el = document.getElementById(id);
-            if (el) el.style.display = visible ? 'flex' : 'none';
-        };
-
-        setNavVisible('nav-fees-collections', isMaster || perms === true || perms.view);
-        setNavVisible('nav-fees-overview', isMaster || perms === true || perms.ledger);
-        setNavVisible('nav-fees-transactions', isMaster || perms === true || perms.transactions);
-        setNavVisible('nav-fees-expenses', isMaster || perms === true || perms.expenses);
-        setNavVisible('nav-fees-plans', isMaster || perms === true || perms.config);
 
         const toolbar = document.getElementById('fees-toolbar');
         if (toolbar) {
@@ -136,30 +135,14 @@ window.feesManager = {
         if (this.currentView === 'collections') {
             this.renderCollections();
         } else if (this.currentView === 'overview') {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-secondary';
-            btn.innerHTML = '<i data-lucide="refresh-cw"></i> Refresh Data';
-            btn.onclick = () => window.studentDataManager.subscribe();
-            toolbar.appendChild(btn);
             this.renderOverview();
         } else if (this.currentView === 'transactions') {
             this.renderTransactions();
         } else if (this.currentView === 'expenses') {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-primary';
-            btn.innerHTML = '<i data-lucide="plus"></i> Log Expense';
-            btn.onclick = () => this.showExpenseForm();
-            toolbar.appendChild(btn);
             this.renderExpenses();
         } else if (this.currentView === 'student_fees') {
-            toolbar.innerHTML = `<button class="btn btn-secondary" onclick="window.feesManager.switchView('overview')"><i data-lucide="arrow-left"></i> Back to Ledger</button> <button class="btn btn-primary" onclick="window.feesManager.showSetupFeesForm('${this.activeStudentId}')"><i data-lucide="settings"></i> Configure Fees</button>`;
             this.renderStudentFees();
         } else if (this.currentView === 'plans') {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-primary';
-            btn.innerHTML = '<i data-lucide="plus"></i> Create Fee Package';
-            btn.onclick = () => this.showAddPlanForm();
-            toolbar.appendChild(btn);
             this.renderPlans();
         }
 
@@ -254,7 +237,7 @@ window.feesManager = {
             const statusClass = balance <= 0 ? 'status-success' : 'status-warning';
 
             html += `
-                <tr>
+                <tr onclick="window.feesManager.switchView('student_fees', '${id}')" style="cursor:pointer;" class="clickable-row">
                     <td><strong>${s.name}</strong></td>
                     <td>${s.admissionForClass || 'N/A'}</td>
                     <td>${plan ? plan.name : '<span style="color:var(--text-dim)">Custom</span>'}</td>
@@ -263,8 +246,7 @@ window.feesManager = {
                     <td><strong style="color: ${balance > 0 ? 'var(--accent-primary)' : 'var(--success)'}">₹${balance.toLocaleString()}</strong></td>
                     <td><span class="status-pill ${statusClass}">${balance <= 0 ? 'Cleared' : 'Due'}</span></td>
                     <td>
-                        <div class="table-actions">
-                            <button class="btn-icon" onclick="window.feesManager.switchView('student_fees', '${id}')" title="Ledger"><i data-lucide="receipt"></i></button>
+                        <div class="table-actions" onclick="event.stopPropagation()">
                             <button class="btn-icon" onclick="window.feesManager.showSetupFeesForm('${id}')" title="Configure"><i data-lucide="settings"></i></button>
                         </div>
                     </td>
@@ -402,6 +384,7 @@ window.feesManager = {
 
         const s = this.students[id] || { name: 'Student' };
         const f = this.fees[id] || { total: 0, paid: 0, components: [], billingCycle: 12 };
+        const cycleRange = this.getAcademicCycleRange(f.billingCycle || 12);
 
         let html = `
             <div class="fee-profile-header">
@@ -416,7 +399,9 @@ window.feesManager = {
 
             <div class="section-title" style="margin-top:40px; display:flex; justify-content:space-between; align-items:center;">
                 <span>Detailed Fee Breakdown</span>
-                <span style="font-size:0.75rem; background:rgba(255,255,255,0.05); padding:4px 12px; border-radius:8px; color:var(--text-dim);">Cycle: ${f.billingCycle || 12} Months</span>
+                <span style="font-size:0.75rem; background:rgba(255,255,255,0.05); padding:4px 12px; border-radius:8px; color:var(--accent-secondary); font-weight:700;">
+                    Cycle: ${f.billingCycle || 12} Months (${cycleRange})
+                </span>
             </div>
             
             <div class="console-card" style="padding:0; overflow:hidden; margin-bottom:40px;">
@@ -536,6 +521,20 @@ window.feesManager = {
                 }
             }
         });
+    },
+
+    getAcademicCycleRange(months) {
+        const startMonth = 3; // April (0-indexed)
+        const date = new Date();
+        date.setMonth(startMonth);
+        const startName = date.toLocaleString('default', { month: 'long' });
+        const startYear = date.getFullYear();
+        
+        date.setMonth(startMonth + (months - 1));
+        const endName = date.toLocaleString('default', { month: 'long' });
+        const endYear = date.getFullYear();
+        
+        return `${startName} ${startYear} – ${endName} ${endYear}`;
     },
 
     printTransactionReceipt(transactionId) {
@@ -747,6 +746,13 @@ window.feesManager = {
         container.innerHTML = html + '</div>';
     },
 
+    deletePlan(id) {
+        AppDialog.confirm({ title: 'Delete Package', content: '<p>Permanently remove this template?</p>', confirmClass: 'btn-danger', onConfirm: () => { 
+            firestore.collection('modules').doc('fees_accounting').collection('plans').doc(id).delete(); 
+            return true; 
+        }});
+    },
+
     showAddPlanForm() {
         const renderComponentRow = (c = { name: '', amount: 0, frequency: 'onetime', type: 'tuition' }) => {
             return `<div class="form-row plan-component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 1fr 40px; gap:10px; margin-bottom:10px; align-items:center;">
@@ -849,16 +855,19 @@ window.feesManager = {
             title: `Custom Structure: ${s.name}`,
             width: '1000px',
             content: `
-                <div style="display:grid; grid-template-columns: 280px 1fr; gap:30px;">
-                    <div style="border-right: 1px solid var(--card-border); padding-right:30px;">
-                        <div class="form-section-title" style="margin-top:0;">1. Base Template</div>
-                        <div class="form-group" style="margin-bottom:20px;">
+                <div class="fee-modal-grid">
+                    <div class="fee-modal-left" style="border-right: 1px solid var(--card-border); padding-right:30px;">
+                        <div class="form-section-title" style="margin-top:0;">1. Template & Duration</div>
+                        <div class="form-group" style="margin-bottom:15px;">
                             <label>Apply Fee Package</label>
                             <select id="sf-plan-id" class="form-control" style="border-color:var(--accent-secondary); border-width:2px; height:38px;">${planOpts}</select>
                         </div>
                         <div class="form-group" style="margin-bottom:20px;">
-                            <label>Billing Cycle (Mo)</label>
+                            <label>Academic Billing Cycle (Mo)</label>
                             <input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}" min="1" max="12" style="height:38px; text-align:center; font-weight:800;">
+                            <div id="sf-date-preview" style="font-size:0.7rem; color:var(--accent-secondary); font-weight:700; margin-top:8px; background:rgba(115, 199, 200, 0.05); padding:6px 10px; border-radius:8px;">
+                                Coverage: Loading...
+                            </div>
                         </div>
                         
                         <div class="form-section-title">2. Global Adjustment</div>
@@ -887,12 +896,15 @@ window.feesManager = {
                     </div>
                 </div>`,
             onOpen: () => {
-                const planSelect = document.getElementById('sf-plan-id'); const compContainer = document.getElementById('setup-components-container'); const discountInput = document.getElementById('sf-discount'); const cycleInput = document.getElementById('sf-cycle');
+                const planSelect = document.getElementById('sf-plan-id'); const compContainer = document.getElementById('setup-components-container'); const discountInput = document.getElementById('sf-discount'); const cycleInput = document.getElementById('sf-cycle'); const datePreview = document.getElementById('sf-date-preview');
                 
                 this.recalcSetupTotal = () => {
                     let grossTotal = 0; let totalItemWaiver = 0;
                     const cycle = parseInt(cycleInput.value) || 12;
                     
+                    // Update Date Preview
+                    datePreview.innerText = `Coverage: ${this.getAcademicCycleRange(cycle)}`;
+
                     document.querySelectorAll('.component-row').forEach(row => {
                         const origInput = row.querySelector('.c-orig'); if (!origInput) return;
                         const origAmt = parseFloat(origInput.value) || 0;

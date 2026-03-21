@@ -41,35 +41,54 @@ window.AppDialog = (() => {
                 animation: dialog-in 0.18s ease;
             }
             @keyframes dialog-in { from { opacity:0; } to { opacity:1; } }
+            
             .app-dialog-box {
                 background: var(--surface, #1e2127);
                 border: 1px solid var(--card-border, rgba(255,255,255,0.08));
-                border-radius: 14px; padding: 28px 28px 22px;
-                min-width: 300px; max-width: 420px; width: 90%;
+                border-radius: 14px; padding: 28px;
+                width: 95%; max-width: 420px;
+                max-height: 90vh; overflow-y: auto; overflow-x: hidden;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.5);
                 display: flex; flex-direction: column; gap: 10px;
                 animation: dialog-box-in 0.2s cubic-bezier(0.34,1.56,0.64,1);
                 position: relative;
             }
-            @keyframes dialog-box-in { from { transform: scale(0.92) translateY(8px); } to { transform: scale(1) translateY(0); } }
-            .app-dialog-icon { 
-                position: absolute;
-                top: -18px;
-                right: -18px;
-                width: 42px;
-                height: 42px;
-                background: #1e2127;
-                border: 1px solid rgba(255,255,255,0.15);
-                border-radius: 12px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 8px 20px rgba(0,0,0,0.4);
-                z-index: 10;
+            .app-dialog-box::-webkit-scrollbar { width: 6px; }
+            .app-dialog-box::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+            .app-dialog-close {
+                position: absolute; top: 15px; right: 15px;
+                width: 32px; height: 32px; border-radius: 50%;
+                display: flex; align-items: center; justify-content: center;
+                cursor: pointer; transition: all 0.2s; color: var(--text-dim);
+                background: rgba(255,255,255,0.03);
             }
-            .app-dialog-title { font-size: 1.05rem; font-weight: 700; color: var(--text-main, #e8eaf0); margin-top: 4px; }
+            .app-dialog-close:hover { background: rgba(255,255,255,0.08); color: var(--text-main); }
+
+            .app-dialog-header { display: flex; align-items: center; gap: 12px; margin-bottom: 5px; }
+            .app-dialog-icon-inline {
+                width: 32px; height: 32px; border-radius: 8px;
+                display: flex; align-items: center; justify-content: center;
+                flex-shrink: 0;
+            }
+
+            /* Responsive Grid for Fee Modal */
+            .fee-modal-grid {
+                display: grid; grid-template-columns: 280px 1fr; gap: 30px; margin-top: 10px;
+            }
+            @media (max-width: 900px) {
+                .fee-modal-grid { grid-template-columns: 1fr; gap: 20px; }
+                .fee-modal-left { border-right: none !important; padding-right: 0 !important; border-bottom: 1px solid var(--card-border); padding-bottom: 20px; }
+            }
+            @media (max-width: 600px) {
+                .app-dialog-box { padding: 20px 15px; width: 95%; }
+                .component-row { grid-template-columns: 1fr !important; gap: 8px !important; }
+            }
+            @keyframes dialog-box-in { from { transform: scale(0.92) translateY(8px); } to { transform: scale(1) translateY(0); } }
+            
+            .app-dialog-title { font-size: 1.15rem; font-weight: 700; color: var(--text-main, #e8eaf0); }
             .app-dialog-msg   { font-size: 0.88rem; color: var(--text-dim, #8b909e); line-height: 1.5; }
-            .app-dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+            .app-dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 15px; }
         `;
         document.head.appendChild(style);
     }
@@ -91,19 +110,10 @@ window.AppDialog = (() => {
         if (t.includes('expense')) return 'receipt';
         if (t.includes('student') || t.includes('admission') || t.includes('profile')) return 'user';
         if (t.includes('staff')) return 'users';
-        if (t.includes('list')) return 'list';
-        if (t.includes('pulse')) return 'activity';
         if (t.includes('template') || t.includes('structure')) return 'layout';
-        if (t.includes('frequency') || t.includes('protect')) return 'shield-check';
-        if (t.includes('confirm') || t.includes('sure')) return 'help-circle';
-        return 'info';
+        return 'help-circle';
     }
 
-    /**
-     * Show a non-blocking toast notification.
-     * @param {string} msg - Message to display
-     * @param {'success'|'error'|'info'|'warn'} [type='info']
-     */
     function toast(msg, type = 'info') {
         const icons = { success: 'check-circle', error: 'x-circle', info: 'info', warn: 'alert-triangle' };
         const iconName = icons[type] || 'info';
@@ -118,12 +128,6 @@ window.AppDialog = (() => {
         }, 3500);
     }
 
-    /**
-     * Show an informational modal (replaces alert).
-     * @param {string} msg
-     * @param {{ title?: string, type?: 'info'|'success'|'error'|'warn' }} [opts]
-     * @returns {Promise<void>}
-     */
     function alert(msg, opts = {}) {
         return new Promise(resolve => {
             const { title = 'Notice', type = 'info' } = opts;
@@ -131,15 +135,18 @@ window.AppDialog = (() => {
             const colors = { success: '#4ade80', error: '#f87171', info: '#7dd3fc', warn: '#fcd34d' };
             const iconName = icons[type] || 'info';
             const iconColor = colors[type] || colors.info;
-            
+
             const overlay = document.createElement('div');
             overlay.className = 'app-dialog-overlay';
             overlay.innerHTML = `
                 <div class="app-dialog-box">
-                    <div class="app-dialog-icon">
-                        <i data-lucide="${iconName}" style="width:22px; height:22px; color:${iconColor};"></i>
+                    <div class="app-dialog-close" id="app-dialog-close-x"><i data-lucide="x" style="width:18px; height:18px;"></i></div>
+                    <div class="app-dialog-header">
+                        <div class="app-dialog-icon-inline" style="background: ${iconColor}20">
+                            <i data-lucide="${iconName}" style="width:20px; height:20px; color:${iconColor};"></i>
+                        </div>
+                        <div class="app-dialog-title">${title}</div>
                     </div>
-                    <div class="app-dialog-title">${title}</div>
                     <div class="app-dialog-msg">${msg}</div>
                     <div class="app-dialog-actions">
                         <button class="btn btn-primary" id="app-dialog-ok" style="min-width:80px;">OK</button>
@@ -149,52 +156,39 @@ window.AppDialog = (() => {
             if (window.lucide) window.lucide.createIcons({ root: overlay });
 
             const ok = overlay.querySelector('#app-dialog-ok');
+            const closeX = overlay.querySelector('#app-dialog-close-x');
             const dismiss = () => { overlay.remove(); resolve(); };
             ok.addEventListener('click', dismiss);
+            closeX.addEventListener('click', dismiss);
             overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
             overlay.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); dismiss(); } });
             ok.focus();
         });
     }
 
-    /**
-     * Show a confirmation modal (replaces confirm). Returns a Promise<boolean>.
-     * @param {string} msg
-     * @param {{ title?: string, confirmText?: string, cancelText?: string, danger?: boolean, isHtml?: boolean, width?: string }} [opts]
-     * @returns {Promise<boolean>}
-     */
     function confirm(msg, opts = {}) {
-        // Support calling with single object: AppDialog.confirm({ title, content, ... })
         if (typeof msg === 'object' && msg !== null && !opts.content) {
             opts = msg;
             msg = opts.content || opts.msg || '';
         }
 
         return new Promise(resolve => {
-            const { 
-                title = 'Are you sure?', 
-                confirmText = 'Confirm', 
-                cancelText = 'Cancel', 
-                danger = false, 
-                isHtml = false, 
-                width = 'auto',
-                onConfirm = null,
-                onOpen = null
-            } = opts;
-            
+            const { title = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel', danger = false, isHtml = false, width = 'auto', onConfirm = null, onOpen = null } = opts;
             const overlay = document.createElement('div');
             overlay.className = 'app-dialog-overlay';
             const safeMsg = (typeof msg === 'string') ? (isHtml ? msg : msg.replace(/\\n/g, '<br>')) : '';
-            
             const iconName = getMeaningfulIcon(title, danger);
             const iconColor = danger ? '#f87171' : '#7dd3fc';
 
             overlay.innerHTML = `
                 <div class="app-dialog-box" style="max-width: ${width};">
-                    <div class="app-dialog-icon">
-                        <i data-lucide="${iconName}" style="width:22px; height:22px; color:${iconColor};"></i>
+                    <div class="app-dialog-close" id="app-dialog-close-x"><i data-lucide="x" style="width:18px; height:18px;"></i></div>
+                    <div class="app-dialog-header">
+                        <div class="app-dialog-icon-inline" style="background: ${iconColor}20">
+                            <i data-lucide="${iconName}" style="width:20px; height:20px; color:${iconColor};"></i>
+                        </div>
+                        <div class="app-dialog-title">${title}</div>
                     </div>
-                    <div class="app-dialog-title">${title}</div>
                     <div class="app-dialog-msg">${safeMsg}</div>
                     <div class="app-dialog-actions">
                         <button class="btn btn-secondary" id="app-dialog-cancel" style="min-width:80px;">${cancelText}</button>
@@ -204,22 +198,20 @@ window.AppDialog = (() => {
             document.body.appendChild(overlay);
             if (window.lucide) window.lucide.createIcons({ root: overlay });
 
-            if (typeof onOpen === 'function') {
-                setTimeout(() => onOpen(overlay), 10);
-            }
+            if (typeof onOpen === 'function') setTimeout(() => onOpen(overlay), 10);
             
             const confirmed = async () => {
                 if (typeof onConfirm === 'function') {
                     const result = await onConfirm();
-                    if (result === false) return; // Keep modal open if onConfirm returns false
+                    if (result === false) return;
                 }
-                overlay.remove(); 
-                resolve(true); 
+                overlay.remove(); resolve(true);
             };
             const cancelled = () => { overlay.remove(); resolve(false); };
-            
+
             overlay.querySelector('#app-dialog-confirm').addEventListener('click', confirmed);
             overlay.querySelector('#app-dialog-cancel').addEventListener('click', cancelled);
+            overlay.querySelector('#app-dialog-close-x').addEventListener('click', cancelled);
             overlay.addEventListener('click', e => { if (e.target === overlay) cancelled(); });
             overlay.addEventListener('keydown', e => {
                 if (e.key === 'Enter') { e.preventDefault(); confirmed(); }
@@ -231,7 +223,6 @@ window.AppDialog = (() => {
 
     return { toast, alert, confirm };
 })();
-// ─── End AppDialog ─────────────────────────────────────────────────────────
 
 // ─── Student Data Manager (Centralized) ────────────────────────────────────
 window.studentDataManager = {
@@ -244,39 +235,28 @@ window.studentDataManager = {
         if (this.isSubscribed) return;
         this.isSubscribed = true;
 
-        // Small delay to ensure auth state is fully stable across Firebase services
         setTimeout(() => {
             const currentUser = firebase.auth().currentUser;
             if (!currentUser) {
                 console.warn("Student Sync: No user signed in yet, waiting...");
-                this.isSubscribed = false; // Allow retry
+                this.isSubscribed = false; 
                 return;
             }
             
-            console.log("Student Sync: Subscribing for user:", currentUser.email);
-            const modulesCol = firestore.collection('modules');
-            const studentDirDoc = modulesCol.doc('student_directory');
-            const studentsRef = studentDirDoc.collection('students');
-            
-            studentsRef.onSnapshot((querySnapshot) => {
-                const data = {};
-                querySnapshot.forEach((doc) => {
-                    data[doc.id] = doc.data();
+            firestore.collection('modules').doc('student_directory').collection('students')
+                .onSnapshot((snapshot) => {
+                    const data = {};
+                    snapshot.forEach(doc => {
+                        data[doc.id] = { id: doc.id, ...doc.data() };
+                    });
+                    this.students = data;
+                    this.dataLoaded = true;
+                    this.notify();
+                }, (error) => {
+                    console.error("Student Sync Error:", error);
+                    this.isSubscribed = false;
                 });
-                this.students = data;
-                this.dataLoaded = true;
-                this.notify();
-            }, (error) => {
-                const authState = firebase.auth().currentUser ? 'Authenticated' : 'Unauthenticated';
-                console.error(`Firestore Sync Error [${authState}]:`, error.code, error.message);
-                
-                let userFriendlyMsg = 'Failed to load student records.';
-                if (error.code === 'permission-denied') userFriendlyMsg = 'Permission Denied: Access to student records restricted.';
-                if (error.code === 'unavailable') userFriendlyMsg = 'Service Unavailable: Check your internet connection.';
-                
-                AppDialog.toast(`Sync Error: ${userFriendlyMsg} (${error.code || 'unknown'})`, 'error');
-            });
-        }, 500);
+        }, 1000);
     },
 
     onUpdate(callback) {
@@ -288,157 +268,70 @@ window.studentDataManager = {
         this.callbacks.forEach(cb => cb(this.students));
     }
 };
-// ─── End Student Data Manager ──────────────────────────────────────────────
 
-
-function getAreaIcon(name) {
-    const lower = name.toLowerCase();
-
-    // Floors
-    if (lower.includes('ground floor') || lower.includes('ground_floor')) return 'home';
-    if (lower.includes('first floor') || lower.includes('first_floor')) return 'layers';
-    if (lower.includes('terrace')) return 'cloud';
-
-    // Specific Rooms
-    if (lower.includes('kitchen')) return 'utensils';
-    if (lower.includes('auditorium')) return 'mic';
-    if (lower.includes('central room') || lower.includes('central_room')) return 'grid-3x3';
-    if (lower.includes('reception')) return 'info';
-    if (lower.includes('bathroom') || lower.includes('toilet')) return 'bath';
-    if (lower.includes('exit room') || lower.includes('exit_room')) return 'door-open';
-    if (lower.includes('entrance room') || lower.includes('entrance_room')) return 'door-closed';
-    if (lower.includes('staircase')) return 'move-vertical';
-
-    // Zones
-    if (lower.includes('zone 1') || lower.includes('zone_1')) return 'square-1';
-    if (lower.includes('zone 2') || lower.includes('zone_2')) return 'square-2';
-    if (lower.includes('zone 3') || lower.includes('zone_3')) return 'square-3';
-    if (lower.includes('zone 4') || lower.includes('zone_4')) return 'square-4';
-    if (lower.includes('zone')) return 'map-pin';
-
-    // Office/Work Spaces
-    if (lower.includes('computer lab') || lower.includes('lab')) return 'monitor';
-    if (lower.includes('ceo') || lower.includes('admin') || lower.includes('office')) return 'briefcase';
-
-    // General Categories
-    if (lower.includes('living')) return 'sofa';
-    if (lower.includes('bedroom')) return 'bed';
-    if (lower.includes('classroom')) return 'graduation-cap';
-    if (lower.includes('library')) return 'book-open';
-    if (lower.includes('gym')) return 'dumbbell';
-    if (lower.includes('parking') || lower.includes('garage')) return 'car';
-    if (lower.includes('garden')) return 'tree-pine';
-    if (lower.includes('server')) return 'server';
-    if (lower.includes('maintenance')) return 'wrench';
-    if (lower.includes('gate') || lower.includes('security')) return 'shield';
-
-    return 'box';
+// ─── Global Search Handler ──────────────────────────────────────────────────
+function handleGlobalSearch(query) {
+    const hash = window.location.hash;
+    if (hash.startsWith('#students')) {
+        if (window.studentDirectory) window.studentDirectory.handleSearch(query);
+    } else if (hash.startsWith('#staff')) {
+        if (window.staffDirectory) window.staffDirectory.handleSearch(query);
+    }
 }
 
-function formatName(name) {
-    if (!name) return name;
-    return name.split(/[\._ ]/)
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ');
+// ─── Formatting Helpers ─────────────────────────────────────────────────────
+function formatName(str) {
+    if (!str) return '';
+    return str.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
-function toggleSidebar() {
-    const activeApp = document.querySelector('.app-wrapper.active');
-    if (!activeApp) return;
+function formatDate(timestamp) {
+    if (!timestamp) return 'N/A';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
-    const sidebar = activeApp.querySelector('.console-sidebar');
-    const overlay = activeApp.querySelector('.sidebar-overlay');
-    const toggle = activeApp.querySelector('.mobile-nav-toggle');
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
+}
 
-    if (sidebar) sidebar.classList.toggle('open');
-    if (overlay) overlay.classList.toggle('active');
-    if (toggle) toggle.classList.toggle('active');
+// ─── Utility: Copy to Clipboard ─────────────────────────────────────────────
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        AppDialog.toast('Copied to clipboard!', 'success');
+    } catch (err) {
+        console.error('Copy failed:', err);
+    }
+}
 
-    // Update icons
-    lucide.createIcons();
+// ─── View Management ────────────────────────────────────────────────────────
+function switchView(viewId, entityId = null) {
+    const hash = window.location.hash.split('/')[0];
+    navigateTo(`${hash.substring(1)}/${viewId}${entityId ? '/' + entityId : ''}`);
 }
 
 function closeSidebar() {
-    if (window.innerWidth <= 1024) {
-        document.querySelectorAll('.console-sidebar').forEach(el => el.classList.remove('open'));
-        document.querySelectorAll('.sidebar-overlay').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.mobile-nav-toggle').forEach(el => el.classList.remove('active'));
-    }
+    document.querySelector('.console-sidebar')?.classList.remove('open');
+    document.querySelector('.sidebar-overlay')?.classList.remove('active');
 }
 
-function switchView(viewId, areaId = null) {
-    window.smartCampus.currentView = viewId;
-    window.smartCampus.activeAreaId = areaId;
-
-    // Update URL hash to persist state (e.g., #smart-campus/overview or #smart-campus/room/living_room)
-    let newHash = `smart-campus/${viewId}`;
-    if (areaId) newHash += `/${areaId}`;
-    window.location.hash = newHash;
-
-    // Update Sidebar items
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-        if (viewId === 'overview' && item.innerText.includes('Overview')) item.classList.add('active');
-        if (areaId && item.dataset.areaId === areaId) item.classList.add('active');
-    });
-
-    // Update View Visibility - SCOPED TO SMART CAMPUS ONLY
-    const smartCampusApp = document.getElementById('smart-campus-app');
-    if (smartCampusApp) {
-        smartCampusApp.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    }
-
-    if (viewId === 'overview') {
-        const overview = document.getElementById('view-overview');
-        if (overview) overview.classList.add('active');
-        const screenTitle = document.getElementById('screen-title');
-        if (screenTitle) screenTitle.innerText = 'Campus Overview';
-        const screenSubtitle = document.getElementById('screen-subtitle');
-        if (screenSubtitle) screenSubtitle.innerText = 'Monitoring all smart systems';
-    } else if (viewId === 'scenes') {
-        const scenesView = document.getElementById('view-scenes');
-        if (scenesView) scenesView.classList.add('active');
-        const screenTitle = document.getElementById('screen-title');
-        if (screenTitle) screenTitle.innerText = 'Scene Control';
-        const screenSubtitle = document.getElementById('screen-subtitle');
-        if (screenSubtitle) screenSubtitle.innerText = 'Activate pre-configured device groups';
-        window.smartCampus.renderScenes();
-    } else {
-        const area = window.smartCampus.areas[areaId];
-        if (area) {
-            const areaName = formatName(area.name || areaId);
-            const viewRoom = document.getElementById('view-room');
-            if (viewRoom) viewRoom.classList.add('active');
-            const screenTitle = document.getElementById('screen-title');
-            if (screenTitle) screenTitle.innerText = areaName;
-            const screenSubtitle = document.getElementById('screen-subtitle');
-            if (screenSubtitle) screenSubtitle.innerText = `Controlling ${Object.keys(area.devices || {}).length} items`;
-            window.smartCampus.renderAreaDetails(areaId);
-        }
-    }
-
-    if (window.innerWidth <= 1024) {
-        closeSidebar();
-    }
-    lucide.createIcons();
+function toggleSidebar() {
+    document.querySelector('.console-sidebar')?.classList.toggle('open');
+    document.querySelector('.sidebar-overlay')?.classList.toggle('active');
 }
 
 function navigateTo(route, updateHash = true) {
     if (updateHash) window.location.hash = route;
 
-    // Support nested routes like #whatsapp/broadcast
     const parts = route.split('/');
     const mainRoute = parts[0];
     const subRoute = parts[1];
 
-    // Hide all views
     document.getElementById('landing-view').classList.remove('active');
     document.querySelectorAll('.app-wrapper').forEach(el => el.classList.remove('active'));
-
-    // Close user dropdown if open
     document.getElementById('user-dropdown').classList.remove('show');
 
-    // Check Permissions before showing
     const userData = window.currentUserData || {};
     const perms = userData.permissions || {};
     const isAdmin = userData.isAdmin;
@@ -450,134 +343,64 @@ function navigateTo(route, updateHash = true) {
         if (isAdmin || perms.smart_campus?.view || perms.smart_campus === true) {
             document.getElementById('smart-campus-app').classList.add('active');
             window.smartCampus.subscribe();
-            
-            // Handle sub-routing for smart-campus
-            if (subRoute) {
-                // Wait a tiny bit for data to load if needed, but switchView handles missing areas gracefully
-                switchView(subRoute, parts[2]); 
-            } else {
-                switchView('overview');
-            }
+            if (subRoute) switchView(subRoute, parts[2]); 
+            else switchView('overview');
         } else {
-            AppDialog.toast('Access Denied: You do not have permission to access Smart Campus.', 'error');
+            AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'admin') {
         if (isAdmin) {
             document.getElementById('admin-app').classList.add('active');
-            window.smartCampus.subscribe(); // Ensure data is available
+            window.smartCampus.subscribe();
             window.smartCampus.currentView = 'admin';
             window.adminPanel.render();
             window.adminPanel.renderUserManagement();
         } else {
-            AppDialog.toast('Access Denied: Admin access required.', 'error');
+            AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'students') {
         if (isAdmin || perms.student_directory?.view || perms.student_directory === true) {
             document.getElementById('student-app').classList.add('active');
             window.studentDirectory.subscribe();
-            
-            // Handle sub-routing for students
-            if (subRoute && window.studentDirectory.switchView) {
-                window.studentDirectory.switchView(subRoute, parts[2]);
-            } else {
-                window.studentDirectory.render();
-            }
+            if (subRoute && window.studentDirectory.switchView) window.studentDirectory.switchView(subRoute, parts[2]);
+            else window.studentDirectory.render();
         } else {
-            AppDialog.toast('Access Denied: You do not have permission to access Student Directory.', 'error');
+            AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'staff') {
         if (isAdmin || perms.staff_directory?.view || perms.staff_directory === true) {
             document.getElementById('staff-app').classList.add('active');
             window.staffDirectory.subscribe();
-            
-            // Handle sub-routing for staff if applicable
-            if (subRoute && window.staffDirectory.switchView) {
-                window.staffDirectory.switchView(subRoute);
-            } else {
-                window.staffDirectory.render();
-            }
+            if (subRoute && window.staffDirectory.switchView) window.staffDirectory.switchView(subRoute);
+            else window.staffDirectory.render();
         } else {
-            AppDialog.toast('Access Denied: You do not have permission to access Staff Directory.', 'error');
+            AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'fees') {
         if (isAdmin || perms.fees_accounting?.view || perms.fees_accounting === true) {
             document.getElementById('fees-app').classList.add('active');
             window.feesManager.subscribe();
-            
-            if (subRoute && window.feesManager.switchView) {
-                window.feesManager.switchView(subRoute, parts[2]);
-            } else {
-                window.feesManager.switchView('overview');
-            }
+            if (subRoute && window.feesManager.switchView) window.feesManager.switchView(subRoute, parts[2]);
+            else window.feesManager.switchView('collections');
         } else {
-            AppDialog.toast('Access Denied: You do not have permission to access Fees & Accounting.', 'error');
+            AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'whatsapp') {
         if (isAdmin || perms.whatsapp_sender?.access || perms.whatsapp_sender === true) {
-            document.getElementById('whatsapp-app').classList.add('active');
-            if (window.whatsAppSender) {
-                window.whatsAppSender.initialize();
-                // If we have a sub-route, switch to it, otherwise default to chats
-                if (subRoute) {
-                    window.whatsAppSender.switchView(subRoute);
-                } else {
-                    window.whatsAppSender.switchView('chats');
-                }
-            }
+            document.getElementById('wa-app-wrapper').classList.add('active');
+            if (subRoute) window.whatsappMain.switchView(subRoute);
+            else window.whatsappMain.switchView('broadcast');
         } else {
-            AppDialog.toast('Access Denied: You do not have permission to access WhatsApp Sender.', 'error');
+            AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
     }
-    if (window.innerWidth <= 1024) {
-        closeSidebar();
-    }
+
+    if (window.innerWidth <= 1024) closeSidebar();
+    lucide.createIcons();
 }
-
-function renderPortalCards(userData) {
-    const perms = userData.permissions || {};
-    const isAdmin = userData.isAdmin;
-
-    const scCard = document.getElementById('card-smart-campus');
-    if (isAdmin || perms.smart_campus?.view || perms.smart_campus === true) scCard.classList.remove('disabled');
-    else scCard.classList.add('disabled');
-
-    const stCard = document.getElementById('card-students');
-    if (isAdmin || perms.student_directory?.view || perms.student_directory === true) stCard.classList.remove('disabled');
-    else stCard.classList.add('disabled');
-
-    const staffCard = document.getElementById('card-staff');
-    if (isAdmin || perms.staff_directory?.view || perms.staff_directory === true) staffCard.classList.remove('disabled');
-    else staffCard.classList.add('disabled');
-
-    const feesCard = document.getElementById('card-fees');
-    if (isAdmin || perms.fees_accounting?.view || perms.fees_accounting === true) feesCard.classList.remove('disabled');
-    else feesCard.classList.add('disabled');
-
-    const adminCard = document.getElementById('card-admin');
-    if (isAdmin) adminCard.classList.remove('disabled');
-    else adminCard.classList.add('disabled');
-
-    const whatsappCard = document.getElementById('card-whatsapp');
-    if (isAdmin || perms.whatsapp_sender?.access || perms.whatsapp_sender === true) whatsappCard.classList.remove('disabled');
-    else whatsappCard.classList.add('disabled');
-}
-
-window.toggleUserDropdown = () => {
-    document.getElementById('user-dropdown').classList.toggle('show');
-};
-
-// Close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-    const widget = document.getElementById('user-widget');
-    if (widget && !widget.contains(e.target)) {
-        document.getElementById('user-dropdown').classList.remove('show');
-    }
-});
-
-

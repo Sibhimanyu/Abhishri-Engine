@@ -523,8 +523,11 @@ header {
   .console-sidebar {
     position: fixed;
     left: -100%;
+    top: 0;
     height: 100vh;
     z-index: 150;
+    width: 280px;
+    background: #161b22;
   }
 
   aside.open,
@@ -539,26 +542,33 @@ header {
 
   main,
   .console-main {
-    padding: 32px 24px;
+    padding: 24px 16px;
+    width: 100%;
   }
 
   .highlights {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   header {
     flex-direction: column;
-    gap: 24px;
+    gap: 20px;
     align-items: stretch;
+    margin-top: 60px;
+  }
+
+  .view-title h1 {
+    font-size: 1.8rem;
   }
 
   .dashboard-grid {
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 24px;
+    grid-template-columns: 1fr !important;
+    gap: 16px;
   }
 
   .room-entities-group {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .sensor-card {
@@ -569,23 +579,25 @@ header {
     grid-template-columns: 1fr;
   }
 
-  .admin-toolbar {
+  .admin-toolbar, .console-toolbar {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
   }
 
   .search-box {
-    width: 100%;
+    width: 100% !important;
+    max-width: none !important;
   }
 
   .admin-actions {
     width: 100%;
     flex-wrap: wrap;
+    gap: 8px;
   }
 
   .btn {
-    flex: 1;
-    min-width: 120px;
+    width: 100%;
     justify-content: center;
   }
 }

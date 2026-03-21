@@ -532,13 +532,15 @@
       </div>
 
       <nav id="sidebar-nav-fees">
-        <div class="nav-item" onclick="navigateTo('portal')">
+        <div class="nav-item" onclick="navigateTo('portal')" style="margin-bottom: 20px;">
           <i data-lucide="arrow-left"></i>
           <span>Back to Portal</span>
         </div>
+
+        <div class="sidebar-section-label" style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 20px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">Revenue Management</div>
         <div class="nav-item active" onclick="window.feesManager.switchView('collections')" id="nav-fees-collections">
           <i data-lucide="line-chart"></i>
-          <span>Fee Collections</span>
+          <span>Income Insights</span>
         </div>
         <div class="nav-item" onclick="window.feesManager.switchView('overview')" id="nav-fees-overview">
           <i data-lucide="users"></i>
@@ -546,15 +548,17 @@
         </div>
         <div class="nav-item" onclick="window.feesManager.switchView('transactions')" id="nav-fees-transactions">
           <i data-lucide="receipt"></i>
-          <span>Fee Transactions</span>
-        </div>
-        <div class="nav-item" onclick="window.feesManager.switchView('expenses')" id="nav-fees-expenses">
-          <i data-lucide="wallet"></i>
-          <span>Expense Management</span>
+          <span>Fee Collections</span>
         </div>
         <div class="nav-item" onclick="window.feesManager.switchView('plans')" id="nav-fees-plans">
           <i data-lucide="settings"></i>
-          <span>Fee Configurations</span>
+          <span>Package Templates</span>
+        </div>
+
+        <div class="sidebar-section-label" style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 30px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">Operational Expenses</div>
+        <div class="nav-item" onclick="window.feesManager.switchView('expenses')" id="nav-fees-expenses">
+          <i data-lucide="wallet"></i>
+          <span>Expense Logs</span>
         </div>
       </nav>
     </aside>
