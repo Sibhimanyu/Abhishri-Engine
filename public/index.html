@@ -481,6 +481,14 @@
           <i data-lucide="calendar-check"></i>
           <span>Attendance</span>
         </div>
+        <div class="nav-item" onclick="window.staffDirectory.switchView('attendance_reports')" id="nav-staff-attendance_reports">
+          <i data-lucide="line-chart"></i>
+          <span>Attendance Reports</span>
+        </div>
+        <div class="nav-item" onclick="window.staffDirectory.switchView('performance')" id="nav-staff-performance">
+          <i data-lucide="activity"></i>
+          <span>Performance Logs</span>
+        </div>
       </nav>
     </aside>
 
@@ -505,17 +513,32 @@
       <div id="staff-content" class="view active">
         <!-- Directory View (Read Only) -->
         <div id="staff-view-directory" class="staff-subview active">
-          <div class="dashboard-grid" id="staff-grid-directory"></div>
+          <div id="staff-content-directory"></div>
         </div>
 
         <!-- Manage View (Add/Edit) -->
         <div id="staff-view-manage" class="staff-subview" style="display:none;">
-          <div class="dashboard-grid" id="staff-grid-manage"></div>
+          <div id="staff-content-manage"></div>
         </div>
 
         <!-- Attendance View -->
         <div id="staff-view-attendance" class="staff-subview" style="display:none;">
-          <div class="attendance-container" id="staff-attendance-list"></div>
+          <div id="staff-content-attendance"></div>
+        </div>
+
+        <!-- Attendance Reports View -->
+        <div id="staff-view-attendance_reports" class="staff-subview" style="display:none;">
+          <div id="staff-content-attendance-reports"></div>
+        </div>
+
+        <!-- Performance View -->
+        <div id="staff-view-performance" class="staff-subview" style="display:none;">
+          <div id="staff-content-performance"></div>
+        </div>
+
+        <!-- Report View (Detailed Profile) -->
+        <div id="staff-view-report" class="staff-subview" style="display:none;">
+          <div id="staff-content-report"></div>
         </div>
       </div>
     </main>

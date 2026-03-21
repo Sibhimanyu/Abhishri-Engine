@@ -184,6 +184,10 @@ window.studentDirectory = {
         const container = document.getElementById('student-content-directory');
         if (!container) return;
 
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const canManage = isAdmin || (userData.permissions?.student_directory?.manage);
+
         const toolbar = document.getElementById('student-toolbar');
         if (toolbar) {
             toolbar.innerHTML = `
@@ -192,8 +196,10 @@ window.studentDirectory = {
                     <input type="text" placeholder="Search by name or ID..." oninput="window.studentDirectory.handleSearch(this.value)" value="${this.searchQuery}">
                 </div>
                 <div class="header-actions">
-                    <button class="btn btn-secondary" onclick="window.studentDirectory.seedSampleStudent()"><i data-lucide="database"></i></button>
-                    <button class="btn btn-primary" onclick="window.studentDirectory.switchView('manage')"><i data-lucide="plus"></i> New Student</button>
+                    ${canManage ? `
+                        <button class="btn btn-secondary" onclick="window.studentDirectory.seedSampleStudent()"><i data-lucide="database"></i></button>
+                        <button class="btn btn-primary" onclick="window.studentDirectory.switchView('manage')"><i data-lucide="plus"></i> New Student</button>
+                    ` : ''}
                 </div>
             `;
         }

@@ -269,6 +269,51 @@ window.studentDataManager = {
     }
 };
 
+// ─── Staff Data Manager (Centralized) ───────────────────────────────────────
+window.staffDataManager = {
+    staff: {},
+    dataLoaded: false,
+    isSubscribed: false,
+    callbacks: [],
+
+    subscribe() {
+        if (this.isSubscribed) return;
+        this.isSubscribed = true;
+
+        setTimeout(() => {
+            const currentUser = firebase.auth().currentUser;
+            if (!currentUser) {
+                console.warn("Staff Sync: No user signed in yet, waiting...");
+                this.isSubscribed = false; 
+                return;
+            }
+            
+            firestore.collection('modules').doc('staff_directory').collection('staff')
+                .onSnapshot((snapshot) => {
+                    const data = {};
+                    snapshot.forEach(doc => {
+                        data[doc.id] = { id: doc.id, ...doc.data() };
+                    });
+                    this.staff = data;
+                    this.dataLoaded = true;
+                    this.notify();
+                }, (error) => {
+                    console.error("Staff Sync Error:", error);
+                    this.isSubscribed = false;
+                });
+        }, 1000);
+    },
+
+    onUpdate(callback) {
+        this.callbacks.push(callback);
+        if (this.dataLoaded) callback(this.staff);
+    },
+
+    notify() {
+        this.callbacks.forEach(cb => cb(this.staff));
+    }
+};
+
 // ─── Global Search Handler ──────────────────────────────────────────────────
 function handleGlobalSearch(query) {
     const hash = window.location.hash;

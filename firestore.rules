@@ -39,17 +39,29 @@ service cloud.firestore {
 
     // --- Student Directory Module ---
     match /modules/student_directory {
-      allow read, write: if request.auth != null;
-      match /{allPaths=**} {
-        allow read, write: if request.auth != null;
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'view'));
+      
+      match /students/{studentId} {
+        allow create, update, delete: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'manage'));
+        
+        match /performance_logs/{logId} {
+          allow read: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'view'));
+          allow write: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'manage'));
+        }
       }
     }
 
     // --- Staff Directory Module ---
     match /modules/staff_directory {
-      allow read, write: if isAuthenticated();
-      match /{allPaths=**} {
-        allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
+      
+      match /staff/{staffId} {
+        allow create, update, delete: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'manage'));
+        
+        match /performance_logs/{logId} {
+          allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
+          allow write: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'pulse'));
+        }
       }
     }
 
@@ -78,14 +90,16 @@ service cloud.firestore {
       // Allow any authenticated user to check their own status
       allow read: if request.auth != null && (request.auth.token.email.lower() == email.lower() || isAdmin());
       
-      // Allow auto-provisioning for specific domains
+      // Allow creation if:
+      // 1. User is auto-provisioning themselves from an allowed domain
+      // 2. An existing admin is manually authorizing a new email
       allow create: if request.auth != null && (
-        request.auth.token.email.lower() == email.lower() && (
+        (request.auth.token.email.lower() == email.lower() && (
           email.lower().endsWith('@abhishriacademy.in') || 
           email.lower().endsWith('@zoho.com') || 
           email.lower().endsWith('@zoho.in') ||
           email.lower() == 'sibhi.gv@gmail.com'
-        )
+        )) || isAdmin()
       );
 
       // Only admins can update or delete users
@@ -96,6 +110,11 @@ service cloud.firestore {
     function isAdmin() {
       return request.auth != null && 
         get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.isAdmin == true;
+    }
+
+    // Helper for granular permission check
+    function getPerm(module, action) {
+      return get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.permissions[module][action] == true;
     }
   }
 }

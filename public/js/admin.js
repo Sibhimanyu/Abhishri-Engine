@@ -156,11 +156,28 @@ window.adminPanel = {
                 const badges = [];
                 if (isAdmin) badges.push('<span class="perm-badge perm-badge-admin">Admin</span>');
                 else {
-                    if (perms.smart_campus === true || perms.smart_campus?.view) badges.push('<span class="perm-badge perm-badge-campus">Campus</span>');
-                    if (perms.staff_directory === true || perms.staff_directory?.view) badges.push('<span class="perm-badge perm-badge-staff">Staff</span>');
-                    if (perms.student_directory === true || perms.student_directory?.view) badges.push('<span class="perm-badge perm-badge-student">Students</span>');
-                    if (perms.whatsapp_sender === true || perms.whatsapp_sender?.access) badges.push('<span class="perm-badge perm-badge-whatsapp">WhatsApp</span>');
-                    if (perms.fees_accounting === true || perms.fees_accounting?.view) badges.push('<span class="perm-badge perm-badge-fees">Fees</span>');
+                    if (perms.smart_campus?.view || perms.smart_campus === true) badges.push('<span class="perm-badge perm-badge-campus">Campus View</span>');
+                    if (perms.smart_campus?.control) badges.push('<span class="perm-badge perm-badge-campus">Campus Ctrl</span>');
+                    
+                    if (perms.student_directory?.view || perms.student_directory === true) badges.push('<span class="perm-badge perm-badge-student">Student View</span>');
+                    if (perms.student_directory?.manage) badges.push('<span class="perm-badge perm-badge-student">Student Ctrl</span>');
+                    if (perms.student_directory?.attendance) badges.push('<span class="perm-badge perm-badge-student">Student Attd</span>');
+                    if (perms.student_performance?.view) badges.push('<span class="perm-badge perm-badge-student">Student Perf</span>');
+                    
+                    if (perms.staff_directory?.view || perms.staff_directory === true) badges.push('<span class="perm-badge perm-badge-staff">Staff View</span>');
+                    if (perms.staff_directory?.manage) badges.push('<span class="perm-badge perm-badge-staff">Staff Ctrl</span>');
+                    if (perms.staff_directory?.attendance) badges.push('<span class="perm-badge perm-badge-staff">Staff Attd</span>');
+                    if (perms.staff_directory?.pulse) badges.push('<span class="perm-badge perm-badge-staff">Staff Perf</span>');
+                    
+                    if (perms.fees_accounting?.view || perms.fees_accounting === true) badges.push('<span class="perm-badge perm-badge-fees">Fee View</span>');
+                    if (perms.fees_accounting?.ledger) badges.push('<span class="perm-badge perm-badge-fees">Fee Ledger</span>');
+                    if (perms.fees_accounting?.transactions) badges.push('<span class="perm-badge perm-badge-fees">Fee Trans</span>');
+                    if (perms.fees_accounting?.config) badges.push('<span class="perm-badge perm-badge-fees">Fee Config</span>');
+                    if (perms.fees_accounting?.expenses) badges.push('<span class="perm-badge perm-badge-fees">Fee Exp</span>');
+                    
+                    if (perms.whatsapp_sender?.access || perms.whatsapp_sender === true) badges.push('<span class="perm-badge perm-badge-whatsapp">WA Access</span>');
+                    if (perms.whatsapp_sender?.broadcast) badges.push('<span class="perm-badge perm-badge-whatsapp">WA Broadcast</span>');
+                    
                     if (badges.length === 0) badges.push('<span class="perm-badge perm-badge-none">No Access</span>');
                 }
 
@@ -351,26 +368,93 @@ window.adminPanel = {
     showEditUserModal(email) {
         const user = this.allowedUsersData[email];
         const p = user.permissions || {};
+        
+        // Define safe access helpers
+        const getPerm = (module, action) => p[module] === true || (p[module] && p[module][action]) ? 'checked' : '';
+
         AppDialog.confirm({
-            title: `Edit Permissions: ${email}`,
-            width: '500px',
+            title: `Granular Access: ${email}`,
+            width: '800px',
             content: `
-                <div class="form-group"><label><input type="checkbox" id="edit-admin" ${user.isAdmin ? 'checked' : ''}> Is Administrator</label></div>
-                <div class="form-section-title" style="margin-top:20px;">Module Access</div>
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-                    <div><label><input type="checkbox" class="perm-check" data-module="smart_campus" ${p.smart_campus ? 'checked' : ''}> Smart Campus</label></div>
-                    <div><label><input type="checkbox" class="perm-check" data-module="student_directory" ${p.student_directory ? 'checked' : ''}> Students</label></div>
-                    <div><label><input type="checkbox" class="perm-check" data-module="staff_directory" ${p.staff_directory ? 'checked' : ''}> Staff</label></div>
-                    <div><label><input type="checkbox" class="perm-check" data-module="fees_accounting" ${p.fees_accounting ? 'checked' : ''}> Fees</label></div>
-                    <div><label><input type="checkbox" class="perm-check" data-module="whatsapp_sender" ${p.whatsapp_sender ? 'checked' : ''}> WhatsApp</label></div>
+                <div class="form-group" style="padding-bottom:15px; border-bottom:1px solid var(--card-border); margin-bottom:20px;">
+                    <label style="display:flex; align-items:center; gap:10px; font-size:1.1rem; color:var(--accent-primary);">
+                        <input type="checkbox" id="edit-admin" ${user.isAdmin ? 'checked' : ''} style="width:20px; height:20px;"> 
+                        <strong>Global Administrator (Unrestricted Access)</strong>
+                    </label>
+                </div>
+                
+                <div id="granular-permissions-container" style="display:${user.isAdmin ? 'none' : 'block'}; max-height: 50vh; overflow-y: auto; padding-right:15px;">
+                    <!-- Smart Campus -->
+                    <div class="form-section-title" style="margin-top:0;"><i data-lucide="home"></i> Smart Campus</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:20px; background:rgba(255,255,255,0.02); padding:15px; border-radius:12px;">
+                        <label><input type="checkbox" class="perm-check" data-mod="smart_campus" data-act="view" ${getPerm('smart_campus', 'view')}> View Dashboard & Telemetry</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="smart_campus" data-act="control" ${getPerm('smart_campus', 'control')}> Control Devices & Scenes</label>
+                    </div>
+
+                    <!-- Student Directory -->
+                    <div class="form-section-title"><i data-lucide="users"></i> Student Directory</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:20px; background:rgba(255,255,255,0.02); padding:15px; border-radius:12px;">
+                        <label><input type="checkbox" class="perm-check" data-mod="student_directory" data-act="view" ${getPerm('student_directory', 'view')}> View Student Profiles</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="student_directory" data-act="manage" ${getPerm('student_directory', 'manage')}> Manage Admissions (Add/Edit/Delete)</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="student_directory" data-act="attendance" ${getPerm('student_directory', 'attendance')}> Mark Daily Attendance</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="student_directory" data-act="reports" ${getPerm('student_directory', 'reports')}> View Attendance Reports</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="student_performance" data-act="view" ${getPerm('student_performance', 'view')}> Access Performance Pulse</label>
+                    </div>
+
+                    <!-- Staff Directory -->
+                    <div class="form-section-title"><i data-lucide="contact"></i> Staff Directory</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:20px; background:rgba(255,255,255,0.02); padding:15px; border-radius:12px;">
+                        <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="view" ${getPerm('staff_directory', 'view')}> View Staff Profiles</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="manage" ${getPerm('staff_directory', 'manage')}> Manage Staff (Add/Edit/Delete)</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="attendance" ${getPerm('staff_directory', 'attendance')}> Mark Daily Attendance</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="reports" ${getPerm('staff_directory', 'reports')}> View Attendance Reports</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="pulse" ${getPerm('staff_directory', 'pulse')}> Access Performance Pulse</label>
+                    </div>
+
+                    <!-- Fees & Accounting -->
+                    <div class="form-section-title"><i data-lucide="wallet"></i> Fees & Accounting</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:20px; background:rgba(255,255,255,0.02); padding:15px; border-radius:12px;">
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="view" ${getPerm('fees_accounting', 'view')}> View Revenue Dashboard</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="ledger" ${getPerm('fees_accounting', 'ledger')}> View Student Ledgers</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="transactions" ${getPerm('fees_accounting', 'transactions')}> Log & Reverse Payments</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="config" ${getPerm('fees_accounting', 'config')}> Configure Fee Templates & Waivers</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="expenses" ${getPerm('fees_accounting', 'expenses')}> Manage Operational Expenses</label>
+                    </div>
+
+                    <!-- WhatsApp Sender -->
+                    <div class="form-section-title"><i data-lucide="send"></i> WhatsApp API</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px; background:rgba(255,255,255,0.02); padding:15px; border-radius:12px;">
+                        <label><input type="checkbox" class="perm-check" data-mod="whatsapp_sender" data-act="access" ${getPerm('whatsapp_sender', 'access')}> Access Module (View Chats/Lists)</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="whatsapp_sender" data-act="broadcast" ${getPerm('whatsapp_sender', 'broadcast')}> Execute Mass Broadcasts</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="whatsapp_sender" data-act="manage" ${getPerm('whatsapp_sender', 'manage')}> Manage Contact Lists & History</label>
+                    </div>
                 </div>`,
-            onConfirm: async () => {
-                const perms = {};
-                document.querySelectorAll('.perm-check').forEach(el => perms[el.dataset.module] = el.checked);
-                await firestore.collection('allowedUsers').doc(email).update({
-                    isAdmin: document.getElementById('edit-admin').checked,
-                    permissions: perms
+            onOpen: (overlay) => {
+                if (window.lucide) window.lucide.createIcons({ root: overlay });
+                const adminToggle = document.getElementById('edit-admin');
+                const permContainer = document.getElementById('granular-permissions-container');
+                adminToggle.addEventListener('change', (e) => {
+                    permContainer.style.display = e.target.checked ? 'none' : 'block';
                 });
+            },
+            onConfirm: async () => {
+                const isAdmin = document.getElementById('edit-admin').checked;
+                const permissions = {};
+                
+                if (!isAdmin) {
+                    document.querySelectorAll('.perm-check').forEach(el => {
+                        const mod = el.getAttribute('data-mod');
+                        const act = el.getAttribute('data-act');
+                        if (!permissions[mod]) permissions[mod] = {};
+                        permissions[mod][act] = el.checked;
+                    });
+                }
+
+                await firestore.collection('allowedUsers').doc(email).update({
+                    isAdmin,
+                    permissions
+                });
+                AppDialog.toast(`Permissions updated for ${email}`, 'success');
                 return true;
             }
         });
