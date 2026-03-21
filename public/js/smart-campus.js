@@ -2,53 +2,65 @@
 
 window.smartCampus = {
     areas: {},
+    scenes: {},
     currentView: 'overview',
     activeAreaId: null,
     pendingStates: {},
     areasListener: null,
+    scenesListener: null,
 
     subscribe() {
-        if (this.areasListener) return;
+        if (!this.areasListener) {
+            this.areasListener = db.ref('modules/smart_campus/areas').on('value', snap => {
+                const newAreas = snap.val() || {};
 
-        this.areasListener = db.ref('modules/smart_campus/areas').on('value', snap => {
-            const newAreas = snap.val() || {};
+                // Check and clear pending states
+                Object.keys(this.pendingStates).forEach(entityId => {
+                    let foundState = null;
+                    Object.values(newAreas).forEach(area => {
+                        if (area.devices) {
+                            Object.values(area.devices).forEach(device => {
+                                if (device.entity_id === entityId) {
+                                    foundState = device.state;
+                                }
+                            });
+                        }
+                    });
 
-            // Check and clear pending states
-            Object.keys(this.pendingStates).forEach(entityId => {
-                let foundState = null;
-                Object.values(newAreas).forEach(area => {
-                    if (area.devices) {
-                        Object.values(area.devices).forEach(device => {
-                            if (device.entity_id === entityId) {
-                                foundState = device.state;
+                    if (foundState === this.pendingStates[entityId]?.state) {
+                        delete this.pendingStates[entityId];
+                    }
+                });
+
+                // Preserve 'hidden' property from existing devices
+                Object.keys(newAreas).forEach(areaId => {
+                    if (newAreas[areaId].devices && this.areas[areaId]?.devices) {
+                        Object.keys(newAreas[areaId].devices).forEach(deviceKey => {
+                            if (this.areas[areaId].devices[deviceKey]?.hidden) {
+                                newAreas[areaId].devices[deviceKey].hidden = true;
                             }
                         });
                     }
                 });
 
-                if (foundState === this.pendingStates[entityId]?.state) {
-                    delete this.pendingStates[entityId];
-                }
+                this.areas = newAreas;
+                if (this.currentView === 'admin') window.adminPanel.render();
+                if (this.currentView === 'room' && this.activeAreaId) this.renderAreaDetails(this.activeAreaId);
+                this.renderDashboard();
+            }, error => {
+                console.error("DB Error (Areas):", error);
             });
+        }
 
-            // Preserve 'hidden' property from existing devices
-            Object.keys(newAreas).forEach(areaId => {
-                if (newAreas[areaId].devices && this.areas[areaId]?.devices) {
-                    Object.keys(newAreas[areaId].devices).forEach(deviceKey => {
-                        if (this.areas[areaId].devices[deviceKey]?.hidden) {
-                            newAreas[areaId].devices[deviceKey].hidden = true;
-                        }
-                    });
-                }
+        if (!this.scenesListener) {
+            this.scenesListener = db.ref('modules/smart_campus/scenes').on('value', snap => {
+                this.scenes = snap.val() || {};
+                if (this.currentView === 'scenes') this.renderScenes();
+                if (this.currentView === 'admin' && window.adminPanel.currentAdminView === 'scenes') window.adminPanel.renderScenesConfig();
+            }, error => {
+                console.error("DB Error (Scenes):", error);
             });
-
-            this.areas = newAreas;
-            if (this.currentView === 'admin') window.adminPanel.render();
-            if (this.currentView === 'room' && this.activeAreaId) this.renderAreaDetails(this.activeAreaId);
-            this.renderDashboard();
-        }, error => {
-            console.error("DB Error:", error);
-        });
+        }
     },
 
     renderDashboard() {
@@ -61,10 +73,12 @@ window.smartCampus = {
         // 1. Sidebar Areas
         const backToPortalItem = nav.querySelector('div[onclick*="portal"]');
         const overviewItem = nav.querySelector('div[onclick*="overview"]');
+        const scenesItem = document.getElementById('nav-item-scenes');
         const adminSideItem = document.getElementById('nav-item-admin');
         nav.innerHTML = '';
         if (backToPortalItem) nav.appendChild(backToPortalItem);
         if (overviewItem) nav.appendChild(overviewItem);
+        if (scenesItem) nav.appendChild(scenesItem);
         if (adminSideItem) {
             nav.appendChild(adminSideItem);
             const userData = window.currentUserData || {};
@@ -136,6 +150,83 @@ window.smartCampus = {
 
         const loader = document.getElementById('loader');
         if (loader) loader.classList.add('hidden');
+    },
+
+    renderScenes() {
+        const grid = document.getElementById('scenes-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+
+        const sceneIds = Object.keys(this.scenes).sort((a, b) => (this.scenes[a].name || '').localeCompare(this.scenes[b].name || ''));
+
+        if (sceneIds.length === 0) {
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1/-1; padding: 40px; text-align: center; color: var(--text-dim);">
+                    <i data-lucide="zap-off" style="width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5;"></i>
+                    <p>No scenes configured yet.</p>
+                </div>
+            `;
+            lucide.createIcons({ root: grid });
+            return;
+        }
+
+        sceneIds.forEach(id => {
+            const scene = this.scenes[id];
+            const deviceCount = Object.keys(scene.devices || {}).length;
+            const icon = scene.icon || 'zap';
+
+            const card = document.createElement('div');
+            card.className = 'card scene-card';
+            card.onclick = () => this.triggerScene(id);
+            card.innerHTML = `
+                <div class="card-header">
+                    <div class="card-icon" style="background: rgba(251, 191, 36, 0.1); color: #fbbf24;">
+                        <i data-lucide="${icon}"></i>
+                    </div>
+                    <div class="trigger-hint">Activate <i data-lucide="play" style="width:12px; height:12px;"></i></div>
+                </div>
+                <div class="card-info">
+                    <h2>${scene.name}</h2>
+                    <div class="card-stats">${deviceCount} Actions</div>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+
+        lucide.createIcons({ root: grid });
+    },
+
+    triggerScene(sceneId) {
+        const scene = this.scenes[sceneId];
+        if (!scene || !scene.devices) return;
+
+        AppDialog.toast(`Activating scene: ${scene.name}`, 'info');
+
+        Object.keys(scene.devices).forEach(entityId => {
+            const target = scene.devices[entityId];
+            const domain = entityId.split('.')[0];
+            
+            const service = target.state === 'on' ? (domain === 'fan' && target.percentage !== undefined ? 'set_percentage' : 'turn_on') : 'turn_off';
+            
+            const payload = { entity_id: entityId, domain, service };
+            if (service === 'set_percentage') {
+                payload.data = { percentage: target.percentage };
+            }
+
+            const cmdRef = db.ref('modules/smart_campus/commands').push();
+            cmdRef.set(payload);
+
+            // Set pending state
+            this.pendingStates[entityId] = {
+                state: target.state,
+                cmdKey: cmdRef.key,
+                timestamp: Date.now()
+            };
+        });
+
+        if (this.currentView === 'room' && this.activeAreaId) {
+            this.renderAreaDetails(this.activeAreaId);
+        }
     },
 
     renderAreaDetails(areaId) {

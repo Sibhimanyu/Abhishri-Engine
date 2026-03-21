@@ -4,8 +4,10 @@ window.adminPanel = {
     selectedItems: new Set(),
     allowedUsersData: {},
     usersData: {},
+    currentAdminView: 'entities',
 
     render() {
+        if (this.currentAdminView !== 'entities') return;
         const container = document.getElementById('admin-list');
         container.innerHTML = '';
 
@@ -293,6 +295,60 @@ window.adminPanel = {
                     });
             }
         });
+    },
+
+    renderScenesConfig() {
+        const container = document.getElementById('admin-scenes-list');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const searchTerm = (document.getElementById('scenes-search').value || '').toLowerCase();
+        const scenes = window.smartCampus.scenes;
+
+        const filtered = Object.keys(scenes).filter(id => {
+            return (scenes[id].name || '').toLowerCase().includes(searchTerm);
+        }).sort((a, b) => (scenes[a].name || '').localeCompare(scenes[b].name || ''));
+
+        if (filtered.length === 0) {
+            container.innerHTML = `<div class="empty-state" style="grid-column: 1/-1; padding: 40px; text-align: center; color: var(--text-dim);"><i data-lucide="zap-off" style="width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5;"></i><p>No scenes found.</p></div>`;
+            lucide.createIcons({ root: container });
+            return;
+        }
+
+        filtered.forEach(id => {
+            const scene = scenes[id];
+            const div = document.createElement('div');
+            div.className = 'admin-item';
+            div.style.padding = '16px';
+            div.style.cursor = 'default';
+
+            const deviceCount = Object.keys(scene.devices || {}).length;
+
+            div.innerHTML = `
+                <div class="item-info" style="flex:1;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <i data-lucide="${scene.icon || 'zap'}" style="width:18px; height:18px; color:var(--accent-secondary);"></i>
+                        <div class="item-name" style="font-size:1.1rem; font-weight:600;">${scene.name}</div>
+                    </div>
+                    <div class="item-detail" style="margin-top:4px; font-size:0.85rem; color:var(--text-dim);">
+                        ${deviceCount} devices configured in this scene
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="openCreateSceneModal('${id}')">
+                        <i data-lucide="edit-3" style="width:14px; height:14px;"></i>
+                        Edit
+                    </button>
+                    <button class="btn btn-remove" style="padding: 6px 12px; font-size: 0.85rem; background: rgba(232, 105, 102, 0.1); color: var(--accent-primary);" onclick="deleteScene('${id}')">
+                        <i data-lucide="trash-2" style="width:14px; height:14px;"></i>
+                        Delete
+                    </button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+
+        lucide.createIcons({ root: container });
     }
 };
 
@@ -336,14 +392,19 @@ window.unhideSelected = () => {
 };
 
 window.switchAdminView = (viewName) => {
+    window.adminPanel.currentAdminView = viewName;
     // Update Sidebar
     document.querySelectorAll('#sidebar-nav-admin .nav-item').forEach(item => item.classList.remove('active'));
-    const activeItem = document.getElementById(`nav-item-${viewName}`);
+    
+    // Support for both nav-item-ID and nav-item-ID-admin to avoid collisions
+    let activeItem = document.getElementById(`nav-item-${viewName}`);
+    if (!activeItem) activeItem = document.getElementById(`nav-item-${viewName}-admin`);
     if (activeItem) activeItem.classList.add('active');
 
     // Update Views
     document.querySelectorAll('.admin-content').forEach(content => content.classList.remove('active'));
-    document.getElementById(`admin-content-${viewName}`).classList.add('active');
+    const contentEl = document.getElementById(`admin-content-${viewName}`);
+    if (contentEl) contentEl.classList.add('active');
 
     // Update Header
     const titleEl = document.getElementById('admin-page-title');
@@ -352,6 +413,7 @@ window.switchAdminView = (viewName) => {
     if (viewName === 'entities') {
         titleEl.innerText = 'Entity Management';
         subtitleEl.innerText = 'Manage visibility and control';
+        window.adminPanel.render();
     } else if (viewName === 'users') {
         titleEl.innerText = 'User Management';
         subtitleEl.innerText = 'Manage allowed users and view login history';
@@ -360,6 +422,10 @@ window.switchAdminView = (viewName) => {
         titleEl.innerText = 'WhatsApp Configuration';
         subtitleEl.innerText = 'Manage API keys and connection settings';
         window.adminPanel.renderWhatsAppConfig();
+    } else if (viewName === 'scenes') {
+        titleEl.innerText = 'Scenes Manager';
+        subtitleEl.innerText = 'Configure groups of device actions';
+        window.adminPanel.renderScenesConfig();
     }
 
     lucide.createIcons();
@@ -598,4 +664,128 @@ window.handleSyncTemplates = async (btn) => {
         btn.innerHTML = originalHTML;
         if (window.lucide) window.lucide.createIcons({ root: btn });
     }
+};
+
+window.openCreateSceneModal = (sceneId = null) => {
+    const isEdit = !!sceneId;
+    const scene = isEdit ? window.smartCampus.scenes[sceneId] : { name: '', icon: 'zap', devices: {} };
+    
+    // Prepare all devices list
+    let allDevices = [];
+    Object.keys(window.smartCampus.areas).forEach(areaId => {
+        if (!window.smartCampus.areas[areaId].devices) return;
+        const areaName = formatName(window.smartCampus.areas[areaId].name || areaId);
+        Object.keys(window.smartCampus.areas[areaId].devices).forEach(devKey => {
+            const dev = window.smartCampus.areas[areaId].devices[devKey];
+            if (['fan', 'switch', 'light'].includes(dev.domain)) {
+                allDevices.push({
+                    entity_id: dev.entity_id,
+                    name: dev.name,
+                    areaName: areaName,
+                    domain: dev.domain
+                });
+            }
+        });
+    });
+    allDevices.sort((a, b) => a.areaName.localeCompare(b.areaName) || a.name.localeCompare(b.name));
+
+    const html = `
+        <div class="form-group" style="margin-bottom:16px;">
+            <label>Scene Name</label>
+            <input type="text" id="scene-name" class="form-control" value="${scene.name}" placeholder="e.g. Cinema Mode">
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+            <label>Icon (Lucide name)</label>
+            <input type="text" id="scene-icon" class="form-control" value="${scene.icon || 'zap'}" placeholder="zap, moon, sun, coffee...">
+        </div>
+        <div class="section-title" style="margin-top:20px; font-size:0.9rem;">
+            <span>Configure Devices</span>
+        </div>
+        <div id="scene-devices-list" style="max-height: 400px; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 8px;">
+            ${allDevices.map(d => {
+                const isConfigured = scene.devices && scene.devices[d.entity_id] !== undefined;
+                const config = isConfigured ? scene.devices[d.entity_id] : { state: 'off' };
+                return `
+                    <div class="scene-device-row" data-entity-id="${d.entity_id}" style="display:flex; align-items:center; gap:12px; padding:10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <input type="checkbox" class="scene-device-check" ${isConfigured ? 'checked' : ''} onchange="this.parentElement.querySelector('.scene-device-info').style.opacity = this.checked ? 1 : 0.6; this.parentElement.querySelector('.scene-device-controls').style.display = this.checked ? 'flex' : 'none';">
+                        <div class="scene-device-info" style="flex:1; opacity: ${isConfigured ? 1 : 0.6}">
+                            <div style="font-weight:500; font-size:0.95rem;">${formatName(d.name)}</div>
+                            <div style="font-size:0.75rem; color:var(--text-dim);">${d.areaName}</div>
+                        </div>
+                        <div class="scene-device-controls" style="display: ${isConfigured ? 'flex' : 'none'}; gap:10px; align-items:center;">
+                            <select class="form-control scene-device-state" style="padding:4px 8px; font-size:0.8rem; width:80px;">
+                                <option value="on" ${config.state === 'on' ? 'selected' : ''}>ON</option>
+                                <option value="off" ${config.state === 'off' ? 'selected' : ''}>OFF</option>
+                            </select>
+                            ${d.domain === 'fan' ? `
+                                <input type="number" class="form-control scene-device-percentage" min="0" max="100" step="16" value="${config.percentage || 100}" style="width:60px; padding:4px 8px; font-size:0.8rem;" title="Percentage">
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+
+    AppDialog.confirm(html, {
+        title: isEdit ? 'Edit Scene' : 'Create New Scene',
+        confirmText: isEdit ? 'Save Changes' : 'Create Scene',
+        width: '600px',
+        isHtml: true,
+        onConfirm: async () => {
+            const name = document.getElementById('scene-name').value.trim();
+            const icon = document.getElementById('scene-icon').value.trim() || 'zap';
+            if (!name) {
+                AppDialog.toast('Scene name is required', 'warn');
+                return false;
+            }
+
+            const devices = {};
+            document.querySelectorAll('.scene-device-row').forEach(row => {
+                const cb = row.querySelector('.scene-device-check');
+                if (cb.checked) {
+                    const entityId = row.dataset.entityId;
+                    const state = row.querySelector('.scene-device-state').value;
+                    const config = { state };
+                    const percentageInput = row.querySelector('.scene-device-percentage');
+                    if (percentageInput) {
+                        config.percentage = parseInt(percentageInput.value);
+                    }
+                    devices[entityId] = config;
+                }
+            });
+
+            if (Object.keys(devices).length === 0) {
+                AppDialog.toast('Please select at least one device', 'warn');
+                return false;
+            }
+
+            const data = { name, icon, devices, updatedAt: Date.now() };
+            const ref = isEdit ? db.ref(`modules/smart_campus/scenes/${sceneId}`) : db.ref('modules/smart_campus/scenes').push();
+            
+            await ref.set(data);
+            AppDialog.toast(`Scene ${isEdit ? 'updated' : 'created'} successfully`, 'success');
+            return true;
+        }
+    });
+};
+
+window.deleteScene = async (sceneId) => {
+    const scene = window.smartCampus.scenes[sceneId];
+    if (!scene) return;
+
+    const confirmed = await AppDialog.confirm(`Are you sure you want to delete the scene "${scene.name}"?`, {
+        danger: true,
+        title: 'Delete Scene',
+        confirmText: 'Delete'
+    });
+
+    if (confirmed) {
+        await db.ref(`modules/smart_campus/scenes/${sceneId}`).remove();
+        AppDialog.toast('Scene deleted', 'success');
+    }
+};
+
+window.filterScenesList = () => {
+    window.adminPanel.renderScenesConfig();
 };

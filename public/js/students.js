@@ -664,10 +664,28 @@ window.studentDirectory = {
                         <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
                             <div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="wallet"></i> Financial Summary</div>
                             <div class="fee-summary-mini">
-                                <div style="display:flex; justify-content:space-between; margin-bottom:16px;"><span>Annual Fee</span><strong>₹${feeData.total || 0}</strong></div>
-                                <div style="display:flex; justify-content:space-between; margin-bottom:16px;"><span>Total Paid</span><strong style="color:var(--success)">₹${feeData.paid || 0}</strong></div>
-                                <div style="height:1px; background:var(--card-border); margin-bottom:16px;"></div>
-                                <div style="display:flex; justify-content:space-between;"><span>Outstanding</span><strong style="color:var(--accent-primary); font-size:1.2rem;">₹${balance}</strong></div>
+                                <div style="display:flex; justify-content:space-between; margin-bottom:12px;"><span>Annual Total</span><strong>₹${(feeData.total || 0).toLocaleString()}</strong></div>
+                                <div style="display:flex; justify-content:space-between; margin-bottom:12px;"><span>Amount Paid</span><strong style="color:var(--success)">₹${(feeData.paid || 0).toLocaleString()}</strong></div>
+                                <div style="height:1px; background:var(--card-border); margin-bottom:12px;"></div>
+                                <div style="display:flex; justify-content:space-between; margin-bottom:20px;"><span>Outstanding</span><strong style="color:var(--accent-primary); font-size:1.2rem;">₹${(balance).toLocaleString()}</strong></div>
+                                
+                                ${feeData.components ? `
+                                    <div style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:10px;">Structure Breakdown</div>
+                                    <div style="max-height:150px; overflow-y:auto; padding-right:5px;">
+                                        ${feeData.components.map(c => `
+                                            <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:6px; opacity:0.8;">
+                                                <span>${c.name}</span>
+                                                <span>₹${c.amount.toLocaleString()}</span>
+                                            </div>
+                                        `).join('')}
+                                        ${feeData.discount > 0 ? `
+                                            <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-top:10px; color:var(--accent-primary); font-weight:700;">
+                                                <span>Applied Waiver</span>
+                                                <span>- ₹${feeData.discount.toLocaleString()}</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                ` : ''}
                             </div>
                         </div>
                     </div>

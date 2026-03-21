@@ -202,9 +202,12 @@
           <i data-lucide="layout-dashboard"></i>
           <span>Overview</span>
         </div>
+        <div class="nav-item" onclick="switchView('scenes')" id="nav-item-scenes">
+          <i data-lucide="zap"></i>
+          <span>Scenes</span>
+        </div>
 
         <!-- Areas will be injected here -->
-
       </nav>
 
 
@@ -265,6 +268,13 @@
 
         <div class="dashboard-grid" id="rooms-grid">
           <!-- Area cards will be injected here -->
+        </div>
+      </div>
+
+      <!-- Scenes View -->
+      <div id="view-scenes" class="view">
+        <div class="dashboard-grid" id="scenes-grid">
+          <!-- Scene cards will be injected here -->
         </div>
       </div>
 
@@ -628,7 +638,12 @@
           <i data-lucide="message-circle"></i>
           <span>WhatsApp Config</span>
         </div>
-      </nav>
+        <div class="nav-item" onclick="switchAdminView('scenes')" id="nav-item-scenes-admin">
+          <i data-lucide="zap"></i>
+          <span>Scenes Manager</span>
+        </div>
+        </nav>
+
     </aside>
 
     <div class="mobile-nav-toggle" onclick="toggleSidebar()">
@@ -673,6 +688,23 @@
         <!-- WhatsApp Config Tab -->
         <div id="admin-content-whatsapp" class="admin-content">
           <div id="admin-whatsapp-config-container"></div>
+        </div>
+
+        <!-- Scenes Manager Tab -->
+        <div id="admin-content-scenes" class="admin-content">
+           <div class="admin-toolbar">
+             <div class="search-box">
+               <i data-lucide="search" style="color: var(--text-dim); width: 20px;"></i>
+               <input type="text" id="scenes-search" placeholder="Search scenes..." oninput="filterScenesList()">
+             </div>
+             <button class="btn btn-primary" onclick="openCreateSceneModal()">
+               <i data-lucide="plus"></i>
+               Create Scene
+             </button>
+           </div>
+           <div id="admin-scenes-list" class="admin-grid">
+              <!-- Scenes will be injected here -->
+           </div>
         </div>
 
         <!-- Users Tab -->

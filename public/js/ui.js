@@ -49,12 +49,27 @@ window.AppDialog = (() => {
                 box-shadow: 0 20px 60px rgba(0,0,0,0.5);
                 display: flex; flex-direction: column; gap: 10px;
                 animation: dialog-box-in 0.2s cubic-bezier(0.34,1.56,0.64,1);
+                position: relative;
             }
             @keyframes dialog-box-in { from { transform: scale(0.92) translateY(8px); } to { transform: scale(1) translateY(0); } }
-            .app-dialog-icon { font-size: 1.8rem; margin-bottom: 2px; }
-            .app-dialog-title { font-size: 1rem; font-weight: 700; color: var(--text-main, #e8eaf0); }
+            .app-dialog-icon { 
+                position: absolute;
+                top: -18px;
+                right: -18px;
+                width: 42px;
+                height: 42px;
+                background: #1e2127;
+                border: 1px solid rgba(255,255,255,0.15);
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+                z-index: 10;
+            }
+            .app-dialog-title { font-size: 1.05rem; font-weight: 700; color: var(--text-main, #e8eaf0); margin-top: 4px; }
             .app-dialog-msg   { font-size: 0.88rem; color: var(--text-dim, #8b909e); line-height: 1.5; }
-            .app-dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+            .app-dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
         `;
         document.head.appendChild(style);
     }
@@ -65,17 +80,38 @@ window.AppDialog = (() => {
         return c;
     }
 
+    function getMeaningfulIcon(title, danger = false) {
+        const t = (title || '').toLowerCase();
+        if (danger || t.includes('delete') || t.includes('remove') || t.includes('stop')) return 'trash-2';
+        if (t.includes('send') || t.includes('launch') || t.includes('broadcast')) return 'send';
+        if (t.includes('success') || t.includes('saved') || t.includes('completed')) return 'check-circle';
+        if (t.includes('error') || t.includes('fail')) return 'alert-circle';
+        if (t.includes('warn') || t.includes('notice') || t.includes('attention')) return 'alert-triangle';
+        if (t.includes('payment') || t.includes('fee')) return 'credit-card';
+        if (t.includes('expense')) return 'receipt';
+        if (t.includes('student') || t.includes('admission') || t.includes('profile')) return 'user';
+        if (t.includes('staff')) return 'users';
+        if (t.includes('list')) return 'list';
+        if (t.includes('pulse')) return 'activity';
+        if (t.includes('template') || t.includes('structure')) return 'layout';
+        if (t.includes('frequency') || t.includes('protect')) return 'shield-check';
+        if (t.includes('confirm') || t.includes('sure')) return 'help-circle';
+        return 'info';
+    }
+
     /**
      * Show a non-blocking toast notification.
      * @param {string} msg - Message to display
      * @param {'success'|'error'|'info'|'warn'} [type='info']
      */
     function toast(msg, type = 'info') {
-        const icons = { success: '✓', error: '✕', info: 'ℹ', warn: '⚠' };
+        const icons = { success: 'check-circle', error: 'x-circle', info: 'info', warn: 'alert-triangle' };
+        const iconName = icons[type] || 'info';
         const el = document.createElement('div');
         el.className = `app-toast toast-${type}`;
-        el.innerHTML = `<span style="font-size:1rem;flex-shrink:0;">${icons[type] || icons.info}</span><span>${msg}</span>`;
+        el.innerHTML = `<span style="font-size:1rem;flex-shrink:0;display:flex;align-items:center;"><i data-lucide="${iconName}" style="width:18px;height:18px;"></i></span><span>${msg}</span>`;
         getToastContainer().appendChild(el);
+        if (window.lucide) window.lucide.createIcons({ root: el });
         setTimeout(() => {
             el.classList.add('toast-out');
             el.addEventListener('animationend', () => el.remove());
@@ -91,12 +127,18 @@ window.AppDialog = (() => {
     function alert(msg, opts = {}) {
         return new Promise(resolve => {
             const { title = 'Notice', type = 'info' } = opts;
-            const icons = { success: '✅', error: '❌', info: 'ℹ️', warn: '⚠️' };
+            const icons = { success: 'check-circle', error: 'x-circle', info: 'info', warn: 'alert-triangle' };
+            const colors = { success: '#4ade80', error: '#f87171', info: '#7dd3fc', warn: '#fcd34d' };
+            const iconName = icons[type] || 'info';
+            const iconColor = colors[type] || colors.info;
+            
             const overlay = document.createElement('div');
             overlay.className = 'app-dialog-overlay';
             overlay.innerHTML = `
                 <div class="app-dialog-box">
-                    <div class="app-dialog-icon">${icons[type] || icons.info}</div>
+                    <div class="app-dialog-icon">
+                        <i data-lucide="${iconName}" style="width:22px; height:22px; color:${iconColor};"></i>
+                    </div>
                     <div class="app-dialog-title">${title}</div>
                     <div class="app-dialog-msg">${msg}</div>
                     <div class="app-dialog-actions">
@@ -104,6 +146,8 @@ window.AppDialog = (() => {
                     </div>
                 </div>`;
             document.body.appendChild(overlay);
+            if (window.lucide) window.lucide.createIcons({ root: overlay });
+
             const ok = overlay.querySelector('#app-dialog-ok');
             const dismiss = () => { overlay.remove(); resolve(); };
             ok.addEventListener('click', dismiss);
@@ -134,16 +178,22 @@ window.AppDialog = (() => {
                 danger = false, 
                 isHtml = false, 
                 width = 'auto',
-                onConfirm = null
+                onConfirm = null,
+                onOpen = null
             } = opts;
             
             const overlay = document.createElement('div');
             overlay.className = 'app-dialog-overlay';
             const safeMsg = (typeof msg === 'string') ? (isHtml ? msg : msg.replace(/\\n/g, '<br>')) : '';
             
+            const iconName = getMeaningfulIcon(title, danger);
+            const iconColor = danger ? '#f87171' : '#7dd3fc';
+
             overlay.innerHTML = `
                 <div class="app-dialog-box" style="max-width: ${width};">
-                    <div class="app-dialog-icon">${danger ? '🗑️' : '❓'}</div>
+                    <div class="app-dialog-icon">
+                        <i data-lucide="${iconName}" style="width:22px; height:22px; color:${iconColor};"></i>
+                    </div>
                     <div class="app-dialog-title">${title}</div>
                     <div class="app-dialog-msg">${safeMsg}</div>
                     <div class="app-dialog-actions">
@@ -152,6 +202,11 @@ window.AppDialog = (() => {
                     </div>
                 </div>`;
             document.body.appendChild(overlay);
+            if (window.lucide) window.lucide.createIcons({ root: overlay });
+
+            if (typeof onOpen === 'function') {
+                setTimeout(() => onOpen(overlay), 10);
+            }
             
             const confirmed = async () => {
                 if (typeof onConfirm === 'function') {
@@ -340,6 +395,14 @@ function switchView(viewId, areaId = null) {
         if (screenTitle) screenTitle.innerText = 'Campus Overview';
         const screenSubtitle = document.getElementById('screen-subtitle');
         if (screenSubtitle) screenSubtitle.innerText = 'Monitoring all smart systems';
+    } else if (viewId === 'scenes') {
+        const scenesView = document.getElementById('view-scenes');
+        if (scenesView) scenesView.classList.add('active');
+        const screenTitle = document.getElementById('screen-title');
+        if (screenTitle) screenTitle.innerText = 'Scene Control';
+        const screenSubtitle = document.getElementById('screen-subtitle');
+        if (screenSubtitle) screenSubtitle.innerText = 'Activate pre-configured device groups';
+        window.smartCampus.renderScenes();
     } else {
         const area = window.smartCampus.areas[areaId];
         if (area) {

@@ -57,6 +57,14 @@ service cloud.firestore {
       }
     }
 
+    // --- Fees & Accounting Module ---
+    match /modules/fees_accounting {
+      allow read, write: if isAuthenticated();
+      match /{allPaths=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
     // --- Global Collections ---
     match /allowedUsers/{id} {
       allow read: if isAuthenticated();
