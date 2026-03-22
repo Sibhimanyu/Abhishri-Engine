@@ -10,26 +10,31 @@ service cloud.firestore {
 
     // Rules for the new modular structure
     match /modules/whatsapp_sender {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
+      
       match /config/{configId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated();
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
+        allow write: if isAuthenticated() && isAdmin();
       }
       
       match /lists/{listId} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'manage'));
         
         match /members/{memberId} {
-          allow read, write: if isAuthenticated();
+          allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
+          allow write: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'manage'));
         }
       }
       
       match /history/{historyId} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'manage'));
       }
 
       match /templates/{templateId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated();
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'manage'));
       }
     }
 
@@ -42,11 +47,12 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'view'));
       
       match /students/{studentId} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'view'));
         allow create, update, delete: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'manage'));
         
         match /performance_logs/{logId} {
           allow read: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'view'));
-          allow write: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'manage'));
+          allow write: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'log'));
         }
       }
     }
@@ -56,6 +62,7 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
       
       match /staff/{staffId} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
         allow create, update, delete: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'manage'));
         
         match /performance_logs/{logId} {
@@ -67,21 +74,47 @@ service cloud.firestore {
 
     match /modules/smart_campus {
       match /areas/{areaId} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'view'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'control'));
       }
       match /config/{id} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'view'));
+        allow write: if isAuthenticated() && isAdmin();
       }
       match /logs/{id} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'view'));
+        allow write: if isAuthenticated();
       }
     }
 
     // --- Fees & Accounting Module ---
     match /modules/fees_accounting {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
+      
+      match /collections/{id} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'transactions'));
+      }
+      match /students/{id} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'ledger'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'transactions'));
+      }
+      match /transactions/{id} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'transactions'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'transactions'));
+      }
+      match /plans/{id} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
+      }
+      match /expenses/{id} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'expenses'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'expenses'));
+      }
+
       match /{allPaths=**} {
-        allow read, write: if isAuthenticated();
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
+        allow write: if isAuthenticated() && isAdmin();
       }
     }
 

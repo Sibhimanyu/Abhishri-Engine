@@ -356,17 +356,36 @@ function switchAppSubView(viewId, entityId = null) {
     navigateTo(`${hash}/${viewId}${entityId ? '/' + entityId : ''}`);
 }
 
-function closeSidebar() {
-    document.querySelector('.console-sidebar')?.classList.remove('open');
-    document.querySelector('.sidebar-overlay')?.classList.remove('active');
+window.closeSidebar = function() {
+    document.querySelector('.app-wrapper.active .console-sidebar')?.classList.remove('open');
+    document.querySelector('.app-wrapper.active .sidebar-overlay')?.classList.remove('active');
 }
 
-function toggleSidebar() {
-    document.querySelector('.console-sidebar')?.classList.toggle('open');
-    document.querySelector('.sidebar-overlay')?.classList.toggle('active');
+window.toggleSidebar = function() {
+    document.querySelector('.app-wrapper.active .console-sidebar')?.classList.toggle('open');
+    document.querySelector('.app-wrapper.active .sidebar-overlay')?.classList.toggle('active');
 }
 
-function navigateTo(route, updateHash = true) {
+// ─── User Dropdown Logic ──────────────────────────────────────────────────
+window.toggleUserDropdown = function(event) {
+    if (event) event.stopPropagation();
+    const dropdown = document.getElementById('user-dropdown');
+    dropdown?.classList.toggle('show');
+}
+
+// Close dropdown when clicking outside
+window.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('user-dropdown');
+    const userPill = document.querySelector('.user-pill');
+    
+    if (dropdown?.classList.contains('show') && 
+        !dropdown.contains(e.target) && 
+        !userPill?.contains(e.target)) {
+        dropdown.classList.remove('show');
+    }
+});
+
+window.navigateTo = function(route, updateHash = true) {
     if (updateHash) window.location.hash = route;
 
     const parts = route.split('/');
@@ -438,7 +457,12 @@ function navigateTo(route, updateHash = true) {
     } else if (mainRoute === 'whatsapp') {
         if (isAdmin || perms.whatsapp_sender?.access || perms.whatsapp_sender === true) {
             const waApp = document.getElementById('whatsapp-app');
-            if (waApp) waApp.classList.add('active');
+            if (waApp) {
+                waApp.classList.add('active');
+                if (window.whatsAppSender && window.whatsAppSender.initialize) {
+                    window.whatsAppSender.initialize();
+                }
+            }
             
             if (subRoute && window.whatsAppSender && window.whatsAppSender.switchView) {
                 window.whatsAppSender.switchView(subRoute);
@@ -451,7 +475,7 @@ function navigateTo(route, updateHash = true) {
         }
     }
 
-    if (window.innerWidth <= 1024) closeSidebar();
+    if (window.innerWidth <= 1024) window.closeSidebar();
     lucide.createIcons();
 }
 

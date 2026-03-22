@@ -513,9 +513,10 @@ window.staffDirectory = {
 
         const toolbar = document.getElementById('staff-toolbar');
         if (toolbar) {
+            const canPulse = isMaster || staffPerms === true || staffPerms.pulse;
             toolbar.innerHTML = `
                 <button class="btn btn-secondary" onclick="window.staffDirectory.switchView('performance')"><i data-lucide="arrow-left"></i> All Staff</button>
-                <button class="btn btn-primary" onclick="window.staffDirectory.showPulseEntryForm('${id}')"><i data-lucide="plus-circle"></i> Log Performance</button>
+                ${canPulse ? `<button class="btn btn-primary" onclick="window.staffDirectory.showPulseEntryForm('${id}')"><i data-lucide="plus-circle"></i> Log Performance</button>` : ''}
             `;
         }
         

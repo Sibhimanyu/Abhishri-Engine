@@ -525,9 +525,10 @@ window.studentDirectory = {
 
         const toolbar = document.getElementById('student-toolbar');
         if (toolbar) {
+            const canLog = isMaster || perfPerms === true || perfPerms.log;
             toolbar.innerHTML = `
                 <button class="btn btn-secondary" onclick="window.studentDirectory.switchView('performance')"><i data-lucide="arrow-left"></i> Dashboard</button>
-                <button class="btn btn-primary" onclick="window.studentDirectory.showPulseEntryForm('${id}')"><i data-lucide="plus-circle"></i> Log Daily Pulse</button>
+                ${canLog ? `<button class="btn btn-primary" onclick="window.studentDirectory.showPulseEntryForm('${id}')"><i data-lucide="plus-circle"></i> Log Daily Pulse</button>` : ''}
             `;
         }
         

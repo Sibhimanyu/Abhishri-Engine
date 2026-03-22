@@ -81,7 +81,8 @@ if (!window.whatsAppSender) {
     };
 
     window.whatsAppSender.loadLists = function () {
-        firestore.collection('modules').doc('whatsapp_sender').collection('lists').onSnapshot((querySnapshot) => {
+        if (this._listsUnsubscribe) this._listsUnsubscribe();
+        this._listsUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('lists').onSnapshot((querySnapshot) => {
             const data = {};
             querySnapshot.forEach((doc) => {
                 data[doc.id] = doc.data();
@@ -1100,13 +1101,18 @@ if (!window.whatsAppSender) {
     window.whatsAppSender.recalculateListCounts = async function (listId) {
         try {
             const membersSnap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).collection('members').get();
-            let cCount = 0, nCount = 0;
+            let cCount = 0;
+            const allPhones = new Set();
             membersSnap.forEach(doc => {
                 cCount++;
                 const phones = String(doc.data().phone || "").split(/[\/,;]/).map(n => n.trim().replace(/[^\d]/g, '')).filter(n => n.length >= 10);
-                nCount += [...new Set(phones)].length;
+                phones.forEach(p => allPhones.add(p));
             });
-            await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).update({ contactsCount: cCount, numbersCount: nCount, count: cCount });
+            await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).update({ 
+                contactsCount: cCount, 
+                numbersCount: allPhones.size, 
+                count: cCount 
+            });
         } catch (e) { console.error(e); }
     };
 

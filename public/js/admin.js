@@ -399,6 +399,7 @@ window.adminPanel = {
                         <label><input type="checkbox" class="perm-check" data-mod="student_directory" data-act="attendance" ${getPerm('student_directory', 'attendance')}> Mark Daily Attendance</label>
                         <label><input type="checkbox" class="perm-check" data-mod="student_directory" data-act="reports" ${getPerm('student_directory', 'reports')}> View Attendance Reports</label>
                         <label><input type="checkbox" class="perm-check" data-mod="student_performance" data-act="view" ${getPerm('student_performance', 'view')}> Access Performance Pulse</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="student_performance" data-act="log" ${getPerm('student_performance', 'log')}> Log Pulse Entry</label>
                     </div>
 
                     <!-- Staff Directory -->
@@ -483,9 +484,69 @@ function switchAdminView(view) {
     window.adminPanel.switchView(view);
 }
 
-function addAllowedUser() {
+window.filterAdminList = () => {
+    window.adminPanel.render();
+};
+
+window.toggleSelectAll = () => {
+    const container = document.getElementById('admin-list');
+    const items = container.querySelectorAll('.admin-item');
+    if (!items.length) return;
+
+    // Check if all are already selected
+    let allSelected = true;
+    items.forEach(item => {
+        if (!item.classList.contains('selected')) allSelected = false;
+    });
+
+    // If all are selected, deselect all. Otherwise, select all.
+    items.forEach(item => {
+        // Extract uniqueId from the item's stored data or by finding it
+        // Since we don't have it easily, we re-run the toggle logic
+        // But better: update selectedItems directly and re-render
+    });
+    
+    // Better implementation:
+    const searchTerm = (document.getElementById('admin-search')?.value || '').toLowerCase();
+    let allFilteredIds = [];
+    Object.keys(window.smartCampus.areas).forEach(areaId => {
+        if (areaId === 'no_area' || !window.smartCampus.areas[areaId].devices) return;
+        const areaName = formatName(window.smartCampus.areas[areaId].name || areaId);
+        Object.keys(window.smartCampus.areas[areaId].devices).forEach(deviceId => {
+            const d = window.smartCampus.areas[areaId].devices[deviceId];
+            const text = (d.name + ' ' + areaName + ' ' + d.domain).toLowerCase();
+            if (text.includes(searchTerm)) {
+                allFilteredIds.push(areaId + '_' + deviceId);
+            }
+        });
+    });
+
+    const alreadyAllSelected = allFilteredIds.every(id => window.adminPanel.selectedItems.has(id));
+    
+    if (alreadyAllSelected) {
+        allFilteredIds.forEach(id => window.adminPanel.selectedItems.delete(id));
+    } else {
+        allFilteredIds.forEach(id => window.adminPanel.selectedItems.add(id));
+    }
+    
+    window.adminPanel.render();
+};
+
+window.hideSelected = () => {
+    window.adminPanel.updateVisibility(true);
+};
+
+window.unhideSelected = () => {
+    window.adminPanel.updateVisibility(false);
+};
+
+window.addAllowedUser = () => {
     window.adminPanel.showAddUserModal();
-}
+};
+
+window.closePermissionModal = () => {
+    document.getElementById('permission-modal').style.display = 'none';
+};
 
 
 
