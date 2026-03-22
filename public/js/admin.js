@@ -8,7 +8,7 @@ window.adminPanel = {
 
     switchView(view) {
         this.currentAdminView = view;
-        
+
         // Update URL hash only if needed
         let hash = `admin/${view}`;
         if (window.location.hash !== `#${hash}`) {
@@ -158,26 +158,26 @@ window.adminPanel = {
                 else {
                     if (perms.smart_campus?.view || perms.smart_campus === true) badges.push('<span class="perm-badge perm-badge-campus">Campus View</span>');
                     if (perms.smart_campus?.control) badges.push('<span class="perm-badge perm-badge-campus">Campus Ctrl</span>');
-                    
+
                     if (perms.student_directory?.view || perms.student_directory === true) badges.push('<span class="perm-badge perm-badge-student">Student View</span>');
                     if (perms.student_directory?.manage) badges.push('<span class="perm-badge perm-badge-student">Student Ctrl</span>');
                     if (perms.student_directory?.attendance) badges.push('<span class="perm-badge perm-badge-student">Student Attd</span>');
                     if (perms.student_performance?.view) badges.push('<span class="perm-badge perm-badge-student">Student Perf</span>');
-                    
+
                     if (perms.staff_directory?.view || perms.staff_directory === true) badges.push('<span class="perm-badge perm-badge-staff">Staff View</span>');
                     if (perms.staff_directory?.manage) badges.push('<span class="perm-badge perm-badge-staff">Staff Ctrl</span>');
                     if (perms.staff_directory?.attendance) badges.push('<span class="perm-badge perm-badge-staff">Staff Attd</span>');
                     if (perms.staff_directory?.pulse) badges.push('<span class="perm-badge perm-badge-staff">Staff Perf</span>');
-                    
+
                     if (perms.fees_accounting?.view || perms.fees_accounting === true) badges.push('<span class="perm-badge perm-badge-fees">Fee View</span>');
                     if (perms.fees_accounting?.ledger) badges.push('<span class="perm-badge perm-badge-fees">Fee Ledger</span>');
                     if (perms.fees_accounting?.transactions) badges.push('<span class="perm-badge perm-badge-fees">Fee Trans</span>');
                     if (perms.fees_accounting?.config) badges.push('<span class="perm-badge perm-badge-fees">Fee Config</span>');
                     if (perms.fees_accounting?.expenses) badges.push('<span class="perm-badge perm-badge-fees">Fee Exp</span>');
-                    
+
                     if (perms.whatsapp_sender?.access || perms.whatsapp_sender === true) badges.push('<span class="perm-badge perm-badge-whatsapp">WA Access</span>');
                     if (perms.whatsapp_sender?.broadcast) badges.push('<span class="perm-badge perm-badge-whatsapp">WA Broadcast</span>');
-                    
+
                     if (badges.length === 0) badges.push('<span class="perm-badge perm-badge-none">No Access</span>');
                 }
 
@@ -210,7 +210,7 @@ window.adminPanel = {
             Object.keys(this.usersData).forEach(uid => {
                 const u = this.usersData[uid];
                 const isAuthorized = this.allowedUsersData && this.allowedUsersData[u.email.toLowerCase()];
-                
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>
@@ -222,9 +222,9 @@ window.adminPanel = {
                     <td>${u.email}</td>
                     <td>${u.lastSignIn ? new Date(u.lastSignIn).toLocaleString() : 'N/A'}</td>
                     <td>
-                        ${isAuthorized 
-                            ? '<span class="perm-badge perm-badge-admin" style="background:rgba(74,222,128,0.1); color:var(--success);">Authorized</span>' 
-                            : '<span class="perm-badge" style="background:rgba(232,105,102,0.1); color:var(--accent-primary);">Pending Approval</span>'}
+                        ${isAuthorized
+                        ? '<span class="perm-badge perm-badge-admin" style="background:rgba(74,222,128,0.1); color:var(--success);">Authorized</span>'
+                        : '<span class="perm-badge" style="background:rgba(232,105,102,0.1); color:var(--accent-primary);">Pending Approval</span>'}
                     </td>
                     <td style="text-align:right">
                         ${!isAuthorized ? `
@@ -361,8 +361,8 @@ window.adminPanel = {
         const phoneNumber = document.getElementById('wa-phone-number').value;
 
         try {
-            await firestore.collection('modules').doc('whatsapp_sender').collection('config').doc('main').set({ 
-                apiKey, wabaId, phoneNumberId, phoneNumber, updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+            await firestore.collection('modules').doc('whatsapp_sender').collection('config').doc('main').set({
+                apiKey, wabaId, phoneNumberId, phoneNumber, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
             AppDialog.toast('Configuration saved successfully', 'success');
             this.renderWhatsAppConfig();
@@ -414,7 +414,7 @@ window.adminPanel = {
     showEditUserModal(email) {
         const user = this.allowedUsersData[email];
         const p = user.permissions || {};
-        
+
         // Define safe access helpers
         const getPerm = (module, action) => p[module] === true || (p[module] && p[module][action]) ? 'checked' : '';
 
@@ -530,10 +530,10 @@ window.adminPanel = {
                     btn.addEventListener('click', () => {
                         const presetName = btn.getAttribute('data-preset');
                         const preset = presets[presetName];
-                        
+
                         adminToggle.checked = preset.isAdmin;
                         permContainer.style.display = preset.isAdmin ? 'none' : 'block';
-                        
+
                         if (!preset.isAdmin) {
                             overlay.querySelectorAll('.perm-check').forEach(check => {
                                 const mod = check.getAttribute('data-mod');
@@ -548,7 +548,7 @@ window.adminPanel = {
             onConfirm: async () => {
                 const isAdmin = document.getElementById('edit-admin').checked;
                 const permissions = {};
-                
+
                 if (!isAdmin) {
                     document.querySelectorAll('.perm-check').forEach(el => {
                         const mod = el.getAttribute('data-mod');
@@ -569,10 +569,12 @@ window.adminPanel = {
     },
 
     removeAllowedUser(email) {
-        AppDialog.confirm({ title: 'Remove User', msg: `Revoke all access for ${email}?`, danger: true, onConfirm: async () => {
-            await firestore.collection('allowedUsers').doc(email).delete();
-            return true;
-        }});
+        AppDialog.confirm({
+            title: 'Remove User', msg: `Revoke all access for ${email}?`, danger: true, onConfirm: async () => {
+                await firestore.collection('allowedUsers').doc(email).delete();
+                return true;
+            }
+        });
     }
 };
 
@@ -612,7 +614,7 @@ window.toggleSelectAll = () => {
         // Since we don't have it easily, we re-run the toggle logic
         // But better: update selectedItems directly and re-render
     });
-    
+
     // Better implementation:
     const searchTerm = (document.getElementById('admin-search')?.value || '').toLowerCase();
     let allFilteredIds = [];
@@ -629,13 +631,13 @@ window.toggleSelectAll = () => {
     });
 
     const alreadyAllSelected = allFilteredIds.every(id => window.adminPanel.selectedItems.has(id));
-    
+
     if (alreadyAllSelected) {
         allFilteredIds.forEach(id => window.adminPanel.selectedItems.delete(id));
     } else {
         allFilteredIds.forEach(id => window.adminPanel.selectedItems.add(id));
     }
-    
+
     window.adminPanel.render();
 };
 
@@ -661,7 +663,7 @@ window.closePermissionModal = () => {
 window.openCreateSceneModal = (sceneId = null) => {
     const isEdit = !!sceneId;
     let scene = isEdit ? window.smartCampus.scenes[sceneId] : { name: '', icon: 'zap', devices: {} };
-    
+
     if (isEdit && scene.devices) {
         const unescapedDevices = {};
         Object.keys(scene.devices).forEach(key => {
@@ -699,9 +701,9 @@ window.openCreateSceneModal = (sceneId = null) => {
         </div>
         <div id="scene-devices-list" style="max-height: 400px; overflow-y: auto; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 8px;">
             ${allDevices.map(d => {
-                const isConfigured = scene.devices && scene.devices[d.entity_id] !== undefined;
-                const config = isConfigured ? scene.devices[d.entity_id] : { state: 'off' };
-                return `
+        const isConfigured = scene.devices && scene.devices[d.entity_id] !== undefined;
+        const config = isConfigured ? scene.devices[d.entity_id] : { state: 'off' };
+        return `
                     <div class="scene-device-row" data-entity-id="${d.entity_id}" data-search-text="${(d.name + ' ' + d.areaName).toLowerCase()}" style="display:flex; align-items:center; gap:12px; padding:10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
                         <input type="checkbox" class="scene-device-check" ${isConfigured ? 'checked' : ''} onchange="this.parentElement.querySelector('.scene-device-info').style.opacity = this.checked ? 1 : 0.6; this.parentElement.querySelector('.scene-device-controls').style.display = this.checked ? 'flex' : 'none';">
                         <div class="scene-device-info" style="flex:1; opacity: ${isConfigured ? 1 : 0.6}">
@@ -716,7 +718,7 @@ window.openCreateSceneModal = (sceneId = null) => {
                             ${d.domain === 'fan' ? `<input type="number" class="form-control scene-device-pct" value="${config.percentage || 100}" min="0" max="100" style="width:60px; height:30px; font-size:0.8rem; padding:0 8px;">` : ''}
                         </div>
                     </div>`;
-            }).join('')}
+    }).join('')}
         </div>
     `;
 
@@ -761,5 +763,4 @@ window.openCreateSceneModal = (sceneId = null) => {
         }
     });
 };
-
 

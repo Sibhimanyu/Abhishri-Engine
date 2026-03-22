@@ -746,9 +746,15 @@ window.staffDirectory = {
                 </div>
             </div>
             <div class="form-grid-2">
-                <div class="form-group">
-                    <label>Joining Date</label>
-                    <input type="date" id="sf-joining" class="form-control" value="${s.joiningDate || ''}" />
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label>Joining Date</label>
+                        <input type="date" id="sf-date" class="form-control" value="${s.joiningDate || ''}" />
+                    </div>
+                    <div class="form-group">
+                        <label>Monthly Base Salary (₹)</label>
+                        <input type="number" id="sf-salary" class="form-control" value="${s.baseSalary || 0}" />
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Blood Group</label>
@@ -775,7 +781,8 @@ window.staffDirectory = {
                     department: document.getElementById('sf-dept').value, 
                     phone: document.getElementById('sf-phone').value, 
                     email: document.getElementById('sf-email').value, 
-                    joiningDate: document.getElementById('sf-joining').value, 
+                    joiningDate: document.getElementById('sf-date').value, 
+                    baseSalary: parseFloat(document.getElementById('sf-salary').value) || 0,
                     bloodGroup: document.getElementById('sf-blood').value, 
                     address: document.getElementById('sf-addr').value, 
                     emergencyContact: document.getElementById('sf-emergency').value, 

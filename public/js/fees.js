@@ -1,6 +1,5 @@
 /**
- * Fees and Accounting Module - Firestore Edition
- * Handles student fee management, collections, transactions, and expenses using Cloud Firestore
+ * Fees, Expenditure and Payroll Module - Firestore Edition
  */
 
 window.feesManager = {
@@ -9,28 +8,29 @@ window.feesManager = {
     fees: {},
     plans: {},
     expenses: [],
+    salaries: [],
     transactions: [],
     isSubscribed: false,
     dataLoaded: false,
-    currentView: 'collections', // collections, overview, transactions, expenses, plans, student_fees
+    currentView: 'collections', // collections, overview, transactions, office_expenses, staff_imprest, salaries, plans, student_fees
     searchQuery: '',
 
     initialize() {
-        // Initial setup
+        this.subscribe();
     },
 
     subscribe() {
         if (this.isSubscribed) return;
         this.isSubscribed = true;
 
-        // 1. Subscribe to Students
+        // 1. Students
         window.studentDataManager.subscribe();
         window.studentDataManager.onUpdate((data) => {
             this.students = data;
             this.render();
         });
 
-        // 2. Subscribe to Staff (for Expense/Wallet management)
+        // 2. Staff
         firestore.collection('modules').doc('staff_directory').collection('staff')
             .onSnapshot((snapshot) => {
                 const staffData = {};
@@ -40,16 +40,16 @@ window.feesManager = {
                 this.render();
             });
 
-        // 3. Subscribe to Fee Summaries
+        // 3. Fee Summaries
         firestore.collection('modules').doc('fees_accounting').collection('student_fees')
             .onSnapshot((snapshot) => {
                 const feesData = {};
                 snapshot.forEach(doc => feesData[doc.id] = doc.data());
                 this.fees = feesData;
                 this.render();
-            }, (error) => console.error("Firestore Fees Error:", error));
+            });
 
-        // 4. Subscribe to Global Transactions
+        // 4. Global Transactions
         firestore.collection('modules').doc('fees_accounting').collection('transactions')
             .orderBy('timestamp', 'desc').limit(100)
             .onSnapshot((snapshot) => {
@@ -59,7 +59,7 @@ window.feesManager = {
                 this.render();
             });
 
-        // 5. Subscribe to Fee Packages
+        // 5. Fee Packages
         firestore.collection('modules').doc('fees_accounting').collection('plans')
             .onSnapshot((snapshot) => {
                 const plansData = {};
@@ -68,40 +68,55 @@ window.feesManager = {
                 this.render();
             });
 
-        // 6. Subscribe to Expenses (Conditional)
+        // 6. Expenses & Salaries
         this.subscribeExpenses();
+        this.subscribeSalaries();
     },
 
     subscribeExpenses() {
         if (this._expensesUnsubscribe) this._expensesUnsubscribe();
-        
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
         const feesPerms = userData.permissions?.fees_accounting || {};
         const canViewAll = isAdmin || feesPerms === true || feesPerms.expenses_all === true;
         const currentUserEmail = auth.currentUser?.email?.toLowerCase();
 
-        let query = firestore.collection('modules').doc('fees_accounting').collection('expenses')
-            .orderBy('timestamp', 'desc');
+        this._expensesUnsubscribe = firestore.collection('modules').doc('fees_accounting').collection('expenses')
+            .orderBy('timestamp', 'desc')
+            .onSnapshot((snapshot) => {
+                const exp = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (canViewAll || data.createdBy === currentUserEmail || (data.staffId && this.staff[data.staffId]?.email?.toLowerCase() === currentUserEmail)) {
+                        exp.push({ id: doc.id, ...data });
+                    }
+                });
+                this.expenses = exp;
+                this.render();
+            });
+    },
 
-        if (!canViewAll && currentUserEmail) {
-            // Only subscribe to own expenses if not authorized for all
-            // Note: This requires a composite index in Firestore (createdBy + timestamp)
-            query = query.where('createdBy', '==', currentUserEmail);
-        }
+    subscribeSalaries() {
+        if (this._salariesUnsubscribe) this._salariesUnsubscribe();
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feesPerms = userData.permissions?.fees_accounting || {};
+        const canViewAll = isAdmin || feesPerms === true || feesPerms.salaries_all === true;
+        const currentUserEmail = auth.currentUser?.email?.toLowerCase();
 
-        this._expensesUnsubscribe = query.onSnapshot((snapshot) => {
-            const exp = [];
-            snapshot.forEach(doc => exp.push({ id: doc.id, ...doc.data() }));
-            this.expenses = exp;
-            this.render();
-        }, (err) => {
-            console.error("Expense Subscription Error:", err);
-            // Fallback if index is missing or permissions denied
-            if (err.code === 'permission-denied' && !canViewAll) {
-                AppDialog.toast('Restricted expense view active.', 'info');
-            }
-        });
+        this._salariesUnsubscribe = firestore.collection('modules').doc('fees_accounting').collection('salaries')
+            .orderBy('timestamp', 'desc')
+            .onSnapshot((snapshot) => {
+                const sal = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (canViewAll || (data.staffId && this.staff[data.staffId]?.email?.toLowerCase() === currentUserEmail)) {
+                        sal.push({ id: doc.id, ...data });
+                    }
+                });
+                this.salaries = sal;
+                this.render();
+            });
     },
 
     resubscribe() {
@@ -112,21 +127,7 @@ window.feesManager = {
     switchView(viewName, studentId = null) {
         this.currentView = viewName;
         this.activeStudentId = studentId;
-        let hash = `fees/${viewName}`;
-        if (studentId) hash += `/${studentId}`;
-        
-        if (window.location.hash !== `#${hash}`) {
-            window.location.hash = hash;
-        }
-
-        const subtitle = document.getElementById('fees-screen-subtitle');
-        if (subtitle) {
-            if (['collections', 'overview', 'transactions', 'plans', 'student_fees'].includes(viewName)) {
-                subtitle.innerText = 'Revenue & Fee Management';
-            } else if (viewName === 'expenses') {
-                subtitle.innerText = 'Operational Expense Tracking';
-            }
-        }
+        window.location.hash = `fees/${viewName}${studentId ? '/' + studentId : ''}`;
 
         document.querySelectorAll('#sidebar-nav-fees .nav-item').forEach(el => el.classList.remove('active'));
         const activeNav = document.getElementById(`nav-fees-${viewName}`);
@@ -136,71 +137,119 @@ window.feesManager = {
         const activeView = document.getElementById(`fees-view-${viewName}`);
         if (activeView) activeView.style.display = 'block';
 
+        const subtitle = document.getElementById('fees-screen-subtitle');
+        if (subtitle) {
+            const labels = {
+                collections: 'Income & Revenue Insights',
+                overview: 'Student Fee Ledger',
+                transactions: 'Recent Fee Collections',
+                office_expenses: 'Direct Office Expenditure',
+                staff_imprest: 'Staff Wallets & Reimbursements',
+                salaries: 'Payroll & Salary Management',
+                plans: 'Package Template Configuration'
+            };
+            subtitle.innerText = labels[viewName] || 'Financial Management';
+        }
+
         this.render();
         if (typeof closeSidebar === 'function') closeSidebar();
     },
 
     render() {
         if (!window.location.hash.startsWith('#fees')) return;
+        
         const toolbar = document.getElementById('fees-toolbar');
         if (toolbar) {
             toolbar.innerHTML = '';
-            if (['overview', 'expenses', 'plans', 'transactions'].includes(this.currentView)) {
-                const searchContainer = document.createElement('div');
-                searchContainer.className = 'search-box';
-                searchContainer.style.maxWidth = '400px';
-                searchContainer.style.marginRight = 'auto';
-                searchContainer.innerHTML = `<i data-lucide="search"></i><input type="text" placeholder="Search records..." value="${this.searchQuery || ''}">`;
-                const searchInput = searchContainer.querySelector('input');
-                searchInput.oninput = (e) => { this.searchQuery = e.target.value.toLowerCase(); this.renderContentOnly(); };
-                toolbar.appendChild(searchContainer);
+            if (['overview', 'office_expenses', 'staff_imprest', 'salaries', 'transactions', 'plans'].includes(this.currentView)) {
+                const search = document.createElement('div');
+                search.className = 'search-box';
+                search.style.maxWidth = '300px';
+                search.style.marginRight = 'auto';
+                search.innerHTML = `<i data-lucide="search"></i><input type="text" placeholder="Search..." value="${this.searchQuery}">`;
+                search.querySelector('input').oninput = (e) => { this.searchQuery = e.target.value.toLowerCase(); this.render(); };
+                toolbar.appendChild(search);
+            }
+
+            const userData = window.currentUserData || {};
+            const feesPerms = userData.permissions?.fees_accounting || {};
+            const isAdmin = userData.isAdmin;
+
+            if (this.currentView === 'office_expenses' && (isAdmin || feesPerms.expenses_all)) {
+                const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="plus"></i> Log Office Expense'; btn.onclick=()=>this.showOfficeExpenseForm(); toolbar.appendChild(btn);
+            } else if (this.currentView === 'staff_imprest') {
+                if (isAdmin || feesPerms.fund_staff) {
+                    const btn = document.createElement('button'); btn.className='btn btn-secondary'; btn.innerHTML='<i data-lucide="coins"></i> Fund Staff'; btn.onclick=()=>this.showFundingForm(); toolbar.appendChild(btn);
+                }
+                const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="file-plus"></i> Request Reimbursement'; btn.onclick=()=>this.showSpendForm(); toolbar.appendChild(btn);
+            } else if (this.currentView === 'salaries' && (isAdmin || feesPerms.salaries_all)) {
+                const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="plus"></i> Process Payroll'; btn.onclick=()=>this.showPayrollForm(); toolbar.appendChild(btn);
+            } else if (this.currentView === 'plans' && (isAdmin || feesPerms.config)) {
+                const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="plus"></i> Create Fee Package'; btn.onclick=()=>this.showAddPlanForm(); toolbar.appendChild(btn);
             }
         }
 
         if (this.currentView === 'collections') this.renderCollections();
         else if (this.currentView === 'overview') this.renderOverview();
         else if (this.currentView === 'transactions') this.renderTransactions();
-        else if (this.currentView === 'expenses') this.renderExpenses();
+        else if (this.currentView === 'office_expenses') this.renderOfficeExpenses();
+        else if (this.currentView === 'staff_imprest') this.renderStaffImprest();
+        else if (this.currentView === 'salaries') this.renderSalaries();
         else if (this.currentView === 'student_fees') this.renderStudentFees();
         else if (this.currentView === 'plans') this.renderPlans();
 
         if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
-    renderContentOnly() {
-        if (this.currentView === 'overview') this.renderOverview();
-        else if (this.currentView === 'expenses') this.renderExpenses();
-        else if (this.currentView === 'plans') this.renderPlans();
-        else if (this.currentView === 'transactions') this.renderTransactions();
-        if (typeof lucide !== 'undefined') lucide.createIcons();
-    },
-
     renderCollections() {
         const container = document.getElementById('fees-content-collections');
         if (!container) return;
-        let totalRev = 0, totalCol = 0, totalExp = 0;
-        Object.values(this.fees).forEach(f => { totalRev += (f.total || 0); totalCol += (f.paid || 0); });
-        this.expenses.forEach(e => { if(e.type === 'spend') totalExp += (e.amount || 0); });
-        const rate = totalRev > 0 ? Math.round((totalCol / totalRev) * 100) : 0;
-        const net = totalCol - totalExp;
+
+        let totalRevGoal = 0, totalCol = 0, totalExp = 0;
+        const expByCat = {};
+
+        Object.values(this.fees).forEach(f => { totalRevGoal += (f.total || 0); totalCol += (f.paid || 0); });
+        this.expenses.forEach(e => {
+            if (e.status === 'approved' || e.source === 'office') {
+                totalExp += (e.amount || 0);
+                const cat = e.category || 'Other';
+                expByCat[cat] = (expByCat[cat] || 0) + (e.amount || 0);
+            }
+        });
+
+        const netBal = totalCol - totalExp;
+        const colRate = totalRevGoal > 0 ? Math.round((totalCol / totalRevGoal) * 100) : 0;
 
         container.innerHTML = `
-            <div class="highlights" style="margin-bottom: 30px;">
-                <div class="highlight-item" style="border-left: 4px solid var(--accent-secondary);"><div class="highlight-text"><h3>Expected Revenue</h3><div>₹${totalRev.toLocaleString()}</div></div></div>
-                <div class="highlight-item" style="border-left: 4px solid var(--success);"><div class="highlight-text"><h3>Total Collected</h3><div style="color: var(--success)">₹${totalCol.toLocaleString()}</div></div></div>
-                <div class="highlight-item" style="border-left: 4px solid #f87171;"><div class="highlight-text"><h3>Total Expenses</h3><div style="color: #f87171">₹${totalExp.toLocaleString()}</div></div></div>
-                <div class="highlight-item" style="border-left: 4px solid var(--accent-primary);"><div class="highlight-text"><h3>Net Cash Flow</h3><div style="color: ${net >= 0 ? 'var(--success)' : '#f87171'}">₹${net.toLocaleString()}</div></div></div>
-            </div>
-            <div class="dashboard-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-                <div class="console-card"><h3>Collection Efficiency</h3><div style="height: 12px; background: rgba(255,255,255,0.05); border-radius: 6px; overflow: hidden; margin: 15px 0;"><div style="height:100%; width:${rate}%; background: var(--success);"></div></div><p style="font-size: 0.9rem; color: var(--text-dim)">${rate}% of annual revenue collected.</p></div>
-                <div class="console-card"><h3>Outstanding Dues</h3><div style="font-size: 2rem; font-weight: 700; color: var(--accent-primary)">₹${(totalRev - totalCol).toLocaleString()}</div><p style="font-size: 0.9rem; color: var(--text-dim)">Remaining balance across all students.</p></div>
+            <div class="dashboard-sections">
+                <div class="highlights" style="margin-bottom: 32px;">
+                    <div class="highlight-item" style="border-left: 4px solid var(--accent-secondary);"><h3>Revenue Goal</h3><div class="metric-value">₹${totalRevGoal.toLocaleString()}</div></div>
+                    <div class="highlight-item" style="border-left: 4px solid var(--success);"><h3>Collected</h3><div class="metric-value" style="color: var(--success)">₹${totalCol.toLocaleString()}</div></div>
+                    <div class="highlight-item" style="border-left: 4px solid #f87171;"><h3>Outflow</h3><div class="metric-value" style="color: #f87171">₹${totalExp.toLocaleString()}</div></div>
+                    <div class="highlight-item" style="border-left: 4px solid var(--accent-primary);"><h3>Net Balance</h3><div class="metric-value" style="color: ${netBal >= 0 ? 'var(--success)' : '#f87171'}">₹${netBal.toLocaleString()}</div></div>
+                </div>
+                <div class="dashboard-grid" style="grid-template-columns: 1fr 1.5fr; gap: 32px;">
+                    <div class="console-card" style="padding: 24px;">
+                        <div class="section-title" style="margin-top:0;"><span>Collection Progress</span></div>
+                        <div style="text-align:center; padding: 20px 0;">
+                            <div style="font-size:3rem; font-weight:900; color:var(--success);">${colRate}%</div>
+                            <div style="color:var(--text-dim); margin-top:10px;">₹${(totalRevGoal - totalCol).toLocaleString()} Outstanding</div>
+                        </div>
+                    </div>
+                    <div class="console-card" style="padding: 24px;">
+                        <div class="section-title" style="margin-top:0;"><span>Expense Distribution</span></div>
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            ${Object.entries(expByCat).map(([c, a]) => `<div style="display:flex; justify-content:space-between;"><span>${c}</span><strong>₹${a.toLocaleString()}</strong></div>`).join('')}
+                        </div>
+                    </div>
+                </div>
             </div>`;
     },
 
     renderOverview() {
         const container = document.getElementById('fees-content-overview');
         if (!container || !this.dataLoaded) return;
-        let html = `<table class="console-table"><thead><tr><th>Student Name</th><th>Class</th><th>Package</th><th>Total Fee</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
+        let html = `<table class="console-table"><thead><tr><th>Student Name</th><th>Class</th><th>Total Fee</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>`;
         const q = this.searchQuery;
         const sortedIds = Object.keys(this.students).filter(id => {
             const s = this.students[id];
@@ -208,143 +257,147 @@ window.feesManager = {
         }).sort((a, b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
 
         sortedIds.forEach(id => {
-            const s = this.students[id], f = this.fees[id] || { total: 0, paid: 0 }, p = this.plans[f.planId], bal = (f.total || 0) - (f.paid || 0);
+            const s = this.students[id], f = this.fees[id] || { total: 0, paid: 0 }, bal = (f.total || 0) - (f.paid || 0);
             html += `<tr onclick="window.feesManager.switchView('student_fees', '${id}')" style="cursor:pointer;" class="clickable-row">
-                <td><strong>${s.name}</strong></td><td>${s.admissionForClass || 'N/A'}</td><td>${p ? p.name : '<span style="color:var(--text-dim)">Custom</span>'}</td>
+                <td><strong>${s.name}</strong></td><td>${s.admissionForClass || 'N/A'}</td>
                 <td>₹${(f.total || 0).toLocaleString()}</td><td>₹${(f.paid || 0).toLocaleString()}</td>
                 <td><strong style="color: ${bal > 0 ? 'var(--accent-primary)' : 'var(--success)'}">₹${bal.toLocaleString()}</strong></td>
-                <td><span class="status-pill ${bal <= 0 ? 'status-success' : 'status-warning'}">${bal <= 0 ? 'Cleared' : 'Due'}</span></td>
-                <td><div class="table-actions" onclick="event.stopPropagation()"><button class="btn-icon" onclick="window.feesManager.showSetupFeesForm('${id}')"><i data-lucide="settings"></i></button></div></td></tr>`;
+                <td><span class="status-pill ${bal <= 0 ? 'status-success' : 'status-warning'}">${bal <= 0 ? 'Cleared' : 'Due'}</span></td></tr>`;
         });
-        container.innerHTML = html + (sortedIds.length === 0 ? `<tr><td colspan="8" style="text-align:center; padding: 40px;">No results found.</td></tr>` : '') + '</tbody></table>';
+        container.innerHTML = html + (sortedIds.length === 0 ? '<tr><td colspan="6">No results.</td></tr>' : '') + '</tbody></table>';
     },
 
     renderTransactions() {
         const container = document.getElementById('fees-content-transactions');
         if (!container) return;
-        let html = `<table class="console-table"><thead><tr><th>Date & Time</th><th>Student</th><th>Amount</th><th>Method</th><th>Reference</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+        let html = `<table class="console-table"><thead><tr><th>Date</th><th>Student</th><th>Amount</th><th>Method</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
         const q = this.searchQuery;
-        const filtered = this.transactions.filter(t => {
-            if (!q) return true;
-            const s = this.students[t.studentId] || { name: 'Unknown' };
-            return s.name.toLowerCase().includes(q) || (t.method || '').toLowerCase().includes(q) || (t.reference || '').toLowerCase().includes(q);
-        });
-
+        const filtered = this.transactions.filter(t => !q || (this.students[t.studentId]?.name || '').toLowerCase().includes(q));
         filtered.forEach(t => {
             const s = this.students[t.studentId] || { name: 'Unknown' }, d = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
-            html += `<tr><td><div style="font-weight:600;">${d.toLocaleDateString()}</div><div style="font-size:0.7rem; opacity:0.6;">${d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div></td>
-                <td><strong>${s.name}</strong></td><td><strong style="color:var(--success)">₹${t.amount.toLocaleString()}</strong></td><td>${t.method}</td><td><small>${t.reference || '-'}</small></td>
-                <td><div class="table-actions" style="justify-content:flex-end"><button class="btn-icon" onclick="window.feesManager.printTransactionReceipt('${t.id}')"><i data-lucide="printer"></i></button><button class="btn-icon text-danger" onclick="window.feesManager.deleteTransaction('${t.id}', '${t.studentId}', ${t.amount})"><i data-lucide="trash-2"></i></button></div></td></tr>`;
+            html += `<tr><td>${d.toLocaleDateString()}</td><td><strong>${s.name}</strong></td><td><strong style="color:var(--success)">₹${t.amount.toLocaleString()}</strong></td><td>${t.method}</td>
+                <td style="text-align:right"><button class="btn-icon" onclick="window.feesManager.printTransactionReceipt('${t.id}')"><i data-lucide="printer"></i></button></td></tr>`;
         });
-        container.innerHTML = html + (filtered.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding: 40px;">No collection history.</td></tr>' : '') + '</tbody></table>';
+        container.innerHTML = html + '</tbody></table>';
     },
 
-    renderExpenses() {
-        const container = document.getElementById('fees-content-expenses');
+    renderOfficeExpenses() {
+        const container = document.getElementById('fees-content-office_expenses');
         if (!container) return;
+        const filtered = this.expenses.filter(e => e.source === 'office' && e.type !== 'funding' && (!this.searchQuery || (e.details || '').toLowerCase().includes(this.searchQuery)));
+        let html = `<table class="console-table"><thead><tr><th>Date</th><th>Category</th><th>Details</th><th>Amount</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const currentUserEmail = auth.currentUser?.email?.toLowerCase();
 
+        filtered.forEach(e => {
+            const d = e.timestamp?.toDate ? e.timestamp.toDate() : new Date(e.timestamp);
+            html += `<tr><td>${d.toLocaleDateString()}</td><td><span class="badge">${e.category}</span></td><td>${e.details}</td><td><strong>₹${e.amount.toLocaleString()}</strong></td>
+                <td style="text-align:right">
+                    <div class="table-actions" style="justify-content:flex-end">
+                        ${(isAdmin || e.createdBy === currentUserEmail) ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')" title="Delete record"><i data-lucide="trash-2"></i></button>` : ''}
+                    </div>
+                </td></tr>`;
+        });
+        container.innerHTML = html + (filtered.length === 0 ? '<tr><td colspan="5">No records.</td></tr>' : '') + '</tbody></table>';
+    },
+
+    renderStaffImprest() {
+        const container = document.getElementById('fees-content-staff_imprest');
+        if (!container) return;
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
         const feesPerms = userData.permissions?.fees_accounting || {};
-        const canViewAll = isAdmin || feesPerms === true || feesPerms.expenses_all === true;
-        const canFund = isAdmin || feesPerms === true || feesPerms.fund_staff === true;
-        const currentUserEmail = auth.currentUser?.email;
+        const canApprove = isAdmin || feesPerms.fund_staff;
+        const currentUserEmail = auth.currentUser?.email?.toLowerCase();
 
-        const toolbar = document.getElementById('fees-toolbar');
-        if (toolbar) {
-            toolbar.innerHTML = '';
-            const search = document.createElement('div'); search.className='search-box'; search.style.maxWidth='350px'; search.style.marginRight='auto';
-            search.innerHTML=`<i data-lucide="search"></i><input type="text" placeholder="Search logs..." value="${this.searchQuery}">`;
-            search.querySelector('input').oninput=(e)=>{this.searchQuery=e.target.value.toLowerCase(); this.renderExpenses();};
-            toolbar.appendChild(search);
-            
-            if (canFund) {
-                const fundBtn = document.createElement('button'); fundBtn.className='btn btn-secondary'; fundBtn.innerHTML='<i data-lucide="coins"></i> Fund Staff'; fundBtn.onclick=()=>this.showFundingForm(); toolbar.appendChild(fundBtn);
-            }
-            
-            const spendBtn = document.createElement('button'); spendBtn.className='btn btn-primary'; spendBtn.innerHTML='<i data-lucide="shopping-cart"></i> Log Spend'; spendBtn.onclick=()=>this.showSpendForm(); toolbar.appendChild(spendBtn);
-        }
+        let relStaff = Object.keys(this.staff);
+        if (!canApprove) relStaff = relStaff.filter(sid => this.staff[sid].email?.toLowerCase() === currentUserEmail);
 
-        // Filter staff for wallets display
-        let relevantStaffIds = Object.keys(this.staff);
-        if (!canViewAll) {
-            // Find staff record associated with current user email
-            relevantStaffIds = relevantStaffIds.filter(sid => this.staff[sid].email?.toLowerCase() === currentUserEmail?.toLowerCase());
-        }
-
-        let walletsHtml = `<div class="section-title"><span>${canViewAll ? 'Staff Imprest Wallets' : 'My Wallet Balance'}</span></div><div class="dashboard-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 40px;">`;
-        relevantStaffIds.forEach(sid => {
-            const s = this.staff[sid], sFund = this.expenses.filter(e => e.staffId === sid && e.type === 'funding').reduce((a,b)=>a+b.amount, 0), sSpend = this.expenses.filter(e => e.staffId === sid && e.type === 'spend').reduce((a,b)=>a+b.amount, 0);
-            const bal = sFund - sSpend;
-            walletsHtml += `<div class="console-card" style="padding: 20px; border-top: 3px solid ${bal >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">
-                <div style="font-weight:700; margin-bottom:10px;">${s.name}</div>
-                <div style="font-size:1.5rem; font-weight:900; color: ${bal >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">₹${bal.toLocaleString()}</div>
-                <div style="font-size:0.7rem; color:var(--text-dim); margin-top:5px; text-transform:uppercase;">${bal >= 0 ? 'Surplus Funds' : 'Reimbursement Due'}</div>
+        let walHtml = `<div class="dashboard-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 40px;">`;
+        relStaff.forEach(sid => {
+            const f = this.expenses.filter(e => e.staffId === sid && e.type === 'funding').reduce((a,b)=>a+b.amount, 0),
+                  s = this.expenses.filter(e => e.staffId === sid && e.source === 'staff' && e.status === 'approved').reduce((a,b)=>a+b.amount, 0);
+            const b = f - s;
+            walHtml += `<div class="console-card" style="padding: 20px; border-top: 3px solid ${b >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">
+                <div style="font-weight:700;">${this.staff[sid].name}</div>
+                <div style="font-size:1.5rem; font-weight:900; color: ${b >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">₹${b.toLocaleString()}</div>
             </div>`;
         });
-        if (relevantStaffIds.length === 0 && !canViewAll) {
-            walletsHtml += `<div class="console-card" style="padding: 20px; opacity: 0.6;"><p style="font-size:0.8rem; margin:0;">No personal wallet record found. Contact admin to link your email to your staff profile.</p></div>`;
-        }
-        
-        let logHtml = `<div class="section-title"><span>${canViewAll ? 'Global Expense & Funding Logs' : 'My Activity Logs'}</span></div><table class="console-table"><thead><tr><th>Date</th><th>Activity</th><th>Staff</th><th>Amount</th><th>Category/Details</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+
         const q = this.searchQuery;
-        const filtered = this.expenses.filter(e => {
-            // 1. Visibility Check
-            if (!canViewAll) {
-                // User can only see their own expenses (either they are the staff or they created it)
-                const isRecipient = e.staffId && this.staff[e.staffId]?.email?.toLowerCase() === currentUserEmail?.toLowerCase();
-                const isCreator = e.createdBy?.toLowerCase() === currentUserEmail?.toLowerCase();
-                if (!isRecipient && !isCreator) return false;
-            }
-
-            // 2. Search Check
-            const st = this.staff[e.staffId] || { name: 'Unknown' };
-            return !q || st.name.toLowerCase().includes(q) || (e.details || '').toLowerCase().includes(q) || (e.category || '').toLowerCase().includes(q);
-        });
-
+        const filtered = this.expenses.filter(e => e.source === 'staff' && (!q || (this.staff[e.staffId]?.name || '').toLowerCase().includes(q)));
+        let logHtml = `<div class="section-title"><span>Expenditure Requests</span></div><table class="console-table"><thead><tr><th>Date</th><th>Staff</th><th>Amount</th><th>Status</th><th>Details</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
         filtered.forEach(e => {
             const st = this.staff[e.staffId] || { name: 'Unknown' }, d = e.timestamp?.toDate ? e.timestamp.toDate() : new Date(e.timestamp);
-            logHtml += `<tr><td>${d.toLocaleDateString()}</td>
-                <td><span class="status-pill" style="background:${e.type==='funding'?'rgba(74,222,128,0.1)':'rgba(241,97,91,0.1)'}; color:${e.type==='funding'?'var(--success)':'var(--accent-primary)'}; font-size:0.6rem; text-transform:uppercase;">${e.type}</span></td>
-                <td><strong>${st.name}</strong></td><td><strong style="color:${e.type==='funding'?'var(--success)':'#f87171'}">₹${e.amount.toLocaleString()}</strong></td>
-                <td><div style="font-size:0.85rem; font-weight:600;">${e.category || 'N/A'}</div><div style="font-size:0.75rem; color:var(--text-dim);">${e.details}</div></td>
-                <td><div class="table-actions" style="justify-content:flex-end">
-                    ${e.attachmentUrl ? `<button class="btn-icon" onclick="window.open('${e.attachmentUrl}', '_blank')"><i data-lucide="image"></i></button>` : ''}
-                    ${(isAdmin || e.createdBy === currentUserEmail) ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')"><i data-lucide="trash-2"></i></button>` : ''}
+            const sClass = e.status === 'approved' ? 'status-success' : (e.status === 'rejected' ? 'status-danger' : 'status-warning');
+            logHtml += `<tr><td>${d.toLocaleDateString()}</td><td><strong>${st.name}</strong></td><td><strong>₹${e.amount.toLocaleString()}</strong></td>
+                <td><span class="status-pill ${sClass}">${e.status?.toUpperCase() || 'PENDING'}</span></td><td>${e.details}</td>
+                <td style="text-align:right"><div class="table-actions" style="justify-content:flex-end">
+                    ${(canApprove && e.status === 'pending') ? `<button class="btn-icon text-success" onclick="window.feesManager.updateExpenseStatus('${e.id}', 'approved')"><i data-lucide="check-circle"></i></button><button class="btn-icon text-danger" onclick="window.feesManager.updateExpenseStatus('${e.id}', 'rejected')"><i data-lucide="x-circle"></i></button>` : ''}
+                    ${(isAdmin || e.createdBy === currentUserEmail) ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')" title="Delete request"><i data-lucide="trash-2"></i></button>` : ''}
                 </div></td></tr>`;
         });
-        container.innerHTML = walletsHtml + `</div>` + logHtml + (filtered.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding: 40px;">No expense records found.</td></tr>' : '') + '</tbody></table>';
+        container.innerHTML = walHtml + `</div>` + logHtml + (filtered.length === 0 ? '<tr><td colspan="6">No requests.</td></tr>' : '') + '</tbody></table>';
+    },
+
+    renderSalaries() {
+        const container = document.getElementById('fees-content-salaries');
+        if (!container) return;
+        const isAdmin = (window.currentUserData || {}).isAdmin;
+        const filtered = this.salaries.filter(s => !this.searchQuery || (this.staff[s.staffId]?.name || '').toLowerCase().includes(this.searchQuery));
+        let html = `<table class="console-table"><thead><tr><th>Month</th><th>Staff Member</th><th>Base</th><th>Net Payout</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+        filtered.forEach(s => {
+            const st = this.staff[s.staffId] || { name: 'Unknown' };
+            html += `<tr><td><strong>${s.month}</strong></td><td>${st.name}</td><td>₹${s.baseSalary.toLocaleString()}</td><td><strong style="color:var(--success)">₹${s.netSalary.toLocaleString()}</strong></td>
+                <td style="text-align:right">
+                    <div class="table-actions" style="justify-content:flex-end">
+                        <button class="btn-icon" onclick="window.feesManager.printSalarySlip('${s.id}')" title="Print Slip"><i data-lucide="printer"></i></button>
+                        ${isAdmin ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteSalary('${s.id}')" title="Delete record"><i data-lucide="trash-2"></i></button>` : ''}
+                    </div>
+                </td></tr>`;
+        });
+        container.innerHTML = html + '</tbody></table>';
+    },
+
+    deleteSalary(id) {
+        AppDialog.confirm({
+            title: 'Delete Payroll Record',
+            content: 'Permanently remove this salary record? Any linked reimbursements will be marked as unpaid again.',
+            confirmClass: 'btn-danger',
+            onConfirm: async () => {
+                // 1. Find reimbursements linked to this salary
+                const linkedReimbs = this.expenses.filter(e => e.salaryId === id);
+                const batch = firestore.batch();
+                
+                // 2. Unmark them as paid
+                linkedReimbs.forEach(e => {
+                    batch.update(firestore.collection('modules').doc('fees_accounting').collection('expenses').doc(e.id), {
+                        paidInSalary: firebase.firestore.FieldValue.delete(),
+                        salaryId: firebase.firestore.FieldValue.delete()
+                    });
+                });
+                
+                // 3. Delete salary record
+                batch.delete(firestore.collection('modules').doc('fees_accounting').collection('salaries').doc(id));
+                
+                await batch.commit();
+                AppDialog.toast('Salary record removed', 'info');
+                return true;
+            }
+        });
     },
 
     renderPlans() {
         const container = document.getElementById('fees-content-plans');
         if (!container) return;
-        const toolbar = document.getElementById('fees-toolbar');
-        if (toolbar) {
-            toolbar.innerHTML = '';
-            const search = document.createElement('div'); search.className='search-box'; search.style.maxWidth='350px'; search.style.marginRight='auto';
-            search.innerHTML=`<i data-lucide="search"></i><input type="text" placeholder="Search packages..." value="${this.searchQuery}">`;
-            search.querySelector('input').oninput=(e)=>{this.searchQuery=e.target.value.toLowerCase(); this.renderPlans();};
-            toolbar.appendChild(search);
-            const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="plus"></i> Create Fee Package'; btn.onclick=()=>this.showAddPlanForm(); toolbar.appendChild(btn);
-        }
-
-        if (Object.keys(this.plans).length === 0) { container.innerHTML = '<div class="empty-state"><p>No fee package templates defined yet.</p></div>'; return; }
-
         let html = `<div class="plans-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 24px;">`;
-        const q = this.searchQuery;
-        const filteredPlanIds = Object.keys(this.plans).filter(id => !q || this.plans[id].name.toLowerCase().includes(q));
-
-        filteredPlanIds.forEach(id => {
-            const p = this.plans[id], cycle = p.billingCycle || 12;
-            let annualTotal = 0; (p.components || []).forEach(c => annualTotal += c.frequency === 'monthly' ? (c.amount * cycle) : c.amount);
-            html += `<div class="console-card">
-                <div style="display:flex; justify-content:space-between; align-items:start;">
-                    <div><h3 style="margin:0">${p.name}</h3><div style="font-size:1.1rem; font-weight:800; color:var(--accent-secondary); margin-top:4px;">₹${annualTotal.toLocaleString()} <small style="font-weight:400; font-size:0.75rem; color:var(--text-dim)">/ annual (${cycle}m cycle)</small></div></div>
-                    <button class="btn-icon text-danger" onclick="window.feesManager.deletePlan('${id}')"><i data-lucide="trash-2"></i></button>
-                </div>
-                <div style="margin-top:20px;"><div style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:10px;">Package Components</div><div style="display:flex; flex-direction:column; gap:8px;">${(p.components || []).map(c => `<div style="display:flex; justify-content:space-between; font-size:0.9rem; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03);"><span>${c.name} <small style="color:var(--text-dim)">(${c.frequency})</small></span><strong>₹${c.amount}</strong></div>`).join('')}</div></div>
-            </div>`;
+        Object.keys(this.plans).forEach(id => {
+            const p = this.plans[id];
+            let total = 0; (p.components || []).forEach(c => total += c.frequency === 'monthly' ? (c.amount * (p.billingCycle || 12)) : c.amount);
+            html += `<div class="console-card"><h3>${p.name}</h3><div style="font-size:1.5rem; font-weight:900; color:var(--accent-secondary);">₹${total.toLocaleString()}</div>
+                <div style="margin-top:15px; font-size:0.8rem;">${(p.components || []).map(c => `<div>${c.name}: ₹${c.amount}</div>`).join('')}</div>
+                <button class="btn btn-ghost text-danger btn-sm" style="margin-top:15px;" onclick="window.feesManager.deletePlan('${id}')"><i data-lucide="trash-2"></i> Delete</button></div>`;
         });
         container.innerHTML = html + '</div>';
     },
@@ -352,333 +405,269 @@ window.feesManager = {
     renderStudentFees() {
         const container = document.getElementById('fees-content-student-fees'), id = this.activeStudentId;
         if (!container || !id) return;
-        const s = this.students[id] || { name: 'Student' }, f = this.fees[id] || { total: 0, paid: 0, components: [], billingCycle: 12 }, range = this.getAcademicCycleRange(f.billingCycle || 12);
+        const s = this.students[id] || { name: 'Student' }, f = this.fees[id] || { total: 0, paid: 0, components: [], billingCycle: 12 };
+        
         let html = `
-            <div class="fee-profile-header"><h2>${s.name}</h2><p>Ledger & Billing Structure</p>
+            <div class="fee-profile-header">
+                <h2>${s.name}</h2>
                 <div class="highlights" style="margin-top:20px;">
                     <div class="highlight-item" style="border-left: 4px solid var(--accent-secondary);"><h3>Total Payable</h3><div>₹${(f.total || 0).toLocaleString()}</div></div>
                     <div class="highlight-item" style="border-left: 4px solid var(--success);"><h3>Total Paid</h3><div style="color: var(--success)">₹${(f.paid || 0).toLocaleString()}</div></div>
                     <div class="highlight-item" style="border-left: 4px solid var(--accent-primary);"><h3>Balance Due</h3><div style="color: var(--accent-primary)">₹${((f.total || 0) - (f.paid || 0)).toLocaleString()}</div></div>
                 </div>
             </div>
-            <div class="section-title" style="margin-top:40px; display:flex; justify-content:space-between; align-items:center;"><span>Detailed Fee Breakdown</span><span style="font-size:0.75rem; background:rgba(255,255,255,0.05); padding:4px 12px; border-radius:8px; color:var(--accent-secondary); font-weight:700;">Cycle: ${f.billingCycle || 12} Months (${range})</span></div>
-            <div class="console-card" style="padding:0; overflow:hidden; margin-bottom:40px;"><table class="console-table" style="margin:0;"><thead style="background:rgba(255,255,255,0.02);"><tr><th>Component</th><th>Type</th><th>Freq.</th><th style="text-align:right;">Plan Rate</th><th style="text-align:right;">Waiver</th><th style="text-align:right;">Payable</th></tr></thead><tbody>`;
+            
+            <div class="section-title" style="margin-top:40px; display:flex; justify-content:space-between; align-items:center;">
+                <span>Detailed Fee Breakdown</span>
+                <span style="font-size:0.75rem; background:rgba(255,255,255,0.05); padding:4px 12px; border-radius:8px;">Cycle: ${f.billingCycle || 12} Months</span>
+            </div>
+            
+            <div class="console-card" style="padding:0; overflow:hidden; margin-bottom:40px;">
+                <table class="console-table" style="margin:0;">
+                    <thead style="background:rgba(255,255,255,0.02);"><tr><th>Component</th><th>Frequency</th><th style="text-align:right;">Amount</th></tr></thead>
+                    <tbody>`;
+        
         if (f.components?.length > 0) {
             f.components.forEach(c => {
-                const orig = c.originalAmount || c.amount || 0, pay = c.amount || 0, waiver = Math.max(0, orig - pay);
-                html += `<tr><td><strong>${c.name}</strong></td><td><span style="text-transform:uppercase; font-size:0.7rem; opacity:0.7;">${c.type}</span></td><td><span class="status-pill" style="background:rgba(255,255,255,0.05); font-size:0.65rem;">${c.frequency}</span></td><td style="text-align:right; opacity:0.6;">₹${orig.toLocaleString()}</td><td style="text-align:right; color:var(--accent-primary); font-weight:600;">${waiver > 0 ? `-₹${waiver.toLocaleString()}` : '—'}</td><td style="text-align:right;"><strong>₹${pay.toLocaleString()}</strong> ${c.frequency==='monthly'?'<small>/mo</small>':''}</td></tr>`;
+                html += `<tr><td><strong>${c.name}</strong></td><td><span class="status-pill" style="background:rgba(255,255,255,0.05);">${c.frequency}</span></td><td style="text-align:right;"><strong>₹${c.amount.toLocaleString()}</strong></td></tr>`;
             });
-            if (f.discount > 0) html += `<tr style="background:rgba(241, 97, 91, 0.03);"><td colspan="4"><strong>Global Waiver</strong> <small style="color:var(--text-dim); margin-left:10px;">${f.discountRemarks || 'Adjustment'}</small></td><td style="text-align:right; color:var(--accent-primary); font-weight:800;">-₹${f.discount.toLocaleString()}</td><td style="text-align:right; color:var(--accent-primary);"><strong>Applied</strong></td></tr>`;
-        } else { html += '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">No components configured.</td></tr>'; }
-        html += `</tbody><tfoot style="background:rgba(115, 199, 200, 0.05);"><tr><td colspan="5" style="text-align:right; font-weight:700; padding:20px;">CALCULATED ANNUAL TOTAL:</td><td style="text-align:right; font-size:1.4rem; font-weight:900; color:var(--accent-secondary); padding:20px;">₹${(f.total || 0).toLocaleString()}</td></tr></tfoot></table></div>`;
+        } else {
+            html += '<tr><td colspan="3" style="text-align:center; padding:40px; color:var(--text-dim);">No components configured.</td></tr>';
+        }
+        html += `</tbody></table></div>
+
+            <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+                <span>Transaction History</span>
+                <button class="btn btn-primary btn-sm" onclick="window.feesManager.showPaymentForm('${id}')"><i data-lucide="plus"></i> Add Payment</button>
+            </div>
+            <table class="console-table">
+                <thead><tr><th>Date</th><th>Amount</th><th>Method</th><th style="text-align:right">Actions</th></tr></thead>
+                <tbody>`;
         
-        html += `<div class="section-title" style="display:flex; justify-content:space-between; align-items:center;"><span>Transaction History</span><button class="btn btn-primary btn-sm" onclick="window.feesManager.showPaymentForm('${id}')"><i data-lucide="plus"></i> Add Payment</button></div><table class="console-table"><thead><tr><th>Date & Time</th><th>Amount</th><th>Method</th><th>Reference</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
         const studentTrans = this.transactions.filter(t => t.studentId === id);
         studentTrans.forEach(t => {
             const d = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
-            html += `<tr><td><div style="font-weight:600;">${d.toLocaleDateString()}</div><div style="font-size:0.7rem; opacity:0.6;">${d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div></td><td><strong>₹${t.amount.toLocaleString()}</strong></td><td>${t.method}</td><td><small>${t.reference || '-'}</small></td><td><div class="table-actions" style="justify-content:flex-end"><button class="btn-icon" onclick="window.feesManager.printTransactionReceipt('${t.id}')"><i data-lucide="printer"></i></button><button class="btn-icon text-danger" onclick="window.feesManager.deleteTransaction('${t.id}', '${id}', ${t.amount})"><i data-lucide="trash-2"></i></button></div></td></tr>`;
+            html += `<tr><td>${d.toLocaleDateString()}</td><td><strong>₹${t.amount.toLocaleString()}</strong></td><td>${t.method}</td>
+                <td style="text-align:right"><button class="btn-icon" onclick="window.feesManager.printTransactionReceipt('${t.id}')"><i data-lucide="printer"></i></button></td></tr>`;
         });
-        container.innerHTML = html + (studentTrans.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding: 20px;">No transactions.</td></tr>' : '') + '</tbody></table>';
+        
+        container.innerHTML = html + (studentTrans.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding: 20px;">No transactions found.</td></tr>' : '') + '</tbody></table>';
+        
         const toolbar = document.getElementById('fees-toolbar');
-        if (toolbar) toolbar.innerHTML = `<button class="btn btn-secondary" onclick="window.feesManager.switchView('overview')"><i data-lucide="arrow-left"></i> Back to Ledger</button> <button class="btn btn-primary" onclick="window.feesManager.showSetupFeesForm('${id}')"><i data-lucide="settings"></i> Configure Fees</button>`;
+        if (toolbar) {
+            toolbar.innerHTML = `
+                <button class="btn btn-secondary" onclick="window.feesManager.switchView('overview')"><i data-lucide="arrow-left"></i> Back to Ledger</button>
+                <div style="margin-left:auto;">
+                    <button class="btn btn-primary" onclick="window.feesManager.showSetupFeesForm('${id}')"><i data-lucide="settings"></i> Configure Fees</button>
+                </div>
+            `;
+        }
         if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
-    showFundingForm() {
-        const userData = window.currentUserData || {};
-        const isAdmin = userData.isAdmin;
-        const feesPerms = userData.permissions?.fees_accounting || {};
-        const canViewAll = isAdmin || feesPerms === true || feesPerms.expenses_all === true;
-        const currentUserEmail = auth.currentUser?.email;
-
-        let staffOpts = ''; 
-        Object.values(this.staff).forEach(s => {
-            staffOpts += `<option value="${s.id}">${s.name}</option>`;
-        });
-
-        AppDialog.confirm({
-            title: 'Fund Staff Wallet',
-            content: `<div class="form-group"><label>Recipient Staff Member</label><select id="ff-staff" class="form-control">${staffOpts}</select></div>
-                      <div class="form-group" style="margin-top:15px;"><label>Amount Disbursed (₹)</label><input type="number" id="ff-amount" class="form-control" placeholder="0.00"></div>
-                      <div class="form-group" style="margin-top:15px;"><label>Reference / Note</label><input type="text" id="ff-ref" class="form-control" placeholder="Cash, GPay, Bank Transfer etc."></div>`,
-            onConfirm: () => {
-                const amount = parseFloat(document.getElementById('ff-amount').value);
-                if (!amount || amount <= 0) { AppDialog.toast('Invalid amount', 'error'); return false; }
-                firestore.collection('modules').doc('fees_accounting').collection('expenses').add({
-                    type: 'funding', 
-                    staffId: document.getElementById('ff-staff').value, 
-                    amount, 
-                    details: document.getElementById('ff-ref').value, 
-                    category: 'Internal Transfer', 
-                    createdBy: currentUserEmail,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                return true;
-            }
-        });
-    },
-
-    showSpendForm() {
-        const userData = window.currentUserData || {};
-        const isAdmin = userData.isAdmin;
-        const feesPerms = userData.permissions?.fees_accounting || {};
-        const canViewAll = isAdmin || feesPerms === true || feesPerms.expenses_all === true;
-        const currentUserEmail = auth.currentUser?.email;
-
-        // Find my staff record
-        const myStaffRecord = Object.values(this.staff).find(s => s.email?.toLowerCase() === currentUserEmail?.toLowerCase());
-
-        let staffSelectionHtml = '';
-        if (canViewAll) {
-            let staffOpts = ''; 
-            Object.values(this.staff).forEach(s => {
-                staffOpts += `<option value="${s.id}" ${s.email?.toLowerCase() === currentUserEmail?.toLowerCase() ? 'selected' : ''}>${s.name}</option>`;
-            });
-            staffSelectionHtml = `<div class="form-group"><label>Who Paid?</label><select id="ef-staff" class="form-control">${staffOpts}</select></div>`;
-        } else if (myStaffRecord) {
-            staffSelectionHtml = `<div class="form-group"><label>Spending For</label><input type="text" class="form-control" value="${myStaffRecord.name}" disabled><input type="hidden" id="ef-staff" value="${myStaffRecord.id}"></div>`;
-        } else {
-            AppDialog.toast('No linked staff record found for your email. Please contact admin.', 'error');
-            return;
-        }
-
-        AppDialog.confirm({
-            title: 'Log Operational Spending',
-            content: `${staffSelectionHtml}
-                      <div class="form-grid-2" style="margin-top:15px;"><div class="form-group"><label>Category</label><select id="ef-cat" class="form-control"><option>Supplies</option><option>Utilities</option><option>Travel</option><option>Food & Beverage</option><option>Other</option></select></div><div class="form-group"><label>Amount (₹)</label><input type="number" id="ef-amount" class="form-control" placeholder="0.00"></div></div>
-                      <div class="form-group" style="margin-top:15px;"><label>Details / Item Description</label><input type="text" id="ef-details" class="form-control" placeholder="What was purchased?"></div>
-                      <div class="form-group" style="margin-top:15px;"><label>Receipt Image</label><input type="file" id="ef-file" class="form-control" accept="image/*"></div>`,
-            onConfirm: async () => {
-                const amount = parseFloat(document.getElementById('ef-amount').value), file = document.getElementById('ef-file').files[0];
-                if (!amount || amount <= 0 || !file) { AppDialog.toast('Required: Amount & Receipt Photo', 'error'); return false; }
-                try {
-                    const storageRef = firebase.storage().ref(`expenses/${Date.now()}_${file.name}`), snap = await storageRef.put(file), url = await snap.ref.getDownloadURL();
-                    await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({
-                        type: 'spend', 
-                        staffId: document.getElementById('ef-staff').value, 
-                        amount, 
-                        category: document.getElementById('ef-cat').value, 
-                        details: document.getElementById('ef-details').value, 
-                        attachmentUrl: url, 
-                        createdBy: currentUserEmail,
-                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                    return true;
-                } catch(err) { AppDialog.toast(err.message, 'error'); return false; }
-            }
-        });
-    },
-
     showAddPlanForm() {
-        const renderRow = (c = { name: '', amount: 0, frequency: 'onetime', type: 'tuition' }) => `<div class="form-row plan-component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 1fr 40px; gap:10px; margin-bottom:10px; align-items:center;"><input type="text" class="form-control pc-name" value="${c.name}"><select class="form-control pc-type"><option value="tuition">Tuition</option><option value="lunch">Lunch</option><option value="material">Material</option><option value="other">Other</option></select><select class="form-control pc-freq"><option value="onetime">One-time</option><option value="monthly">Monthly</option></select><input type="number" class="form-control pc-amount" value="${c.amount}"><button class="btn-icon text-danger" onclick="this.parentElement.remove(); window.feesManager.updatePlanTotal();"><i data-lucide="x"></i></button></div>`;
+        const renderRow = () => `<div class="form-row plan-component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 40px; gap:10px; margin-bottom:10px;"><input type="text" class="form-control pc-name" placeholder="Name"><select class="form-control pc-freq"><option value="onetime">One-time</option><option value="monthly">Monthly</option></select><input type="number" class="form-control pc-amount" placeholder="Amount"><button onclick="this.parentElement.remove()" class="btn-icon text-danger"><i data-lucide="x"></i></button></div>`;
         AppDialog.confirm({
-            title: 'Define Fee Package', width: '850px',
-            content: `<div style="display:grid; grid-template-columns: 1fr 180px; gap:20px; align-items:flex-end;"><div class="form-group"><label>Package Name</label><input type="text" id="plan-name" class="form-control"></div><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="plan-cycle" class="form-control" value="12"></div></div>
-                      <div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin-top:25px;"><span>Components</span><button class="btn btn-secondary btn-sm" id="add-plan-comp-btn">Add Item</button></div>
-                      <div id="plan-components-container" style="max-height:350px; overflow-y:auto;">${renderRow()}</div>
-                      <div style="margin-top:20px; padding:15px; background:rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;"><span>Calculated Revenue:</span><span id="plan-total-display" style="font-weight:900; font-size:1.2rem; color:var(--accent-secondary);">₹0</span></div>`,
-            onOpen: () => {
-                const cont = document.getElementById('plan-components-container'), cyc = document.getElementById('plan-cycle');
-                this.updatePlanTotal = () => { let t = 0; const c = parseInt(cyc.value) || 12; document.querySelectorAll('.plan-component-row').forEach(row => { const a = parseFloat(row.querySelector('.pc-amount').value) || 0; const f = row.querySelector('.pc-freq').value; t += f === 'monthly' ? (a*c) : a; }); document.getElementById('plan-total-display').innerText = `₹${t.toLocaleString()}`; };
-                document.getElementById('add-plan-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow(); const row = div.firstElementChild; cont.appendChild(row); if (window.lucide) window.lucide.createIcons({ root: row }); this.updatePlanTotal(); };
-                cont.addEventListener('input', this.updatePlanTotal); cyc.oninput = this.updatePlanTotal; this.updatePlanTotal();
-            },
-            onConfirm: () => {
-                const name = document.getElementById('plan-name').value, components = [];
-                document.querySelectorAll('.plan-component-row').forEach(row => { const n = row.querySelector('.pc-name').value; if (n) components.push({ name: n, amount: parseFloat(row.querySelector('.pc-amount').value) || 0, frequency: row.querySelector('.pc-freq').value, type: row.querySelector('.pc-type').value }); });
-                if (!name || components.length === 0) { AppDialog.toast('Valid name & components required', 'error'); return false; }
-                firestore.collection('modules').doc('fees_accounting').collection('plans').add({ name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12 });
+            title: 'Create Fee Package Template', width: '600px',
+            content: `<div class="form-group"><label>Package Name</label><input type="text" id="plan-name" class="form-control"></div>
+                      <div id="plan-comps" style="margin-top:20px;">${renderRow()}</div><button class="btn btn-secondary btn-sm" id="add-pc">Add Item</button>`,
+            onOpen: (overlay) => { overlay.querySelector('#add-pc').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow(); overlay.querySelector('#plan-comps').appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({root:overlay}); }; },
+            onConfirm: async () => {
+                const components = []; document.querySelectorAll('.plan-component-row').forEach(row => { const n = row.querySelector('.pc-name').value, a = parseFloat(row.querySelector('.pc-amount').value); if (n && a) components.push({ name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'other' }); });
+                await firestore.collection('modules').doc('fees_accounting').collection('plans').add({ name: document.getElementById('plan-name').value, components, billingCycle: 12, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
                 return true;
             }
         });
     },
 
     showSetupFeesForm(studentId) {
-        const f = this.fees[studentId] || { total: 0, planId: '', components: [], discount: 0, discountRemarks: '', billingCycle: 12 }, s = this.students[studentId] || { name: 'Student' };
-        let opts = '<option value="">-- Manual Configuration --</option>'; Object.keys(this.plans).forEach(pid => opts += `<option value="${pid}" ${pid === f.planId ? 'selected' : ''}>${this.plans[pid].name}</option>`);
-        const renderRow = (c) => `<div class="form-row component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 1fr 40px; gap:10px; margin-bottom:15px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);"><div class="form-group" style="margin:0"><label style="font-size:0.6rem;">Fee Name</label><input type="text" class="form-control c-name" value="${c.name}"></div><div class="form-group" style="margin:0"><label style="font-size:0.6rem;">Original</label><div style="font-size:0.85rem; opacity:0.6; padding:6px 0;">₹${(c.originalAmount || c.amount || 0).toLocaleString()}</div><input type="hidden" class="c-orig" value="${c.originalAmount || c.amount || 0}"></div><div class="form-group" style="margin:0"><label style="font-size:0.6rem; color:var(--accent-primary);">Waiver</label><div class="c-waiver-display" style="color:var(--accent-primary); font-weight:700; padding:6px 0; font-size:0.85rem;">₹0</div></div><div class="form-group" style="margin:0"><label style="font-size:0.6rem;">Payable</label><input type="number" class="form-control c-amount" value="${c.amount}"></div><input type="hidden" class="c-type" value="${c.type}"><input type="hidden" class="c-freq" value="${c.frequency}"><button class="btn-icon text-danger" onclick="this.parentElement.remove(); window.feesManager.recalcSetupTotal();" style="margin-top:15px;"><i data-lucide="x"></i></button></div>`;
-        AppDialog.confirm({
-            title: `Custom Structure: ${s.name}`, width: '1000px',
-            content: `<div class="fee-modal-grid"><div class="fee-modal-left"><div class="form-group"><label>Apply Template</label><select id="sf-plan-id" class="form-control" style="border-color:var(--accent-secondary);">${opts}</select></div><div class="form-group" style="margin-top:15px;"><label>Academic Cycle (Mo)</label><input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}"><div id="sf-date-preview" style="font-size:0.65rem; color:var(--accent-secondary); margin-top:5px; font-weight:700;">Coverage: Loading...</div></div><div class="form-group" style="margin-top:15px;"><label>Special Waiver (₹)</label><input type="number" id="sf-discount" class="form-control" value="${f.discount || 0}"></div><div class="form-group" style="margin-top:10px;"><label>Waiver Reason</label><input type="text" id="sf-discount-remarks" class="form-control" value="${f.discountRemarks || ''}"></div><div id="setup-summary-card" style="margin-top:30px; padding:20px; background:var(--sidebar-bg); border-radius:16px; border:1px solid var(--card-border);"><div style="font-weight:700; font-size:0.7rem; text-transform:uppercase; color:var(--text-dim); margin-bottom:10px;">Live Audit</div><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>Gross:</span><span id="sf-gross-display">₹0</span></div><div style="display:flex; justify-content:space-between; color:var(--accent-primary);"><span>Waivers:</span><span id="sf-item-waiver-display">- ₹0</span></div><div style="margin-top:15px; border-top:1px solid var(--card-border); padding-top:10px; display:flex; justify-content:space-between; align-items:center;"><span>Net Payable:</span><strong id="sf-final-total-display" style="color:var(--success); font-size:1.6rem;">₹0</strong></div></div></div><div><div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin:0;"><span>Surgical Components</span><button class="btn btn-secondary btn-sm" id="add-custom-comp-btn"><i data-lucide="plus"></i> Add Item</button></div><div id="setup-components-container" style="max-height:450px; overflow-y:auto; margin-top:10px;">${(f.components || []).map(c => renderRow(c)).join('')}</div></div></div>`,
-            onOpen: () => {
-                const ps = document.getElementById('sf-plan-id'), cc = document.getElementById('setup-components-container'), di = document.getElementById('sf-discount'), cy = document.getElementById('sf-cycle'), dp = document.getElementById('sf-date-preview');
-                this.recalcSetupTotal = () => { let g = 0, w = 0; const c = parseInt(cy.value) || 12; dp.innerText = `Coverage: ${this.getAcademicCycleRange(c)}`; document.querySelectorAll('.component-row').forEach(row => { const o = parseFloat(row.querySelector('.c-orig').value) || 0, p = parseFloat(row.querySelector('.c-amount').value) || 0, f = row.querySelector('.c-freq').value, m = f === 'monthly' ? c : 1; g += (o || p) * m; w += Math.max(0, (o - p) * m); row.querySelector('.c-waiver-display').innerText = `₹${(o - p).toLocaleString()}`; });
-                    const d = parseFloat(di.value) || 0, ft = g - w - d; document.getElementById('sf-gross-display').innerText = `₹${g.toLocaleString()}`; document.getElementById('sf-item-waiver-display').innerText = `- ₹${w.toLocaleString()}`; document.getElementById('sf-final-total-display').innerText = `₹${ft.toLocaleString()}`; return ft; };
-                ps.onchange = (e) => { const p = this.plans[e.target.value]; if (p) { cc.innerHTML = (p.components || []).map(c => renderRow({...c, originalAmount: c.amount})).join(''); cy.value = p.billingCycle || 12; if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); } };
-                document.getElementById('add-custom-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow({name:'', amount:0, originalAmount:0, type:'other', frequency:'onetime'}); cc.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); };
-                cc.addEventListener('input', this.recalcSetupTotal); di.oninput = this.recalcSetupTotal; cy.oninput = this.recalcSetupTotal; this.recalcSetupTotal();
-            },
-            onConfirm: () => {
-                const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0, o = parseFloat(row.querySelector('.c-orig').value) || a; if (n) components.push({ name: n, amount: a, originalAmount: o, type: row.querySelector('.c-type').value, frequency: row.querySelector('.c-freq').value }); });
-                const ft = this.recalcSetupTotal(); firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total: ft, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, discount: parseFloat(document.getElementById('sf-discount').value) || 0, discountRemarks: document.getElementById('sf-discount-remarks').value, components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                return true;
-            }
-        });
-    },
-
-    deletePlan(id) {
-        AppDialog.confirm({ title: 'Delete Package', content: '<p>Permanently remove this template?</p>', confirmClass: 'btn-danger', onConfirm: () => { 
-            firestore.collection('modules').doc('fees_accounting').collection('plans').doc(id).delete(); 
-            return true; 
-        }});
-    },
-
-    printTransactionReceipt(transactionId) {
-        const t = this.transactions.find(item => item.id === transactionId); if (!t) return;
-        const s = this.students[t.studentId] || { name: 'Student' }, d = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
-        const win = window.open('', '_blank');
-        win.document.write(`<html><head><title>Receipt - ${s.name}</title><style>body { font-family: sans-serif; padding: 40px; color: #000; line-height: 1.6; } .receipt-header { border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; } .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; } .payment-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; } .payment-table th, .payment-table td { padding: 12px; border: 1px solid #000; } .total-amount { font-size: 24px; font-weight: 900; }</style></head><body>
-            <div class="receipt-header"><div><h1>ABHISHRI ACADEMY</h1><p>Empowering Young Minds</p></div><div style="text-align:right;"><h2>FEE RECEIPT</h2><p>No: ${transactionId.slice(-8).toUpperCase()}</p></div></div>
-            <div class="info-grid"><div><strong>Student:</strong> ${s.name}<br><strong>Class:</strong> ${s.admissionForClass || 'N/A'}</div><div><strong>Date:</strong> ${d.toLocaleDateString()}<br><strong>Parent:</strong> ${s.fatherName || 'N/A'}</div></div>
-            <table class="payment-table"><thead><tr><th>Description</th><th>Mode</th><th>Reference</th><th style="text-align:right;">Amount</th></tr></thead><tbody><tr><td>School Fees / Academic Charges</td><td>${t.method}</td><td>${t.reference || 'N/A'}</td><td style="text-align:right; font-weight:700;">₹${t.amount.toLocaleString()}</td></tr></tbody></table>
-            <div style="text-align:right;"><span style="font-weight:700;">TOTAL PAID:</span> <span class="total-amount">₹${t.amount.toLocaleString()}</span></div>
-            <div style="margin-top:60px; display:flex; justify-content:space-between;"><div style="border-top:1px solid #000; width:200px; text-align:center;">PARENTS SIGNATURE</div><div style="border-top:1px solid #000; width:200px; text-align:center;">OFFICE STAMP</div></div>
-            <div style="margin-top:100px; text-align:center; font-size:10px; color:#999;">Generated on ${new Date().toLocaleString()}</div>
-            <script>window.onload=()=>{window.print(); setTimeout(()=>window.close(),500);};</script></body></html>`);
-        win.document.close();
-    },
-
-    renderPlans() {
-        const container = document.getElementById('fees-content-plans');
-        if (!container) return;
-        const toolbar = document.getElementById('fees-toolbar');
-        if (toolbar) {
-            toolbar.innerHTML = '';
-            const search = document.createElement('div'); search.className='search-box'; search.style.maxWidth='350px'; search.style.marginRight='auto';
-            search.innerHTML=`<i data-lucide="search"></i><input type="text" placeholder="Search packages..." value="${this.searchQuery}">`;
-            search.querySelector('input').oninput=(e)=>{this.searchQuery=e.target.value.toLowerCase(); this.renderPlans();};
-            toolbar.appendChild(search);
-            const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="plus"></i> Create Fee Package'; btn.onclick=()=>this.showAddPlanForm(); toolbar.appendChild(btn);
-        }
-
-        if (Object.keys(this.plans).length === 0) { container.innerHTML = '<div class="empty-state"><p>No fee package templates defined yet.</p></div>'; return; }
-
-        let html = `<div class="plans-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 24px;">`;
-        const q = this.searchQuery;
-        const filteredPlanIds = Object.keys(this.plans).filter(id => !q || this.plans[id].name.toLowerCase().includes(q));
-
-        filteredPlanIds.forEach(id => {
-            const p = this.plans[id], cycle = p.billingCycle || 12;
-            let annualTotal = 0; (p.components || []).forEach(c => annualTotal += c.frequency === 'monthly' ? (c.amount * cycle) : c.amount);
-            html += `<div class="console-card">
-                <div style="display:flex; justify-content:space-between; align-items:start;">
-                    <div><h3 style="margin:0">${p.name}</h3><div style="font-size:1.1rem; font-weight:800; color:var(--accent-secondary); margin-top:4px;">₹${annualTotal.toLocaleString()} <small style="font-weight:400; font-size:0.75rem; color:var(--text-dim)">/ annual (${cycle}m cycle)</small></div></div>
-                    <button class="btn-icon text-danger" onclick="window.feesManager.deletePlan('${id}')"><i data-lucide="trash-2"></i></button>
-                </div>
-                <div style="margin-top:20px;"><div style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:10px;">Package Components</div><div style="display:flex; flex-direction:column; gap:8px;">${(p.components || []).map(c => `<div style="display:flex; justify-content:space-between; font-size:0.9rem; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03);"><span>${c.name} <small style="color:var(--text-dim)">(${c.frequency})</small></span><strong>₹${c.amount}</strong></div>`).join('')}</div></div>
-            </div>`;
-        });
-        container.innerHTML = html + '</div>';
-    },
-
-    showAddPlanForm() {
-        const renderRow = (c = { name: '', amount: 0, frequency: 'onetime', type: 'tuition' }) => `
-            <div class="form-row plan-component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 1fr 40px; gap:15px; margin-bottom:20px; align-items:start; background:rgba(255,255,255,0.02); padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);">
-                <div class="form-group" style="margin:0"><label style="font-size:0.65rem; text-transform:uppercase; margin-bottom:8px; font-weight:700; color:var(--text-dim); display:block; letter-spacing:0.5px;">Fee Name</label><input type="text" class="form-control pc-name" placeholder="e.g. Tuition" value="${c.name}" style="height:38px; font-size:0.85rem;"></div>
-                <div class="form-group" style="margin:0"><label style="font-size:0.65rem; text-transform:uppercase; margin-bottom:8px; font-weight:700; color:var(--text-dim); display:block; letter-spacing:0.5px;">Category</label><select class="form-control pc-type" style="height:38px; font-size:0.75rem;"><option value="tuition">Tuition</option><option value="lunch">Lunch</option><option value="material">Material</option><option value="other">Other</option></select></div>
-                <div class="form-group" style="margin:0"><label style="font-size:0.65rem; text-transform:uppercase; margin-bottom:8px; font-weight:700; color:var(--text-dim); display:block; letter-spacing:0.5px;">Frequency</label><select class="form-control pc-freq" style="height:38px; font-size:0.75rem;"><option value="onetime">One-time</option><option value="monthly">Monthly</option></select></div>
-                <div class="form-group" style="margin:0"><label style="font-size:0.65rem; text-transform:uppercase; margin-bottom:8px; font-weight:700; color:var(--text-dim); display:block; letter-spacing:0.5px;">Amount (₹)</label><input type="number" class="form-control pc-amount" placeholder="0" value="${c.amount}" style="height:38px; font-weight:700; text-align:right;"></div>
-                <button class="btn-icon text-danger" onclick="this.parentElement.remove(); window.feesManager.updatePlanTotal();" style="margin-top:28px; width:32px; height:32px;"><i data-lucide="trash-2" style="width:16px; height:16px;"></i></button>
+        const f = this.fees[studentId] || { total: 0, planId: '', components: [], billingCycle: 12 }, s = this.students[studentId] || { name: 'Student' };
+        let opts = '<option value="">-- Select Template --</option>'; Object.keys(this.plans).forEach(pid => opts += `<option value="${pid}" ${pid === f.planId ? 'selected' : ''}>${this.plans[pid].name}</option>`);
+        
+        const renderRow = (c) => `
+            <div class="form-row component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 40px; gap:10px; margin-bottom:10px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;">
+                <input type="text" class="form-control c-name" value="${c.name}" placeholder="Fee Name">
+                <select class="form-control c-freq"><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select>
+                <input type="number" class="form-control c-amount" value="${c.amount}" placeholder="Amount">
+                <button class="btn-icon text-danger" onclick="this.parentElement.remove(); window.feesManager.recalcSetupTotal();"><i data-lucide="x"></i></button>
             </div>`;
 
         AppDialog.confirm({
-            title: 'Define Fee Package Template', width: '850px',
+            title: `Configure Fees: ${s.name}`, width: '800px',
             content: `
-                <div style="display:grid; grid-template-columns: 1fr 200px; gap:24px; align-items:flex-end; margin-bottom:20px;">
-                    <div class="form-group">
-                        <label>Package Identity</label>
-                        <p style="font-size:0.65rem; color:var(--text-dim); margin-bottom:8px;">Give this fee bundle a clear name (e.g., "Full Day Standard - 2026")</p>
-                        <input type="text" id="plan-name" class="form-control" style="height:42px; font-weight:600;" placeholder="Enter template name...">
-                    </div>
-                    <div class="form-group">
-                        <label>Academic Duration</label>
-                        <p style="font-size:0.65rem; color:var(--text-dim); margin-bottom:8px;">Standard cycle (Months)</p>
-                        <input type="number" id="plan-cycle" class="form-control" value="12" min="1" max="12" style="height:42px; font-weight:800; text-align:center; border-color:var(--accent-secondary);">
-                    </div>
-                </div>
+                <div class="form-group"><label>Apply Template</label><select id="sf-plan-id" class="form-control">${opts}</select></div>
+                <div class="form-group" style="margin-top:15px;"><label>Academic Cycle (Months)</label><input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}"></div>
                 
-                <div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin-top:25px; border-bottom:1px solid var(--card-border); padding-bottom:10px;">
-                    <span>Template Structure</span>
-                    <button class="btn btn-secondary btn-sm" id="add-plan-comp-btn" style="padding:5px 12px; font-size:0.75rem;"><i data-lucide="plus"></i> Add Fee Component</button>
+                <div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin-top:25px;">
+                    <span>Fee Components</span>
+                    <button class="btn btn-secondary btn-sm" id="add-custom-comp-btn">Add Item</button>
                 </div>
-                <p style="font-size:0.7rem; color:var(--text-dim); margin:10px 0 15px;">Define the components that will be bulk-applied to students using this template.</p>
-                
-                <div id="plan-components-container" style="max-height:350px; overflow-y:auto; padding-right:10px;">
-                    ${renderRow()}
+                <div id="setup-components-container" style="max-height:400px; overflow-y:auto; margin-top:15px;">
+                    ${(f.components || []).map(c => renderRow(c)).join('')}
                 </div>
-                
-                <div id="plan-summary-card" style="margin-top:25px; padding:20px; background:var(--sidebar-bg); border-radius:16px; border:1px solid var(--card-border); display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:4px;">Projected Revenue Value</div>
-                        <div style="font-size:0.65rem; opacity:0.6;">(Annual value per student based on frequency math)</div>
-                    </div>
-                    <div id="plan-total-display" style="font-size:1.8rem; font-weight:900; color:var(--accent-secondary);">₹0</div>
+                <div style="margin-top:20px; padding:20px; background:rgba(255,255,255,0.05); border-radius:16px; display:flex; justify-content:space-between; align-items:center;">
+                    <span>Calculated Total:</span>
+                    <strong id="sf-final-total-display" style="color:var(--success); font-size:1.5rem;">₹0</strong>
                 </div>`,
-            onOpen: () => {
-                const cont = document.getElementById('plan-components-container'), cyc = document.getElementById('plan-cycle');
-                this.updatePlanTotal = () => { 
-                    let t = 0; const c = parseInt(cyc.value) || 12; 
-                    document.querySelectorAll('.plan-component-row').forEach(row => { 
-                        const aInput = row.querySelector('.pc-amount'); if(!aInput) return; 
-                        const a = parseFloat(aInput.value) || 0; const f = row.querySelector('.pc-freq').value; 
-                        t += f === 'monthly' ? (a*c) : a; 
-                    }); 
-                    document.getElementById('plan-total-display').innerText = `₹${t.toLocaleString()}`; 
+            onOpen: (overlay) => {
+                const ps = overlay.querySelector('#sf-plan-id'), cc = overlay.querySelector('#setup-components-container'), cy = overlay.querySelector('#sf-cycle');
+                this.recalcSetupTotal = () => { 
+                    let t = 0; const c = parseInt(cy.value) || 12; 
+                    overlay.querySelectorAll('.component-row').forEach(row => { 
+                        const a = parseFloat(row.querySelector('.c-amount').value) || 0, f = row.querySelector('.c-freq').value; 
+                        t += f === 'monthly' ? (a * c) : a; 
+                    });
+                    overlay.querySelector('#sf-final-total-display').innerText = `₹${t.toLocaleString()}`; 
+                    return t; 
                 };
-                document.getElementById('add-plan-comp-btn').onclick = () => { 
-                    const div = document.createElement('div'); div.innerHTML = renderRow(); 
-                    const row = div.firstElementChild; cont.appendChild(row); 
-                    if (window.lucide) window.lucide.createIcons({ root: row }); 
-                    this.updatePlanTotal(); 
+                ps.onchange = (e) => { 
+                    const p = this.plans[e.target.value]; 
+                    if (p) { cc.innerHTML = (p.components || []).map(c => renderRow(c)).join(''); cy.value = p.billingCycle || 12; if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); } 
                 };
-                cont.addEventListener('input', this.updatePlanTotal); cyc.oninput = this.updatePlanTotal; this.updatePlanTotal();
+                overlay.querySelector('#add-custom-comp-btn').onclick = () => { 
+                    const div = document.createElement('div'); div.innerHTML = renderRow({name:'', amount:0, frequency:'onetime'}); cc.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({ root: cc }); 
+                };
+                overlay.addEventListener('input', this.recalcSetupTotal);
+                this.recalcSetupTotal();
             },
             onConfirm: () => {
-                const name = document.getElementById('plan-name').value, components = [];
-                document.querySelectorAll('.plan-component-row').forEach(row => { 
-                    const nInput = row.querySelector('.pc-name'); if (!nInput) return;
-                    const n = nInput.value;
-                    if (n) components.push({ name: n, amount: parseFloat(row.querySelector('.pc-amount').value) || 0, frequency: row.querySelector('.pc-freq').value, type: row.querySelector('.pc-type').value }); 
+                const components = []; 
+                document.querySelectorAll('.component-row').forEach(row => { 
+                    const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0; 
+                    if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.c-freq').value, type: 'other' }); 
                 });
-                if (!name || components.length === 0) { AppDialog.toast('Valid name & components required', 'error'); return false; }
-                firestore.collection('modules').doc('fees_accounting').collection('plans').add({ 
-                    name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12, createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                }).then(() => AppDialog.toast('Fee Template successfully saved to cloud', 'success'));
+                const total = this.recalcSetupTotal();
+                firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ 
+                    total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+                }, { merge: true });
                 return true;
             }
         });
     },
 
-    deleteTransaction(tid, studentId, amount) {
+    showPaymentForm(studentId) {
+        const s = this.students[studentId] || { name: 'Student' };
         AppDialog.confirm({
-            title: 'Reverse Transaction',
-            content: `<p>Delete payment of <strong>₹${amount.toLocaleString()}</strong>?</p>`,
-            confirmClass: 'btn-danger', confirmText: 'Delete & Rebalance',
-            onConfirm: async () => {
-                try {
-                    await firestore.collection('modules').doc('fees_accounting').collection('transactions').doc(tid).delete();
-                    const curr = this.fees[studentId]?.paid || 0;
-                    await firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ paid: Math.max(0, curr - amount) }, { merge: true });
-                    return true;
-                } catch (err) { AppDialog.toast(err.message, 'error'); return false; }
+            title: `Log Payment: ${s.name}`,
+            content: `<div class="form-group"><label>Amount (₹)</label><input type="number" id="pf-amount" class="form-control"></div><div class="form-group" style="margin-top:15px;"><label>Method</label><select id="pf-method" class="form-control"><option>Cash</option><option>GPay/UPI</option><option>Bank Transfer</option></select></div>`,
+            onConfirm: () => {
+                const amount = parseFloat(document.getElementById('pf-amount').value); if (!amount) return false;
+                this.savePayment(studentId, { amount, method: document.getElementById('pf-method').value, createdBy: auth.currentUser.email });
+                return true;
             }
         });
     },
 
-    getAcademicCycleRange(months) {
-        const start = 3, d = new Date(); d.setMonth(start);
-        const sName = d.toLocaleString('default', { month: 'long' }), sYear = d.getFullYear();
-        d.setMonth(start + (months - 1));
-        return `${sName} ${sYear} – ${d.toLocaleString('default', { month: 'long' })} ${d.getFullYear()}`;
+    savePayment(sid, data) {
+        data.studentId = sid; data.timestamp = firebase.firestore.FieldValue.serverTimestamp();
+        firestore.collection('modules').doc('fees_accounting').collection('transactions').add(data).then(() => {
+            const curr = this.fees[sid]?.paid || 0;
+            firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(sid).set({ paid: curr + data.amount }, { merge: true });
+            AppDialog.toast('Payment saved', 'success');
+        });
     },
 
-    savePayment(studentId, paymentData) {
-        paymentData.studentId = studentId;
-        paymentData.timestamp = firebase.firestore.FieldValue.serverTimestamp();
-        firestore.collection('modules').doc('fees_accounting').collection('transactions').add(paymentData).then(() => {
-            const currentPaid = this.fees[studentId]?.paid || 0;
-            firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ paid: currentPaid + paymentData.amount }, { merge: true });
-            AppDialog.toast('Payment recorded successfully', 'success');
+    showOfficeExpenseForm() {
+        AppDialog.confirm({
+            title: 'Log Office Expense',
+            content: `<div class="form-group"><label>Category</label><select id="oe-cat" class="form-control"><option>Rent</option><option>Utilities</option><option>Supplies</option><option>Marketing</option></select></div><div class="form-group" style="margin-top:15px;"><label>Amount (₹)</label><input type="number" id="oe-amount" class="form-control"></div><div class="form-group" style="margin-top:15px;"><label>Details</label><input type="text" id="oe-details" class="form-control"></div>`,
+            onConfirm: async () => {
+                const amount = parseFloat(document.getElementById('oe-amount').value); if (!amount) return false;
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'office', type: 'spend', amount, category: document.getElementById('oe-cat').value, details: document.getElementById('oe-details').value, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                return true;
+            }
         });
-    }
+    },
+
+    showFundingForm() {
+        let opts = ''; Object.values(this.staff).forEach(s => opts += `<option value="${s.id}">${s.name}</option>`);
+        AppDialog.confirm({
+            title: 'Fund Staff Wallet',
+            content: `<div class="form-group"><label>Staff Member</label><select id="ff-staff" class="form-control">${opts}</select></div><div class="form-group" style="margin-top:15px;"><label>Amount (₹)</label><input type="number" id="ff-amount" class="form-control"></div>`,
+            onConfirm: async () => {
+                const amount = parseFloat(document.getElementById('ff-amount').value); if (!amount) return false;
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'office', type: 'funding', staffId: document.getElementById('ff-staff').value, amount, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                return true;
+            }
+        });
+    },
+
+    showSpendForm() {
+        const my = Object.values(this.staff).find(s => s.email?.toLowerCase() === auth.currentUser.email.toLowerCase());
+        if (!my) { AppDialog.toast('No linked staff record found.', 'error'); return; }
+        AppDialog.confirm({
+            title: 'Reimbursement Request',
+            content: `<div class="form-group"><label>Amount (₹)</label><input type="number" id="sf-amount" class="form-control"></div><div class="form-group" style="margin-top:15px;"><label>Reason</label><input type="text" id="sf-details" class="form-control"></div>`,
+            onConfirm: async () => {
+                const amount = parseFloat(document.getElementById('sf-amount').value); if (!amount) return false;
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'staff', type: 'spend', staffId: my.id, amount, status: 'pending', details: document.getElementById('sf-details').value, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                return true;
+            }
+        });
+    },
+
+    async updateExpenseStatus(id, status) {
+        await firestore.collection('modules').doc('fees_accounting').collection('expenses').doc(id).update({ status, updatedBy: auth.currentUser.email });
+        AppDialog.toast(`Request ${status}`, 'info');
+    },
+
+    showPayrollForm() {
+        let opts = '<option value="">-- Select Staff Member --</option>'; 
+        Object.values(this.staff).sort((a,b)=>a.name.localeCompare(b.name)).forEach(s => opts += `<option value="${s.id}">${s.name}</option>`);
+        const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const now = new Date(), curM = months[now.getMonth()], curY = now.getFullYear();
+
+        AppDialog.confirm({
+            title: 'Process Monthly Payroll', width: '700px',
+            content: `<div class="form-grid-2"><div class="form-group"><label>Staff Member</label><select id="p-staff" class="form-control">${opts}</select></div><div class="form-group"><label>Payroll Month</label><select id="p-month" class="form-control">${months.map(m=>`<option ${m===curM?'selected':''}>${m} ${curY}</option>`).join('')}</select></div></div><div id="payroll-calc-area" style="margin-top:20px; display:none;"><div class="form-grid-2"><div class="form-group"><label>Base Salary (₹)</label><input type="number" id="p-base" class="form-control"></div><div class="form-group"><label>Bonus / Additions (₹)</label><input type="number" id="p-bonus" class="form-control" value="0"></div></div><div id="reimb-info" style="margin-top:10px; color:var(--success); font-size:0.8rem; display:none;">Approved Reimbursements: <strong id="reimb-amt">₹0</strong></div><div class="form-group" style="margin-top:15px;"><label>Deductions (₹)</label><input type="number" id="p-ded" class="form-control" value="0"></div><div style="margin-top:20px; font-size:1.2rem; font-weight:900;">Net Payout: <span id="p-net" style="color:var(--success)">₹0</span></div></div>`,
+            onOpen: (overlay) => {
+                const sel = overlay.querySelector('#p-staff'), area = overlay.querySelector('#payroll-calc-area');
+                const baseI = overlay.querySelector('#p-base'), bonI = overlay.querySelector('#p-bonus'), dedI = overlay.querySelector('#p-ded'), netD = overlay.querySelector('#p-net');
+                const recalc = () => { netD.innerText = `₹${(parseFloat(baseI.value||0) + parseFloat(bonI.value||0) - parseFloat(dedI.value||0)).toLocaleString()}`; };
+                sel.onchange = () => {
+                    const s = this.staff[sel.value]; if (!s) { area.style.display = 'none'; return; }
+                    area.style.display = 'block'; baseI.value = s.baseSalary || 0;
+                    const r = this.expenses.filter(e => e.staffId === s.id && e.source === 'staff' && e.status === 'approved' && !e.paidInSalary);
+                    const t = r.reduce((a,b) => a + b.amount, 0);
+                    if (t > 0) { overlay.querySelector('#reimb-info').style.display='block'; overlay.querySelector('#reimb-amt').innerText=`₹${t.toLocaleString()}`; bonI.value = t; } else { overlay.querySelector('#reimb-info').style.display='none'; bonI.value = 0; }
+                    recalc();
+                };
+                [baseI, bonI, dedI].forEach(i => i.oninput = recalc);
+            },
+            onConfirm: async () => {
+                const sid = document.getElementById('p-staff').value, s = this.staff[sid]; if (!s) return false;
+                const base = parseFloat(document.getElementById('p-base').value)||0, bonus = parseFloat(document.getElementById('p-bonus').value)||0, ded = parseFloat(document.getElementById('p-ded').value)||0;
+                const salRef = await firestore.collection('modules').doc('fees_accounting').collection('salaries').add({ staffId: sid, month: document.getElementById('p-month').value, baseSalary: base, bonus, deductions: ded, netSalary: base + bonus - ded, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                const batch = firestore.batch();
+                this.expenses.filter(e => e.staffId === sid && e.source === 'staff' && e.status === 'approved' && !e.paidInSalary).forEach(e => { batch.update(firestore.collection('modules').doc('fees_accounting').collection('expenses').doc(e.id), { paidInSalary: true, salaryId: salRef.id }); });
+                await batch.commit(); return true;
+            }
+        });
+    },
+
+    deletePlan(id) { 
+        AppDialog.confirm({
+            title: 'Delete Fee Package',
+            content: 'Are you sure you want to permanently delete this package template?',
+            confirmClass: 'btn-danger',
+            onConfirm: () => {
+                firestore.collection('modules').doc('fees_accounting').collection('plans').doc(id).delete();
+                return true;
+            }
+        });
+    },
+
+    deleteExpense(id) {
+        AppDialog.confirm({
+            title: 'Delete Record',
+            content: 'Are you sure you want to permanently delete this financial record? This will affect wallet balances and net flow.',
+            confirmClass: 'btn-danger',
+            onConfirm: () => {
+                firestore.collection('modules').doc('fees_accounting').collection('expenses').doc(id).delete();
+                return true;
+            }
+        });
+    },
+    printTransactionReceipt(id) { window.print(); },
+    printSalarySlip(id) { window.print(); }
 };

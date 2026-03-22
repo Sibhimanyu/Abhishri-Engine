@@ -87,13 +87,16 @@
 
   <div id="pending-approval-modal" class="hidden">
     <div class="login-box" style="text-align: center;">
-      <div style="background: rgba(251, 191, 36, 0.1); color: #fbbf24; width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
+      <div
+        style="background: rgba(251, 191, 36, 0.1); color: #fbbf24; width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
         <i data-lucide="shield-alert" style="width: 32px; height: 32px;"></i>
       </div>
       <h1 class="login-title">Approval Pending</h1>
-      <p class="login-subtitle" style="margin-bottom: 32px;">Your account has been created, but an administrator needs to authorize your access before you can continue.</p>
-      
-      <div id="pending-user-info" style="background: rgba(255,255,255,0.03); padding: 16px; border-radius: 16px; margin-bottom: 32px; border: 1px solid var(--card-border);">
+      <p class="login-subtitle" style="margin-bottom: 32px;">Your account has been created, but an administrator needs
+        to authorize your access before you can continue.</p>
+
+      <div id="pending-user-info"
+        style="background: rgba(255,255,255,0.03); padding: 16px; border-radius: 16px; margin-bottom: 32px; border: 1px solid var(--card-border);">
         <div style="font-weight: 700; color: var(--text-main);" id="pending-email"></div>
         <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 4px;">Status: Waiting for Admin</div>
       </div>
@@ -321,7 +324,8 @@
           <i data-lucide="arrow-left"></i>
           <span>Back to Portal</span>
         </div>
-        <div class="nav-item active" onclick="window.studentDirectory.switchView('directory')" id="nav-student-directory">
+        <div class="nav-item active" onclick="window.studentDirectory.switchView('directory')"
+          id="nav-student-directory">
           <i data-lucide="contact"></i>
           <span>Student Directory</span>
         </div>
@@ -329,7 +333,8 @@
           <i data-lucide="calendar-check"></i>
           <span>Mark Attendance</span>
         </div>
-        <div class="nav-item" onclick="window.studentDirectory.switchView('attendance_reports')" id="nav-student-attendance_reports">
+        <div class="nav-item" onclick="window.studentDirectory.switchView('attendance_reports')"
+          id="nav-student-attendance_reports">
           <i data-lucide="file-bar-chart"></i>
           <span>Attendance Reports</span>
         </div>
@@ -377,16 +382,16 @@
         <div id="student-view-attendance" class="student-subview" style="display:none;">
           <div id="student-content-attendance"></div>
         </div>
-<!-- Attendance Reports View -->
-<div id="student-view-attendance_reports" class="student-subview" style="display:none;">
-  <div id="student-content-attendance-reports"></div>
-</div>
-<!-- Growth Pulse (Performance) View -->
-<div id="student-view-performance" class="student-subview" style="display:none;">
-  <div id="student-content-performance"></div>
-</div>
+        <!-- Attendance Reports View -->
+        <div id="student-view-attendance_reports" class="student-subview" style="display:none;">
+          <div id="student-content-attendance-reports"></div>
+        </div>
+        <!-- Growth Pulse (Performance) View -->
+        <div id="student-view-performance" class="student-subview" style="display:none;">
+          <div id="student-content-performance"></div>
+        </div>
 
-<!-- Manage View -->
+        <!-- Manage View -->
 
         <!-- Report View (Detailed Profile) -->
         <div id="student-view-report" class="student-subview" style="display:none;">
@@ -498,7 +503,8 @@
           <i data-lucide="calendar-check"></i>
           <span>Attendance</span>
         </div>
-        <div class="nav-item" onclick="window.staffDirectory.switchView('attendance_reports')" id="nav-staff-attendance_reports">
+        <div class="nav-item" onclick="window.staffDirectory.switchView('attendance_reports')"
+          id="nav-staff-attendance_reports">
           <i data-lucide="line-chart"></i>
           <span>Attendance Reports</span>
         </div>
@@ -577,7 +583,9 @@
           <span>Back to Portal</span>
         </div>
 
-        <div class="sidebar-section-label" style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 20px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">Revenue Management</div>
+        <div class="sidebar-section-label"
+          style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 20px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">
+          Revenue Management</div>
         <div class="nav-item active" onclick="window.feesManager.switchView('collections')" id="nav-fees-collections">
           <i data-lucide="line-chart"></i>
           <span>Income Insights</span>
@@ -595,7 +603,9 @@
           <span>Package Templates</span>
         </div>
 
-        <div class="sidebar-section-label" style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 30px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">Operational Expenses</div>
+        <div class="sidebar-section-label"
+          style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 30px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">
+          Operational Expenses</div>
         <div class="nav-item" onclick="window.feesManager.switchView('expenses')" id="nav-fees-expenses">
           <i data-lucide="wallet"></i>
           <span>Expense Logs</span>
@@ -686,7 +696,7 @@
           <i data-lucide="zap"></i>
           <span>Scenes Manager</span>
         </div>
-        </nav>
+      </nav>
 
     </aside>
 
@@ -736,19 +746,19 @@
 
         <!-- Scenes Manager Tab -->
         <div id="admin-content-scenes" class="admin-content">
-           <div class="admin-toolbar">
-             <div class="search-box">
-               <i data-lucide="search" style="color: var(--text-dim); width: 20px;"></i>
-               <input type="text" id="scenes-search" placeholder="Search scenes..." oninput="filterScenesList()">
-             </div>
-             <button class="btn btn-primary" onclick="openCreateSceneModal()">
-               <i data-lucide="plus"></i>
-               Create Scene
-             </button>
-           </div>
-           <div id="admin-scenes-list" class="admin-grid">
-              <!-- Scenes will be injected here -->
-           </div>
+          <div class="admin-toolbar">
+            <div class="search-box">
+              <i data-lucide="search" style="color: var(--text-dim); width: 20px;"></i>
+              <input type="text" id="scenes-search" placeholder="Search scenes..." oninput="filterScenesList()">
+            </div>
+            <button class="btn btn-primary" onclick="openCreateSceneModal()">
+              <i data-lucide="plus"></i>
+              Create Scene
+            </button>
+          </div>
+          <div id="admin-scenes-list" class="admin-grid">
+            <!-- Scenes will be injected here -->
+          </div>
         </div>
 
         <!-- Users Tab -->
