@@ -605,10 +605,18 @@
 
         <div class="sidebar-section-label"
           style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 30px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">
-          Operational Expenses</div>
-        <div class="nav-item" onclick="window.feesManager.switchView('expenses')" id="nav-fees-expenses">
+          Expenditure & Payroll</div>
+        <div class="nav-item" onclick="window.feesManager.switchView('office_expenses')" id="nav-fees-office_expenses">
+          <i data-lucide="building"></i>
+          <span>Office Expenses</span>
+        </div>
+        <div class="nav-item" onclick="window.feesManager.switchView('staff_imprest')" id="nav-fees-staff_imprest">
           <i data-lucide="wallet"></i>
-          <span>Expense Logs</span>
+          <span>Staff Imprest</span>
+        </div>
+        <div class="nav-item" onclick="window.feesManager.switchView('salaries')" id="nav-fees-salaries">
+          <i data-lucide="banknote"></i>
+          <span>Salary Payroll</span>
         </div>
       </nav>
     </aside>
@@ -647,9 +655,19 @@
           <div id="fees-content-transactions"></div>
         </div>
 
-        <!-- Expenses View -->
-        <div id="fees-view-expenses" class="fees-subview" style="display:none;">
-          <div id="fees-content-expenses"></div>
+        <!-- Office Expenses View -->
+        <div id="fees-view-office_expenses" class="fees-subview" style="display:none;">
+          <div id="fees-content-office_expenses"></div>
+        </div>
+
+        <!-- Staff Imprest View -->
+        <div id="fees-view-staff_imprest" class="fees-subview" style="display:none;">
+          <div id="fees-content-staff_imprest"></div>
+        </div>
+
+        <!-- Salaries View -->
+        <div id="fees-view-salaries" class="fees-subview" style="display:none;">
+          <div id="fees-content-salaries"></div>
         </div>
 
         <!-- Student Fee View -->
