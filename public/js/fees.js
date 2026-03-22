@@ -290,7 +290,7 @@ window.feesManager = {
         const container = document.getElementById('fees-content-office_expenses');
         if (!container) return;
         const filtered = this.expenses.filter(e => e.source === 'office' && e.type !== 'funding' && (!this.searchQuery || (e.details || '').toLowerCase().includes(this.searchQuery)));
-        let html = `<table class="console-table"><thead><tr><th>Date</th><th>Category</th><th>Details</th><th>Amount</th><th>Actions</th></tr></thead><tbody>`;
+        let html = `<table class="console-table"><thead><tr><th>Date</th><th>Category</th><th>Details</th><th>Amount</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
         const currentUserEmail = auth.currentUser?.email?.toLowerCase();
@@ -298,8 +298,8 @@ window.feesManager = {
         filtered.forEach(e => {
             const d = e.timestamp?.toDate ? e.timestamp.toDate() : new Date(e.timestamp);
             html += `<tr><td>${d.toLocaleDateString()}</td><td><span class="badge">${e.category}</span></td><td>${e.details}</td><td><strong>₹${e.amount.toLocaleString()}</strong></td>
-                <td>
-                    <div class="table-actions">
+                <td style="text-align:right">
+                    <div class="table-actions" style="justify-content:flex-end">
                         ${(isAdmin || e.createdBy === currentUserEmail) ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')" title="Delete record"><i data-lucide="trash-2"></i></button>` : ''}
                     </div>
                 </td></tr>`;
@@ -427,9 +427,12 @@ window.feesManager = {
                         </div>
                     </div>
 
-                    <div style="display:flex; justify-content:flex-end; border-top:1px solid var(--card-border); padding-top:16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--card-border); padding-top:16px;">
+                        <button class="btn btn-ghost btn-sm" style="color:var(--accent-primary);" onclick="window.feesManager.showAddPlanForm('${id}')">
+                            <i data-lucide="edit-3"></i> EDIT
+                        </button>
                         <button class="btn btn-ghost text-danger btn-sm" onclick="window.feesManager.deletePlan('${id}')">
-                            <i data-lucide="trash-2"></i> DELETE TEMPLATE
+                            <i data-lucide="trash-2"></i> DELETE
                         </button>
                     </div>
                 </div>`;
@@ -531,7 +534,9 @@ window.feesManager = {
         if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
-    showAddPlanForm() {
+    showAddPlanForm(id = null) {
+        const p = id ? this.plans[id] : { name: '', billingCycle: 12, components: [] };
+        
         const renderRow = (c = {name: '', frequency: 'onetime', amount: 0}) => `
             <div class="form-row plan-component-row" style="display:grid; grid-template-columns: 2fr 1.5fr 1fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);">
                 <div class="form-group" style="margin:0;"><label style="font-size:0.6rem; color:var(--text-dim);">Component Name</label><input type="text" class="form-control pc-name" value="${c.name}" placeholder="e.g. Tuition Fee"></div>
@@ -541,12 +546,13 @@ window.feesManager = {
             </div>`;
 
         AppDialog.confirm({
-            title: 'Create Fee Package Template', width: '850px',
+            title: id ? 'Edit Fee Package Template' : 'Create Fee Package Template', width: '850px',
             content: `
                 <div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;">
                     <div>
-                        <div class="form-group"><label>Package Name</label><input type="text" id="plan-name" class="form-control" placeholder="e.g. Grade 1 standard"></div>
-                        <div class="form-group" style="margin-top:20px;"><label>Academic Cycle (Months)</label><input type="number" id="plan-cycle" class="form-control" value="12"></div>
+                        <div class="form-group"><label>Package Name</label><input type="text" id="plan-name" class="form-control" value="${p.name}" placeholder="e.g. Grade 1 standard"></div>
+                        <div class="form-group" style="margin-top:20px;"><label>Academic Cycle (Months)</label><input type="number" id="plan-cycle" class="form-control" value="${p.billingCycle || 12}"></div>
+                        
                         <div id="plan-summary-card" style="margin-top:32px; padding:24px; background:var(--accent-secondary); color:#000; border-radius:20px; box-shadow: 0 10px 30px rgba(115, 199, 200, 0.2);">
                             <div style="font-size:0.7rem; font-weight:800; text-transform:uppercase; opacity:0.7; letter-spacing:1px;">Annual Commitment</div>
                             <div id="plan-total-display" style="font-size:2.2rem; font-weight:900; margin:8px 0;">₹0</div>
@@ -557,7 +563,9 @@ window.feesManager = {
                             <span>Fee Components</span>
                             <button class="btn btn-secondary btn-sm" id="add-plan-comp-btn"><i data-lucide="plus"></i> Add Item</button>
                         </div>
-                        <div id="plan-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px; padding-right:10px;">${renderRow()}</div>
+                        <div id="plan-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px; padding-right:10px;">
+                            ${p.components.length > 0 ? p.components.map(c => renderRow(c)).join('') : renderRow()}
+                        </div>
                     </div>
                 </div>`,
             onOpen: (overlay) => {
@@ -571,15 +579,40 @@ window.feesManager = {
                     totalOut.innerText = `₹${total.toLocaleString()}`;
                     return total;
                 };
-                overlay.querySelector('#add-plan-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow(); container.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({ root: container }); };
+                overlay.querySelector('#add-plan-comp-btn').onclick = () => {
+                    const div = document.createElement('div'); div.innerHTML = renderRow();
+                    container.appendChild(div.firstElementChild);
+                    if (window.lucide) window.lucide.createIcons({ root: container });
+                    this.recalcPlanTotal();
+                };
                 overlay.addEventListener('input', this.recalcPlanTotal);
                 this.recalcPlanTotal();
                 if (window.lucide) window.lucide.createIcons({ root: overlay });
             },
             onConfirm: async () => {
-                const name = document.getElementById('plan-name').value; if (!name) return false;
-                const components = []; document.querySelectorAll('.plan-component-row').forEach(row => { const n = row.querySelector('.pc-name').value, a = parseFloat(row.querySelector('.pc-amount').value) || 0; if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'academic' }); });
-                await firestore.collection('modules').doc('fees_accounting').collection('plans').add({ name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12, createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: auth.currentUser.email });
+                const name = document.getElementById('plan-name').value;
+                if (!name) { AppDialog.toast('Package name is required', 'error'); return false; }
+                const components = [];
+                document.querySelectorAll('.plan-component-row').forEach(row => {
+                    const n = row.querySelector('.pc-name').value, a = parseFloat(row.querySelector('.pc-amount').value) || 0;
+                    if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'academic' });
+                });
+                if (components.length === 0) { AppDialog.toast('Add at least one fee component', 'error'); return false; }
+
+                const data = {
+                    name,
+                    components,
+                    billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedBy: auth.currentUser.email
+                };
+                if (!id) data.createdAt = data.updatedAt;
+
+                const ref = firestore.collection('modules').doc('fees_accounting').collection('plans');
+                if (id) await ref.doc(id).update(data);
+                else await ref.add(data);
+                
+                AppDialog.toast(`Fee package ${id ? 'updated' : 'created'}`, 'success');
                 return true;
             }
         });
@@ -614,7 +647,7 @@ window.feesManager = {
                 overlay.addEventListener('input', this.recalcSetupTotal); this.recalcSetupTotal();
             },
             onConfirm: () => {
-                const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0; if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.c-freq').value, type: 'other' }); });
+                const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0; if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'other' }); });
                 const total = this.recalcSetupTotal();
                 firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 return true;
@@ -677,7 +710,7 @@ window.feesManager = {
             content: `<div class="form-group"><label>Amount (₹)</label><input type="number" id="sf-amount" class="form-control"></div><div class="form-group" style="margin-top:15px;"><label>Reason</label><input type="text" id="sf-details" class="form-control"></div>`,
             onConfirm: async () => {
                 const amount = parseFloat(document.getElementById('sf-amount').value); if (!amount) return false;
-                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'staff', type: 'spend', staffId: my.id, amount, status: 'pending', details: document.getElementById('sf-details').value, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'staff', type: 'spend', staffId: my.id, amount, status: 'pending', category: 'General', details: document.getElementById('sf-details').value, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
                 return true;
             }
         });
@@ -749,7 +782,7 @@ window.feesManager = {
         const s = this.salaries.find(x => x.id === id); if (!s) return;
         const st = this.staff[s.staffId] || { name: 'Staff Member' };
         const win = window.open('', '_blank');
-        win.document.write(`<html><head><title>Slip - ${st.name}</title><style>body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; } .header { border-bottom: 2px solid #F1615B; padding-bottom: 20px; margin-bottom: 30px; } .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; } .payout-table { width: 100%; margin: 30px 0; border-collapse: collapse; } .payout-table td { padding: 12px; border-bottom: 1px solid #eee; } .net { font-size: 24px; font-weight: 900; color: #22c55e; }</style></head><body>
+        win.document.write(`<html><head><title>Slip - ${st.name}</title><style>body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; } .header { border-bottom: 2px solid #F1615B; padding-bottom: 20px; margin-bottom: 30px; } .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; } .payout-table { width: 100%; border-collapse: collapse; margin: 30px 0; } .payout-table td { padding: 12px; border-bottom: 1px solid #eee; } .net { font-size: 24px; font-weight: 900; color: #22c55e; }</style></head><body>
             <div class="header"><h1>ABHISHRI ACADEMY</h1><p>Salary Pay Slip - ${s.month}</p></div>
             <div class="grid"><div><strong>Employee Name:</strong> ${st.name}<br><strong>Designation:</strong> ${st.designation || 'N/A'}</div><div><strong>Date:</strong> ${new Date(s.timestamp?.toDate ? s.timestamp.toDate() : s.timestamp).toLocaleDateString()}</div></div>
             <table class="payout-table">
