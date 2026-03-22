@@ -1036,7 +1036,8 @@ header {
 }
 
 /* Login Modal */
-#login-modal {
+#login-modal,
+#pending-approval-modal {
   position: fixed;
   inset: 0;
   background: var(--bg-color);

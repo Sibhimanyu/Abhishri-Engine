@@ -34,12 +34,23 @@ document.addEventListener('DOMContentLoaded', () => {
 // Auth State Observer
 auth.onAuthStateChanged(user => {
     const authModal = document.getElementById('login-modal');
+    const pendingModal = document.getElementById('pending-approval-modal');
+    
     if (user) {
+        // Always ensure they are in RTDB users node for admin visibility
+        db.ref(`users/${user.uid}`).update({
+            email: user.email,
+            displayName: user.displayName || user.email.split('@')[0],
+            lastSignIn: Date.now(),
+            photoURL: user.photoURL || ''
+        });
+        
         // User is signed in, check if they are authorized
-        checkUserAccess(user, authModal);
+        checkUserAccess(user, authModal, pendingModal);
     } else {
         // No user is signed in
-        authModal.classList.remove('hidden');
+        if (authModal) authModal.classList.remove('hidden');
+        if (pendingModal) pendingModal.classList.add('hidden');
         document.getElementById('user-widget').style.display = 'none';
         hideSplash();
     }
@@ -101,7 +112,7 @@ function handleAuthError(error) {
 }
 
 // ─── Access Control Engine (Firestore) ──────────────────────────────────────
-async function checkUserAccess(user, modal) {
+async function checkUserAccess(user, modal, pendingModal) {
     const email = user.email.toLowerCase();
     const isAllowedDomain = email.endsWith('@abhishriacademy.in') || email.endsWith('@zoho.com') || email.endsWith('@zoho.in');
     const isMasterEmail = email === 'sibhi.gv@gmail.com';
@@ -111,6 +122,7 @@ async function checkUserAccess(user, modal) {
 
         if (userDoc.exists) {
             // User exists in whitelist
+            if (pendingModal) pendingModal.classList.add('hidden');
             grantAccess(user, modal, userDoc.data());
         } else if (isAllowedDomain || isMasterEmail) {
             // Auto-provision user
@@ -129,11 +141,17 @@ async function checkUserAccess(user, modal) {
             };
 
             await firestore.collection('allowedUsers').doc(email).set(newUserData);
+            if (pendingModal) pendingModal.classList.add('hidden');
             grantAccess(user, modal, newUserData);
         } else {
-            // Block access
-            AppDialog.toast('Access Denied: Your email is not authorized.', 'error');
-            auth.signOut();
+            // Block access but show pending modal
+            if (modal) modal.classList.add('hidden');
+            if (pendingModal) {
+                pendingModal.classList.remove('hidden');
+                document.getElementById('pending-email').innerText = email;
+                if (window.lucide) lucide.createIcons();
+            }
+            hideSplash();
         }
     } catch (err) {
         console.error("Access Check Error:", err);
@@ -143,16 +161,8 @@ async function checkUserAccess(user, modal) {
 }
 
 function grantAccess(user, modal, userData) {
-    modal.classList.add('hidden');
+    if (modal) modal.classList.add('hidden');
     window.currentUserData = userData;
-
-    // Sync non-critical profile data to RTDB for live visibility
-    db.ref(`users/${user.uid}`).update({
-        email: user.email,
-        displayName: user.displayName || user.email.split('@')[0],
-        lastSignIn: Date.now(),
-        photoURL: user.photoURL || ''
-    });
 
     updateUserWidget(user, userData);
     handleRouting();

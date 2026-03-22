@@ -196,6 +196,7 @@ window.adminPanel = {
                 container.appendChild(div);
             });
             lucide.createIcons();
+            this.renderUsersTable();
         });
     },
 
@@ -208,6 +209,8 @@ window.adminPanel = {
 
             Object.keys(this.usersData).forEach(uid => {
                 const u = this.usersData[uid];
+                const isAuthorized = this.allowedUsersData && this.allowedUsersData[u.email.toLowerCase()];
+                
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>
@@ -218,10 +221,53 @@ window.adminPanel = {
                     </td>
                     <td>${u.email}</td>
                     <td>${u.lastSignIn ? new Date(u.lastSignIn).toLocaleString() : 'N/A'}</td>
-                    <td>—</td>
+                    <td>
+                        ${isAuthorized 
+                            ? '<span class="perm-badge perm-badge-admin" style="background:rgba(74,222,128,0.1); color:var(--success);">Authorized</span>' 
+                            : '<span class="perm-badge" style="background:rgba(232,105,102,0.1); color:var(--accent-primary);">Pending Approval</span>'}
+                    </td>
+                    <td style="text-align:right">
+                        ${!isAuthorized ? `
+                            <button class="btn btn-primary btn-sm" onclick="window.adminPanel.quickAuthorize('${u.email}')">
+                                <i data-lucide="user-plus" style="width:14px;height:14px;"></i> Authorize
+                            </button>
+                        ` : `
+                            <button class="btn btn-secondary btn-sm" onclick="window.adminPanel.showEditUserModal('${u.email}')">
+                                <i data-lucide="settings" style="width:14px;height:14px;"></i>
+                            </button>
+                        `}
+                    </td>
                 `;
                 container.appendChild(tr);
             });
+            if (window.lucide) lucide.createIcons();
+        });
+    },
+
+    quickAuthorize(email) {
+        AppDialog.confirm({
+            title: 'Authorize User',
+            content: `<p>Authorize <strong>${email}</strong> and set up their permissions?</p>`,
+            onConfirm: async () => {
+                await firestore.collection('allowedUsers').doc(email.toLowerCase()).set({
+                    email: email.toLowerCase(),
+                    isAdmin: false,
+                    permissions: {
+                        smart_campus: { view: true },
+                        staff_directory: { view: true },
+                        student_directory: { view: true },
+                        fees_accounting: { view: true }
+                    },
+                    addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    addedBy: auth.currentUser.email
+                });
+                AppDialog.toast('User authorized successfully', 'success');
+                // Re-render
+                this.renderUsersTable();
+                // show modal for further editing
+                this.showEditUserModal(email.toLowerCase());
+                return true;
+            }
         });
     },
 

@@ -195,12 +195,6 @@ window.studentDirectory = {
                     <i data-lucide="search"></i>
                     <input type="text" placeholder="Search by name or ID..." oninput="window.studentDirectory.handleSearch(this.value)" value="${this.searchQuery}">
                 </div>
-                <div class="header-actions">
-                    ${canManage ? `
-                        <button class="btn btn-secondary" onclick="window.studentDirectory.seedSampleStudent()"><i data-lucide="database"></i></button>
-                        <button class="btn btn-primary" onclick="window.studentDirectory.switchView('manage')"><i data-lucide="plus"></i> New Student</button>
-                    ` : ''}
-                </div>
             `;
         }
 
@@ -269,7 +263,10 @@ window.studentDirectory = {
         if (toolbar) {
             toolbar.innerHTML = `
                 <div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search admissions..." oninput="window.studentDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>
-                <button class="btn btn-primary" onclick="window.studentDirectory.showStudentForm()"><i data-lucide="user-plus"></i> New Admission</button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-secondary" onclick="window.studentDirectory.seedSampleStudent()"><i data-lucide="database"></i> Seed</button>
+                    <button class="btn btn-primary" onclick="window.studentDirectory.showStudentForm()"><i data-lucide="user-plus"></i> New Admission</button>
+                </div>
             `;
         }
 
@@ -532,19 +529,25 @@ window.studentDirectory = {
             `;
         }
         
-        const snap = await firestore.collection('modules').doc('student_directory').collection('students').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(15).get();
-        let logsHtml = ''; snap.forEach(doc => {
-            const d = doc.data();
-            logsHtml += `
-                <div class="console-card" style="margin-bottom:20px; border-left:4px solid var(--accent-secondary); padding:20px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                        <span style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase;">${d.date}</span>
-                        <div style="color:#fbbf24">${'★'.repeat(d.engagement)}${'☆'.repeat(5-d.engagement)}</div>
-                    </div>
-                    <h4 style="margin-bottom:8px; font-size:1.1rem;">${d.title}</h4>
-                    <p style="color:var(--text-dim); line-height:1.5; font-size:0.95rem;">${d.summary}</p>
-                </div>`;
-        });
+        let logsHtml = '';
+        try {
+            const snap = await firestore.collection('modules').doc('student_directory').collection('students').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(15).get();
+            snap.forEach(doc => {
+                const d = doc.data();
+                logsHtml += `
+                    <div class="console-card" style="margin-bottom:20px; border-left:4px solid var(--accent-secondary); padding:20px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                            <span style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase;">${d.date}</span>
+                            <div style="color:#fbbf24">${'★'.repeat(d.engagement)}${'☆'.repeat(5-d.engagement)}</div>
+                        </div>
+                        <h4 style="margin-bottom:8px; font-size:1.1rem;">${d.title}</h4>
+                        <p style="color:var(--text-dim); line-height:1.5; font-size:0.95rem;">${d.summary}</p>
+                    </div>`;
+            });
+        } catch (err) {
+            logsHtml = '<div class="empty-state"><i data-lucide="lock" style="margin-bottom:10px;"></i><p style="color:var(--text-dim);">No permission to view activity logs.</p></div>';
+            console.warn('Student Pulse fetch aborted:', err);
+        }
 
         container.innerHTML = `
             <div class="profile-card-main" style="margin-top:0; margin-bottom:32px; display:flex; align-items:center; gap:32px;">
@@ -586,12 +589,25 @@ window.studentDirectory = {
         const s = this.students[id];
         if (!s) return;
 
-        const feeData = window.feesManager?.fees?.[id] || { total: 0, paid: 0 };
-        const balance = (feeData.total || 0) - (feeData.paid || 0);
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feePerms = userData.permissions?.fees_accounting || {};
+        const canViewFees = isAdmin || feePerms === true || feePerms.view;
+        const perfPerms = userData.permissions?.student_performance || {};
+        const canViewPulse = isAdmin || perfPerms === true || perfPerms.view;
+
+        const feeData = canViewFees ? (window.feesManager?.fees?.[id] || { total: 0, paid: 0 }) : null;
+        const balance = feeData ? ((feeData.total || 0) - (feeData.paid || 0)) : 0;
         
-        const pulseSnap = await firestore.collection('modules').doc('student_directory').collection('students').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(3).get();
         const latestPulses = [];
-        pulseSnap.forEach(doc => latestPulses.push(doc.data()));
+        if (canViewPulse) {
+            try {
+                const pulseSnap = await firestore.collection('modules').doc('student_directory').collection('students').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(3).get();
+                pulseSnap.forEach(doc => latestPulses.push(doc.data()));
+            } catch (err) {
+                console.warn('Permission denied or error fetching performance logs:', err);
+            }
+        }
 
         const toolbar = document.getElementById('student-toolbar');
         if (toolbar) {
@@ -615,12 +631,6 @@ window.studentDirectory = {
                         </div>
                     </div>
                     <div class="profile-actions" style="display: flex; gap: 16px;">
-                        <button class="btn btn-secondary" style="padding: 14px 28px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);" onclick="window.studentDirectory.showStudentForm('${id}')">
-                            <i data-lucide="edit-3" style="width: 18px; height: 18px; margin-right: 8px;"></i> EDIT PROFILE
-                        </button>
-                        <button class="btn btn-primary" style="padding: 14px 28px; font-weight: 800; background: var(--accent-secondary); color: #000; border: none;" onclick="window.print()">
-                            <i data-lucide="printer" style="width: 18px; height: 18px; margin-right: 8px;"></i> PRINT REPORT
-                        </button>
                     </div>
                 </div>
 
@@ -631,12 +641,12 @@ window.studentDirectory = {
                             <div class="metric-info"><h3>Attendance</h3><div class="metric-value">94%</div></div>
                         </div>
                         <div class="metric-card">
-                            <div class="metric-icon" style="background: ${balance > 0 ? 'rgba(251, 191, 36, 0.1)' : 'rgba(74, 222, 128, 0.1)'}; color: ${balance > 0 ? '#fbbf24' : 'var(--success)'};"><i data-lucide="wallet"></i></div>
-                            <div class="metric-info"><h3>Fee Status</h3><div class="metric-value" style="color:${balance > 0 ? '#fbbf24' : 'var(--success)'}">${balance > 0 ? 'Pending' : 'Cleared'}</div></div>
+                            <div class="metric-icon" style="background: ${canViewFees ? (balance > 0 ? 'rgba(251, 191, 36, 0.1)' : 'rgba(74, 222, 128, 0.1)') : 'rgba(255,255,255,0.05)'}; color: ${canViewFees ? (balance > 0 ? '#fbbf24' : 'var(--success)') : 'var(--text-dim)'};"><i data-lucide="wallet"></i></div>
+                            <div class="metric-info"><h3>Fee Status</h3><div class="metric-value" style="color:${canViewFees ? (balance > 0 ? '#fbbf24' : 'var(--success)') : 'var(--text-dim)'}">${canViewFees ? (balance > 0 ? 'Pending' : 'Cleared') : 'No Access'}</div></div>
                         </div>
                         <div class="metric-card">
-                            <div class="metric-icon" style="background: rgba(241, 97, 91, 0.1); color: var(--accent-primary);"><i data-lucide="activity"></i></div>
-                            <div class="metric-info"><h3>Growth Pulse</h3><div class="metric-value">${latestPulses.length} Logged</div></div>
+                            <div class="metric-icon" style="background: ${canViewPulse ? 'rgba(241, 97, 91, 0.1)' : 'rgba(255,255,255,0.05)'}; color: ${canViewPulse ? 'var(--accent-primary)' : 'var(--text-dim)'};"><i data-lucide="activity"></i></div>
+                            <div class="metric-info"><h3>Growth Pulse</h3><div class="metric-value" style="color:${canViewPulse ? '' : 'var(--text-dim)'}">${canViewPulse ? `${latestPulses.length} Logged` : 'No Access'}</div></div>
                         </div>
                     </div>
 
@@ -664,15 +674,16 @@ window.studentDirectory = {
                     <div class="profile-info-grid" style="display:grid; grid-template-columns: 1.5fr 1fr; gap:32px; margin-top: 32px;">
                         <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
                             <div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="sparkles"></i> Recent Growth Pulse</div>
-                            <div class="pulse-mini-list">${latestPulses.length > 0 ? latestPulses.map(p => `
+                            <div class="pulse-mini-list">${!canViewPulse ? '<div class="empty-state" style="padding:20px;"><i data-lucide="lock" style="margin-bottom:10px;"></i><p style="color:var(--text-dim);">No permission to view data.</p></div>' : (latestPulses.length > 0 ? latestPulses.map(p => `
                                 <div style="padding:16px; background:rgba(255,255,255,0.03); border-radius:12px; margin-bottom:12px; border-left:4px solid var(--accent-secondary)">
                                     <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><strong>${p.title}</strong><small style="color:var(--text-dim)">${p.date}</small></div>
                                     <p style="font-size:0.9rem; color:var(--text-dim); margin:0; line-height:1.5;">${p.summary}</p>
-                                </div>`).join('') : '<div class="empty-state" style="padding:20px;"><p style="color:var(--text-dim);">No pulses logged yet.</p></div>'}
+                                </div>`).join('') : '<div class="empty-state" style="padding:20px;"><p style="color:var(--text-dim);">No pulses logged yet.</p></div>')}
                             </div>
                         </div>
                         <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
                             <div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="wallet"></i> Financial Summary</div>
+                            ${canViewFees ? `
                             <div class="fee-summary-mini">
                                 <div style="display:flex; justify-content:space-between; margin-bottom:12px;"><span>Annual Total</span><strong>₹${(feeData.total || 0).toLocaleString()}</strong></div>
                                 <div style="display:flex; justify-content:space-between; margin-bottom:12px;"><span>Amount Paid</span><strong style="color:var(--success)">₹${(feeData.paid || 0).toLocaleString()}</strong></div>
@@ -697,6 +708,7 @@ window.studentDirectory = {
                                     </div>
                                 ` : ''}
                             </div>
+                            ` : `<div class="empty-state" style="padding:20px;"><i data-lucide="lock" style="margin-bottom:10px;"></i><p style="color:var(--text-dim);">No permission to view fee records.</p></div>`}
                         </div>
                     </div>
                 </div>

@@ -183,12 +183,6 @@ window.staffDirectory = {
                     <i data-lucide="search"></i>
                     <input type="text" placeholder="Search by name or role..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}">
                 </div>
-                <div class="header-actions">
-                    ${canManage ? `
-                        <button class="btn btn-secondary" onclick="window.staffDirectory.seedSampleStaff()"><i data-lucide="database"></i></button>
-                        <button class="btn btn-primary" onclick="window.staffDirectory.switchView('manage')"><i data-lucide="plus"></i> Add Staff</button>
-                    ` : ''}
-                </div>
             `;
         }
 
@@ -257,7 +251,10 @@ window.staffDirectory = {
         if (toolbar) {
             toolbar.innerHTML = `
                 <div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search staff records..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>
-                <button class="btn btn-primary" onclick="window.staffDirectory.showStaffForm()"><i data-lucide="user-plus"></i> Add Staff</button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-secondary" onclick="window.staffDirectory.seedSampleStaff()"><i data-lucide="database"></i> Seed</button>
+                    <button class="btn btn-primary" onclick="window.staffDirectory.showStaffForm()"><i data-lucide="user-plus"></i> Add Staff</button>
+                </div>
             `;
         }
 
@@ -520,19 +517,25 @@ window.staffDirectory = {
             `;
         }
         
-        const snap = await firestore.collection('modules').doc('staff_directory').collection('staff').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(15).get();
-        let logsHtml = ''; snap.forEach(doc => {
-            const d = doc.data();
-            logsHtml += `
-                <div class="console-card" style="margin-bottom:20px; border-left:4px solid var(--accent-secondary); padding:20px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                        <span style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase;">${d.date}</span>
-                        <div style="color:#fbbf24">${'★'.repeat(d.rating || 3)}${'☆'.repeat(5-(d.rating||3))}</div>
-                    </div>
-                    <h4 style="margin-bottom:8px; font-size:1.1rem;">${d.title}</h4>
-                    <p style="color:var(--text-dim); line-height:1.5; font-size:0.95rem;">${d.summary}</p>
-                </div>`;
-        });
+        let logsHtml = '';
+        try {
+            const snap = await firestore.collection('modules').doc('staff_directory').collection('staff').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(15).get();
+            snap.forEach(doc => {
+                const d = doc.data();
+                logsHtml += `
+                    <div class="console-card" style="margin-bottom:20px; border-left:4px solid var(--accent-secondary); padding:20px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                            <span style="font-size:0.75rem; font-weight:700; color:var(--text-dim); text-transform:uppercase;">${d.date}</span>
+                            <div style="color:#fbbf24">${'★'.repeat(d.rating || 3)}${'☆'.repeat(5-(d.rating||3))}</div>
+                        </div>
+                        <h4 style="margin-bottom:8px; font-size:1.1rem;">${d.title}</h4>
+                        <p style="color:var(--text-dim); line-height:1.5; font-size:0.95rem;">${d.summary}</p>
+                    </div>`;
+            });
+        } catch (err) {
+            console.warn('Staff Pulse fetch aborted:', err);
+            logsHtml = '<div class="empty-state"><i data-lucide="lock" style="margin-bottom:10px;"></i><p style="color:var(--text-dim);">No permission to view activity logs.</p></div>';
+        }
 
         container.innerHTML = `
             <div class="profile-card-main" style="margin-top:0; margin-bottom:32px; display:flex; align-items:center; gap:32px;">
@@ -575,13 +578,31 @@ window.staffDirectory = {
         if (!s) return;
 
         // Wallet Balance logic from the Expense module
-        const sFund = window.feesManager?.expenses?.filter(e => e.staffId === id && e.type === 'funding').reduce((a,b)=>a+b.amount, 0) || 0;
-        const sSpend = window.feesManager?.expenses?.filter(e => e.staffId === id && e.type === 'spend').reduce((a,b)=>a+b.amount, 0) || 0;
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feePerms = userData.permissions?.fees_accounting || {};
+        const canViewFees = isAdmin || feePerms === true || feePerms.view;
+
+        const staffPerms = userData.permissions?.staff_directory || {};
+        const canViewPulse = isAdmin || staffPerms === true || staffPerms.view;
+
+        let sFund = 0;
+        let sSpend = 0;
+        if (canViewFees) {
+            sFund = window.feesManager?.expenses?.filter(e => e.staffId === id && e.type === 'funding').reduce((a,b)=>a+b.amount, 0) || 0;
+            sSpend = window.feesManager?.expenses?.filter(e => e.staffId === id && e.type === 'spend').reduce((a,b)=>a+b.amount, 0) || 0;
+        }
         const balance = sFund - sSpend;
         
-        const pulseSnap = await firestore.collection('modules').doc('staff_directory').collection('staff').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(3).get();
-        const latestPulses = [];
-        pulseSnap.forEach(doc => latestPulses.push(doc.data()));
+        let latestPulses = [];
+        if (canViewPulse) {
+            try {
+                const pulseSnap = await firestore.collection('modules').doc('staff_directory').collection('staff').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(3).get();
+                pulseSnap.forEach(doc => latestPulses.push(doc.data()));
+            } catch (err) {
+                console.warn('Permission denied fetching staff pulselogs:', err);
+            }
+        }
 
         const toolbar = document.getElementById('staff-toolbar');
         if (toolbar) {
@@ -605,12 +626,6 @@ window.staffDirectory = {
                         </div>
                     </div>
                     <div class="profile-actions" style="display: flex; gap: 16px;">
-                        <button class="btn btn-secondary" style="padding: 14px 28px; font-weight: 700; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);" onclick="window.staffDirectory.showStaffForm('${id}')">
-                            <i data-lucide="edit-3" style="width: 18px; height: 18px; margin-right: 8px;"></i> EDIT PROFILE
-                        </button>
-                        <button class="btn btn-primary" style="padding: 14px 28px; font-weight: 800; background: var(--accent-secondary); color: #000; border: none;" onclick="window.print()">
-                            <i data-lucide="printer" style="width: 18px; height: 18px; margin-right: 8px;"></i> PRINT
-                        </button>
                     </div>
                 </div>
 
@@ -621,12 +636,12 @@ window.staffDirectory = {
                             <div class="metric-info"><h3>Attendance</h3><div class="metric-value">98%</div></div>
                         </div>
                         <div class="metric-card">
-                            <div class="metric-icon" style="background: ${balance >= 0 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(241, 97, 91, 0.1)'}; color: ${balance >= 0 ? 'var(--success)' : 'var(--accent-primary)'};"><i data-lucide="wallet"></i></div>
-                            <div class="metric-info"><h3>Wallet Balance</h3><div class="metric-value" style="color:${balance >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">₹${balance.toLocaleString()}</div></div>
+                            <div class="metric-icon" style="background: ${canViewFees ? (balance >= 0 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(241, 97, 91, 0.1)') : 'rgba(255,255,255,0.05)'}; color: ${canViewFees ? (balance >= 0 ? 'var(--success)' : 'var(--accent-primary)') : 'var(--text-dim)'};"><i data-lucide="wallet"></i></div>
+                            <div class="metric-info"><h3>Wallet Balance</h3><div class="metric-value" style="color:${canViewFees ? (balance >= 0 ? 'var(--success)' : 'var(--accent-primary)') : 'var(--text-dim)'}">${canViewFees ? `₹${balance.toLocaleString()}` : 'No Access'}</div></div>
                         </div>
                         <div class="metric-card">
-                            <div class="metric-icon" style="background: rgba(241, 97, 91, 0.1); color: var(--accent-primary);"><i data-lucide="activity"></i></div>
-                            <div class="metric-info"><h3>Activity Logs</h3><div class="metric-value">${latestPulses.length} Total</div></div>
+                            <div class="metric-icon" style="background: ${canViewPulse ? 'rgba(241, 97, 91, 0.1)' : 'rgba(255,255,255,0.05)'}; color: ${canViewPulse ? 'var(--accent-primary)' : 'var(--text-dim)'};"><i data-lucide="activity"></i></div>
+                            <div class="metric-info"><h3>Activity Logs</h3><div class="metric-value" style="color:${canViewPulse ? '' : 'var(--text-dim)'}">${canViewPulse ? `${latestPulses.length} Total` : 'No Access'}</div></div>
                         </div>
                     </div>
 
@@ -653,11 +668,11 @@ window.staffDirectory = {
                     <div class="profile-info-grid" style="display:grid; grid-template-columns: 1.5fr 1fr; gap:32px; margin-top: 32px;">
                         <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
                             <div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="sparkles"></i> Recent Performance</div>
-                            <div class="pulse-mini-list">${latestPulses.length > 0 ? latestPulses.map(p => `
+                            <div class="pulse-mini-list">${!canViewPulse ? '<div class="empty-state" style="padding:20px;"><i data-lucide="lock" style="margin-bottom:10px;"></i><p style="color:var(--text-dim);">No permission to view data.</p></div>' : (latestPulses.length > 0 ? latestPulses.map(p => `
                                 <div style="padding:16px; background:rgba(255,255,255,0.03); border-radius:12px; margin-bottom:12px; border-left:4px solid var(--accent-secondary)">
                                     <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><strong>${p.title}</strong><small style="color:var(--text-dim)">${p.date}</small></div>
                                     <p style="font-size:0.9rem; color:var(--text-dim); margin:0; line-height:1.5;">${p.summary}</p>
-                                </div>`).join('') : '<div class="empty-state" style="padding:20px;"><p style="color:var(--text-dim);">No performance logs yet.</p></div>'}
+                                </div>`).join('') : '<div class="empty-state" style="padding:20px;"><p style="color:var(--text-dim);">No performance logs yet.</p></div>')}
                             </div>
                         </div>
                         <div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);">
