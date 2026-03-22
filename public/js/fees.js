@@ -620,36 +620,86 @@ window.feesManager = {
 
     showSetupFeesForm(studentId) {
         const f = this.fees[studentId] || { total: 0, planId: '', components: [], billingCycle: 12 }, s = this.students[studentId] || { name: 'Student' };
-        let opts = '<option value="">-- Select Template --</option>'; Object.keys(this.plans).forEach(pid => opts += `<option value="${pid}" ${pid === f.planId ? 'selected' : ''}>${this.plans[pid].name}</option>`);
-        const renderRow = (c) => `
-            <div class="form-row component-row" style="display:grid; grid-template-columns: 2fr 1fr 1fr 40px; gap:10px; margin-bottom:10px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;">
-                <input type="text" class="form-control c-name" value="${c.name}" placeholder="Fee Name">
-                <select class="form-control c-freq"><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select>
-                <input type="number" class="form-control c-amount" value="${c.amount}" placeholder="Amount">
-                <button class="btn-icon text-danger" onclick="this.parentElement.remove(); window.feesManager.recalcSetupTotal();"><i data-lucide="x"></i></button>
+        let opts = '<option value="">-- Select Template --</option>'; 
+        Object.keys(this.plans).sort((a,b)=>this.plans[a].name.localeCompare(this.plans[b].name)).forEach(pid => opts += `<option value="${pid}" ${pid === f.planId ? 'selected' : ''}>${this.plans[pid].name}</option>`);
+        
+        const renderRow = (c = {name: '', frequency: 'onetime', amount: 0}) => `
+            <div class="form-row component-row" style="display:grid; grid-template-columns: 2fr 1.5fr 1fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.05);">
+                <div class="form-group" style="margin:0;"><label style="font-size:0.6rem; color:var(--text-dim);">Fee Name</label><input type="text" class="form-control c-name" value="${c.name}" placeholder="e.g. Tuition Fee"></div>
+                <div class="form-group" style="margin:0;"><label style="font-size:0.6rem; color:var(--text-dim);">Frequency</label><select class="form-control c-freq"><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select></div>
+                <div class="form-group" style="margin:0;"><label style="font-size:0.6rem; color:var(--text-dim);">Rate (₹)</label><input type="number" class="form-control c-amount" value="${c.amount || ''}" placeholder="0.00"></div>
+                <button onclick="this.parentElement.remove(); window.feesManager.recalcSetupTotal();" class="btn-icon text-danger" style="margin-top:15px;"><i data-lucide="x"></i></button>
             </div>`;
+
         AppDialog.confirm({
-            title: `Configure Fees: ${s.name}`, width: '800px',
-            content: `<div class="form-group"><label>Apply Template</label><select id="sf-plan-id" class="form-control">${opts}</select></div>
-                <div class="form-group" style="margin-top:15px;"><label>Academic Cycle (Months)</label><input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}"></div>
-                <div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin-top:25px;"><span>Fee Components</span><button class="btn btn-secondary btn-sm" id="add-custom-comp-btn">Add Item</button></div>
-                <div id="setup-components-container" style="max-height:400px; overflow-y:auto; margin-top:15px;">${(f.components || []).map(c => renderRow(c)).join('')}</div>
-                <div style="margin-top:20px; padding:20px; background:rgba(255,255,255,0.05); border-radius:16px; display:flex; justify-content:space-between; align-items:center;"><span>Calculated Total:</span><strong id="sf-final-total-display" style="color:var(--success); font-size:1.5rem;">₹0</strong></div>`,
+            title: `Configure Fees: ${s.name}`, width: '850px',
+            content: `
+                <div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;">
+                    <div>
+                        <div class="form-group"><label>Apply Template</label><select id="sf-plan-id" class="form-control">${opts}</select></div>
+                        <div class="form-group" style="margin-top:20px;"><label>Academic Cycle (Months)</label><input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}"></div>
+                        
+                        <div id="setup-summary-card" style="margin-top:32px; padding:24px; background:var(--accent-primary); color:#fff; border-radius:20px; box-shadow: 0 10px 30px rgba(241, 97, 91, 0.2);">
+                            <div style="font-size:0.7rem; font-weight:800; text-transform:uppercase; opacity:0.8; letter-spacing:1px;">Annual Total</div>
+                            <div id="sf-final-total-display" style="font-size:2.2rem; font-weight:900; margin:8px 0;">₹0</div>
+                            <p style="font-size:0.75rem; margin:0; line-height:1.4; opacity:0.9;">Total liability for the current academic cycle.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin:0;">
+                            <span>Fee Components</span>
+                            <button class="btn btn-secondary btn-sm" id="add-custom-comp-btn"><i data-lucide="plus"></i> Add Item</button>
+                        </div>
+                        <div id="setup-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px; padding-right:10px;">
+                            ${f.components?.length > 0 ? f.components.map(c => renderRow(c)).join('') : renderRow()}
+                        </div>
+                    </div>
+                </div>`,
             onOpen: (overlay) => {
-                const ps = overlay.querySelector('#sf-plan-id'), cc = overlay.querySelector('#setup-components-container'), cy = overlay.querySelector('#sf-cycle');
+                const ps = overlay.querySelector('#sf-plan-id'), cc = overlay.querySelector('#setup-components-container'), cy = overlay.querySelector('#sf-cycle'), totalOut = overlay.querySelector('#sf-final-total-display');
+                
                 this.recalcSetupTotal = () => { 
                     let t = 0; const c = parseInt(cy.value) || 12; 
-                    overlay.querySelectorAll('.component-row').forEach(row => { const a = parseFloat(row.querySelector('.c-amount').value) || 0, f = row.querySelector('.c-freq').value; t += f === 'monthly' ? (a * c) : a; });
-                    overlay.querySelector('#sf-final-total-display').innerText = `₹${t.toLocaleString()}`; return t; 
+                    overlay.querySelectorAll('.component-row').forEach(row => { 
+                        const a = parseFloat(row.querySelector('.c-amount').value) || 0, f = row.querySelector('.c-freq').value; 
+                        t += f === 'monthly' ? (a * c) : a; 
+                    });
+                    totalOut.innerText = `₹${t.toLocaleString()}`; 
+                    return t; 
                 };
-                ps.onchange = (e) => { const p = this.plans[e.target.value]; if (p) { cc.innerHTML = (p.components || []).map(c => renderRow(c)).join(''); cy.value = p.billingCycle || 12; if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); } };
-                overlay.querySelector('#add-custom-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow({name:'', amount:0, frequency:'onetime'}); cc.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({ root: cc }); };
-                overlay.addEventListener('input', this.recalcSetupTotal); this.recalcSetupTotal();
+
+                ps.onchange = (e) => { 
+                    const p = this.plans[e.target.value]; 
+                    if (p) { 
+                        cc.innerHTML = (p.components || []).map(c => renderRow(c)).join(''); 
+                        cy.value = p.billingCycle || 12; 
+                        if (window.lucide) window.lucide.createIcons({ root: cc }); 
+                        this.recalcSetupTotal(); 
+                    } 
+                };
+
+                overlay.querySelector('#add-custom-comp-btn').onclick = () => { 
+                    const div = document.createElement('div'); div.innerHTML = renderRow(); 
+                    cc.appendChild(div.firstElementChild); 
+                    if (window.lucide) window.lucide.createIcons({ root: cc }); 
+                    this.recalcSetupTotal();
+                };
+
+                overlay.addEventListener('input', this.recalcSetupTotal);
+                this.recalcSetupTotal();
+                if (window.lucide) window.lucide.createIcons({ root: overlay });
             },
             onConfirm: () => {
-                const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0; if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'other' }); });
+                const components = []; 
+                document.querySelectorAll('.component-row').forEach(row => { 
+                    const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0; 
+                    if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.c-freq').value, type: 'other' }); 
+                });
                 const total = this.recalcSetupTotal();
-                firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ 
+                    total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+                }, { merge: true });
+                AppDialog.toast('Fee structure updated', 'success');
                 return true;
             }
         });
