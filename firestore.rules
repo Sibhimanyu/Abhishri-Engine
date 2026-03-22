@@ -95,7 +95,7 @@ service cloud.firestore {
         allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
         allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'transactions'));
       }
-      match /students/{id} {
+      match /student_fees/{id} {
         allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'ledger'));
         allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'transactions'));
       }
@@ -108,8 +108,13 @@ service cloud.firestore {
         allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
       }
       match /expenses/{id} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'expenses'));
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'expenses'));
+        allow read: if isAuthenticated() && (
+          isAdmin() || 
+          getPerm('fees_accounting', 'expenses_all') || 
+          (getPerm('fees_accounting', 'expenses') && resource.data.createdBy == request.auth.token.email.lower())
+        );
+        allow create: if isAuthenticated() && (getPerm('fees_accounting', 'expenses') || getPerm('fees_accounting', 'fund_staff'));
+        allow delete: if isAuthenticated() && (isAdmin() || resource.data.createdBy == request.auth.token.email.lower());
       }
 
       match /{allPaths=**} {

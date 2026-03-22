@@ -68,15 +68,45 @@ window.feesManager = {
                 this.render();
             });
 
-        // 6. Subscribe to Expenses
-        firestore.collection('modules').doc('fees_accounting').collection('expenses')
-            .orderBy('timestamp', 'desc')
-            .onSnapshot((snapshot) => {
-                const exp = [];
-                snapshot.forEach(doc => exp.push({ id: doc.id, ...doc.data() }));
-                this.expenses = exp;
-                this.render();
-            });
+        // 6. Subscribe to Expenses (Conditional)
+        this.subscribeExpenses();
+    },
+
+    subscribeExpenses() {
+        if (this._expensesUnsubscribe) this._expensesUnsubscribe();
+        
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feesPerms = userData.permissions?.fees_accounting || {};
+        const canViewAll = isAdmin || feesPerms === true || feesPerms.expenses_all === true;
+        const currentUserEmail = auth.currentUser?.email?.toLowerCase();
+
+        let query = firestore.collection('modules').doc('fees_accounting').collection('expenses')
+            .orderBy('timestamp', 'desc');
+
+        if (!canViewAll && currentUserEmail) {
+            // Only subscribe to own expenses if not authorized for all
+            // Note: This requires a composite index in Firestore (createdBy + timestamp)
+            query = query.where('createdBy', '==', currentUserEmail);
+        }
+
+        this._expensesUnsubscribe = query.onSnapshot((snapshot) => {
+            const exp = [];
+            snapshot.forEach(doc => exp.push({ id: doc.id, ...doc.data() }));
+            this.expenses = exp;
+            this.render();
+        }, (err) => {
+            console.error("Expense Subscription Error:", err);
+            // Fallback if index is missing or permissions denied
+            if (err.code === 'permission-denied' && !canViewAll) {
+                AppDialog.toast('Restricted expense view active.', 'info');
+            }
+        });
+    },
+
+    resubscribe() {
+        this.isSubscribed = false;
+        this.subscribe();
     },
 
     switchView(viewName, studentId = null) {
@@ -212,6 +242,14 @@ window.feesManager = {
     renderExpenses() {
         const container = document.getElementById('fees-content-expenses');
         if (!container) return;
+
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feesPerms = userData.permissions?.fees_accounting || {};
+        const canViewAll = isAdmin || feesPerms === true || feesPerms.expenses_all === true;
+        const canFund = isAdmin || feesPerms === true || feesPerms.fund_staff === true;
+        const currentUserEmail = auth.currentUser?.email;
+
         const toolbar = document.getElementById('fees-toolbar');
         if (toolbar) {
             toolbar.innerHTML = '';
@@ -219,12 +257,23 @@ window.feesManager = {
             search.innerHTML=`<i data-lucide="search"></i><input type="text" placeholder="Search logs..." value="${this.searchQuery}">`;
             search.querySelector('input').oninput=(e)=>{this.searchQuery=e.target.value.toLowerCase(); this.renderExpenses();};
             toolbar.appendChild(search);
-            const fundBtn = document.createElement('button'); fundBtn.className='btn btn-secondary'; fundBtn.innerHTML='<i data-lucide="coins"></i> Fund Staff'; fundBtn.onclick=()=>this.showFundingForm(); toolbar.appendChild(fundBtn);
+            
+            if (canFund) {
+                const fundBtn = document.createElement('button'); fundBtn.className='btn btn-secondary'; fundBtn.innerHTML='<i data-lucide="coins"></i> Fund Staff'; fundBtn.onclick=()=>this.showFundingForm(); toolbar.appendChild(fundBtn);
+            }
+            
             const spendBtn = document.createElement('button'); spendBtn.className='btn btn-primary'; spendBtn.innerHTML='<i data-lucide="shopping-cart"></i> Log Spend'; spendBtn.onclick=()=>this.showSpendForm(); toolbar.appendChild(spendBtn);
         }
 
-        let walletsHtml = `<div class="section-title"><span>Staff Imprest Wallets</span></div><div class="dashboard-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 40px;">`;
-        Object.keys(this.staff).forEach(sid => {
+        // Filter staff for wallets display
+        let relevantStaffIds = Object.keys(this.staff);
+        if (!canViewAll) {
+            // Find staff record associated with current user email
+            relevantStaffIds = relevantStaffIds.filter(sid => this.staff[sid].email?.toLowerCase() === currentUserEmail?.toLowerCase());
+        }
+
+        let walletsHtml = `<div class="section-title"><span>${canViewAll ? 'Staff Imprest Wallets' : 'My Wallet Balance'}</span></div><div class="dashboard-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 40px;">`;
+        relevantStaffIds.forEach(sid => {
             const s = this.staff[sid], sFund = this.expenses.filter(e => e.staffId === sid && e.type === 'funding').reduce((a,b)=>a+b.amount, 0), sSpend = this.expenses.filter(e => e.staffId === sid && e.type === 'spend').reduce((a,b)=>a+b.amount, 0);
             const bal = sFund - sSpend;
             walletsHtml += `<div class="console-card" style="padding: 20px; border-top: 3px solid ${bal >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">
@@ -233,10 +282,22 @@ window.feesManager = {
                 <div style="font-size:0.7rem; color:var(--text-dim); margin-top:5px; text-transform:uppercase;">${bal >= 0 ? 'Surplus Funds' : 'Reimbursement Due'}</div>
             </div>`;
         });
+        if (relevantStaffIds.length === 0 && !canViewAll) {
+            walletsHtml += `<div class="console-card" style="padding: 20px; opacity: 0.6;"><p style="font-size:0.8rem; margin:0;">No personal wallet record found. Contact admin to link your email to your staff profile.</p></div>`;
+        }
         
-        let logHtml = `<div class="section-title"><span>Expense & Funding Logs</span></div><table class="console-table"><thead><tr><th>Date</th><th>Activity</th><th>Staff</th><th>Amount</th><th>Category/Details</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+        let logHtml = `<div class="section-title"><span>${canViewAll ? 'Global Expense & Funding Logs' : 'My Activity Logs'}</span></div><table class="console-table"><thead><tr><th>Date</th><th>Activity</th><th>Staff</th><th>Amount</th><th>Category/Details</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
         const q = this.searchQuery;
         const filtered = this.expenses.filter(e => {
+            // 1. Visibility Check
+            if (!canViewAll) {
+                // User can only see their own expenses (either they are the staff or they created it)
+                const isRecipient = e.staffId && this.staff[e.staffId]?.email?.toLowerCase() === currentUserEmail?.toLowerCase();
+                const isCreator = e.createdBy?.toLowerCase() === currentUserEmail?.toLowerCase();
+                if (!isRecipient && !isCreator) return false;
+            }
+
+            // 2. Search Check
             const st = this.staff[e.staffId] || { name: 'Unknown' };
             return !q || st.name.toLowerCase().includes(q) || (e.details || '').toLowerCase().includes(q) || (e.category || '').toLowerCase().includes(q);
         });
@@ -249,10 +310,10 @@ window.feesManager = {
                 <td><div style="font-size:0.85rem; font-weight:600;">${e.category || 'N/A'}</div><div style="font-size:0.75rem; color:var(--text-dim);">${e.details}</div></td>
                 <td><div class="table-actions" style="justify-content:flex-end">
                     ${e.attachmentUrl ? `<button class="btn-icon" onclick="window.open('${e.attachmentUrl}', '_blank')"><i data-lucide="image"></i></button>` : ''}
-                    <button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')"><i data-lucide="trash-2"></i></button>
+                    ${(isAdmin || e.createdBy === currentUserEmail) ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')"><i data-lucide="trash-2"></i></button>` : ''}
                 </div></td></tr>`;
         });
-        container.innerHTML = walletsHtml + `</div>` + logHtml + (filtered.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding: 40px;">No expense records.</td></tr>' : '') + '</tbody></table>';
+        container.innerHTML = walletsHtml + `</div>` + logHtml + (filtered.length === 0 ? '<tr><td colspan="6" style="text-align:center; padding: 40px;">No expense records found.</td></tr>' : '') + '</tbody></table>';
     },
 
     renderPlans() {
@@ -324,17 +385,33 @@ window.feesManager = {
     },
 
     showFundingForm() {
-        let staffOpts = ''; Object.values(this.staff).forEach(s => staffOpts += `<option value="${s.id}">${s.name}</option>`);
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feesPerms = userData.permissions?.fees_accounting || {};
+        const canViewAll = isAdmin || feesPerms === true || feesPerms.expenses_all === true;
+        const currentUserEmail = auth.currentUser?.email;
+
+        let staffOpts = ''; 
+        Object.values(this.staff).forEach(s => {
+            staffOpts += `<option value="${s.id}">${s.name}</option>`;
+        });
+
         AppDialog.confirm({
             title: 'Fund Staff Wallet',
-            content: `<div class="form-group"><label>Select Staff Member</label><select id="ff-staff" class="form-control">${staffOpts}</select></div>
+            content: `<div class="form-group"><label>Recipient Staff Member</label><select id="ff-staff" class="form-control">${staffOpts}</select></div>
                       <div class="form-group" style="margin-top:15px;"><label>Amount Disbursed (₹)</label><input type="number" id="ff-amount" class="form-control" placeholder="0.00"></div>
-                      <div class="form-group" style="margin-top:15px;"><label>Reference</label><input type="text" id="ff-ref" class="form-control" placeholder="Cash, GPay, etc."></div>`,
+                      <div class="form-group" style="margin-top:15px;"><label>Reference / Note</label><input type="text" id="ff-ref" class="form-control" placeholder="Cash, GPay, Bank Transfer etc."></div>`,
             onConfirm: () => {
                 const amount = parseFloat(document.getElementById('ff-amount').value);
                 if (!amount || amount <= 0) { AppDialog.toast('Invalid amount', 'error'); return false; }
                 firestore.collection('modules').doc('fees_accounting').collection('expenses').add({
-                    type: 'funding', staffId: document.getElementById('ff-staff').value, amount, details: document.getElementById('ff-ref').value, category: 'Internal Transfer', timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    type: 'funding', 
+                    staffId: document.getElementById('ff-staff').value, 
+                    amount, 
+                    details: document.getElementById('ff-ref').value, 
+                    category: 'Internal Transfer', 
+                    createdBy: currentUserEmail,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 return true;
             }
@@ -342,20 +419,49 @@ window.feesManager = {
     },
 
     showSpendForm() {
-        let staffOpts = ''; Object.values(this.staff).forEach(s => staffOpts += `<option value="${s.id}">${s.name}</option>`);
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feesPerms = userData.permissions?.fees_accounting || {};
+        const canViewAll = isAdmin || feesPerms === true || feesPerms.expenses_all === true;
+        const currentUserEmail = auth.currentUser?.email;
+
+        // Find my staff record
+        const myStaffRecord = Object.values(this.staff).find(s => s.email?.toLowerCase() === currentUserEmail?.toLowerCase());
+
+        let staffSelectionHtml = '';
+        if (canViewAll) {
+            let staffOpts = ''; 
+            Object.values(this.staff).forEach(s => {
+                staffOpts += `<option value="${s.id}" ${s.email?.toLowerCase() === currentUserEmail?.toLowerCase() ? 'selected' : ''}>${s.name}</option>`;
+            });
+            staffSelectionHtml = `<div class="form-group"><label>Who Paid?</label><select id="ef-staff" class="form-control">${staffOpts}</select></div>`;
+        } else if (myStaffRecord) {
+            staffSelectionHtml = `<div class="form-group"><label>Spending For</label><input type="text" class="form-control" value="${myStaffRecord.name}" disabled><input type="hidden" id="ef-staff" value="${myStaffRecord.id}"></div>`;
+        } else {
+            AppDialog.toast('No linked staff record found for your email. Please contact admin.', 'error');
+            return;
+        }
+
         AppDialog.confirm({
             title: 'Log Operational Spending',
-            content: `<div class="form-group"><label>Who Paid?</label><select id="ef-staff" class="form-control">${staffOpts}</select></div>
-                      <div class="form-grid-2" style="margin-top:15px;"><div class="form-group"><label>Category</label><select id="ef-cat" class="form-control"><option>Supplies</option><option>Utilities</option><option>Travel</option><option>Other</option></select></div><div class="form-group"><label>Amount (₹)</label><input type="number" id="ef-amount" class="form-control"></div></div>
-                      <div class="form-group" style="margin-top:15px;"><label>Details</label><input type="text" id="ef-details" class="form-control"></div>
+            content: `${staffSelectionHtml}
+                      <div class="form-grid-2" style="margin-top:15px;"><div class="form-group"><label>Category</label><select id="ef-cat" class="form-control"><option>Supplies</option><option>Utilities</option><option>Travel</option><option>Food & Beverage</option><option>Other</option></select></div><div class="form-group"><label>Amount (₹)</label><input type="number" id="ef-amount" class="form-control" placeholder="0.00"></div></div>
+                      <div class="form-group" style="margin-top:15px;"><label>Details / Item Description</label><input type="text" id="ef-details" class="form-control" placeholder="What was purchased?"></div>
                       <div class="form-group" style="margin-top:15px;"><label>Receipt Image</label><input type="file" id="ef-file" class="form-control" accept="image/*"></div>`,
             onConfirm: async () => {
                 const amount = parseFloat(document.getElementById('ef-amount').value), file = document.getElementById('ef-file').files[0];
-                if (!amount || amount <= 0 || !file) { AppDialog.toast('Required: Amount & Receipt', 'error'); return false; }
+                if (!amount || amount <= 0 || !file) { AppDialog.toast('Required: Amount & Receipt Photo', 'error'); return false; }
                 try {
                     const storageRef = firebase.storage().ref(`expenses/${Date.now()}_${file.name}`), snap = await storageRef.put(file), url = await snap.ref.getDownloadURL();
                     await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({
-                        type: 'spend', staffId: document.getElementById('ef-staff').value, amount, category: document.getElementById('ef-cat').value, details: document.getElementById('ef-details').value, attachmentUrl: url, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                        type: 'spend', 
+                        staffId: document.getElementById('ef-staff').value, 
+                        amount, 
+                        category: document.getElementById('ef-cat').value, 
+                        details: document.getElementById('ef-details').value, 
+                        attachmentUrl: url, 
+                        createdBy: currentUserEmail,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
                     });
                     return true;
                 } catch(err) { AppDialog.toast(err.message, 'error'); return false; }

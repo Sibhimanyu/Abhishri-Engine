@@ -172,6 +172,16 @@ window.staffDirectory = {
         const container = document.getElementById('staff-content-directory');
         if (!container) return;
 
+        // --- Improved Loading State ---
+        if (!this.dataLoaded) {
+            container.innerHTML = `
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:100px 0; gap:20px; opacity:0.7;">
+                    <div class="loading-spinner"></div>
+                    <p style="font-weight:600; color:var(--text-dim); letter-spacing:1px;">SYNCHRONIZING STAFF RECORDS...</p>
+                </div>`;
+            return;
+        }
+
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
         const canManage = isAdmin || (userData.permissions?.staff_directory?.manage);
@@ -186,11 +196,21 @@ window.staffDirectory = {
             `;
         }
 
-        const filteredIds = Object.keys(this.staff).filter(id => {
+        const sortedIds = Object.keys(this.staff).filter(id => {
             const s = this.staff[id];
             const q = this.searchQuery.toLowerCase();
             return (s.name || '').toLowerCase().includes(q) || (s.designation || '').toLowerCase().includes(q);
         }).sort((a, b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));
+
+        if (sortedIds.length === 0 && this.searchQuery) {
+            container.innerHTML = '<div class="empty-state"><i data-lucide="users"></i><p>No staff members match your search.</p></div>';
+            return;
+        }
+
+        if (sortedIds.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i data-lucide="users"></i><p>No staff records found. Go to "Manage Staff" to add records.</p></div>';
+            return;
+        }
 
         let html = `
             <div class="metrics-grid">
@@ -215,7 +235,7 @@ window.staffDirectory = {
             </div>
             <div class="directory-grid">`;
 
-        filteredIds.forEach(id => {
+        sortedIds.forEach(id => {
             const s = this.staff[id];
             html += `
                 <div class="directory-card" onclick="window.staffDirectory.switchView('report', '${id}')">
@@ -238,8 +258,6 @@ window.staffDirectory = {
                 </div>`;
         });
 
-        if (filteredIds.length === 0) html = '<div class="empty-state"><i data-lucide="users"></i><p>No staff members match your search.</p></div>';
-        
         container.innerHTML = html + '</div>';
     },
 
@@ -258,7 +276,7 @@ window.staffDirectory = {
             `;
         }
 
-        const filteredIds = Object.keys(this.staff).filter(id => {
+        const sortedIds = Object.keys(this.staff).filter(id => {
             const s = this.staff[id];
             const q = this.searchQuery.toLowerCase();
             return (s.name || '').toLowerCase().includes(q) || (s.department || '').toLowerCase().includes(q);
@@ -270,7 +288,7 @@ window.staffDirectory = {
                 <thead><tr><th>Name</th><th>Role</th><th>Contact</th><th>Joining</th><th style="text-align:right">Actions</th></tr></thead>
                 <tbody>`;
 
-        filteredIds.forEach(id => {
+        sortedIds.forEach(id => {
             const s = this.staff[id];
             html += `
                 <tr>
@@ -291,7 +309,7 @@ window.staffDirectory = {
                 </tr>`;
         });
 
-        if (filteredIds.length === 0) html += '<tr><td colspan="5" style="text-align:center; padding: 40px;">No staff records found.</td></tr>';
+        if (sortedIds.length === 0) html += '<tr><td colspan="5" style="text-align:center; padding: 40px;">No staff records found.</td></tr>';
         
         container.innerHTML = html + '</tbody></table>';
     },
@@ -305,7 +323,7 @@ window.staffDirectory = {
             toolbar.innerHTML = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Quick find staff..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>`;
         }
 
-        const filteredIds = Object.keys(this.staff).filter(id => (this.staff[id].name || '').toLowerCase().includes(this.searchQuery.toLowerCase())).sort((a,b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));
+        const sortedIds = Object.keys(this.staff).filter(id => (this.staff[id].name || '').toLowerCase().includes(this.searchQuery.toLowerCase())).sort((a,b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));
 
         container.innerHTML = `
             <div class="report-page">
@@ -316,7 +334,7 @@ window.staffDirectory = {
                 <div class="report-body">
                     <table class="console-table">
                         <thead><tr><th>Staff</th><th>Role</th><th style="text-align:right; min-width:280px;">Quick Actions</th></tr></thead>
-                        <tbody>${filteredIds.map(id => {
+                        <tbody>${sortedIds.map(id => {
                             const s = this.staff[id];
                             const att = this.attendance[id] || { status: 'none' };
                             return `
@@ -481,13 +499,13 @@ window.staffDirectory = {
         const toolbar = document.getElementById('staff-toolbar');
         if (toolbar) toolbar.innerHTML = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Filter staff..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>`;
 
-        const filteredIds = Object.keys(this.staff).filter(id => (this.staff[id].name || '').toLowerCase().includes(this.searchQuery.toLowerCase()));
+        const sortedIds = Object.keys(this.staff).filter(id => (this.staff[id].name || '').toLowerCase().includes(this.searchQuery.toLowerCase()));
         
         let html = `
             <div class="report-header" style="margin-bottom:32px;"><h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Staff Performance Pulse</h2><p style="color:var(--text-dim); font-size:1.1rem;">Track achievements, professional growth, and activity logs.</p></div>
             <div class="directory-grid">`;
         
-        filteredIds.forEach(id => {
+        sortedIds.forEach(id => {
             const s = this.staff[id];
             html += `
                 <div class="directory-card" onclick="window.staffDirectory.switchView('performance', '${id}')" style="border-left:4px solid var(--accent-secondary); display:flex; flex-direction:column; justify-content:space-between; height:100%;">
@@ -507,6 +525,11 @@ window.staffDirectory = {
         const container = document.getElementById('staff-content-performance');
         const s = this.staff[id];
         if (!s) return;
+
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const staffPerms = userData.permissions?.staff_directory || {};
+        const isMaster = isAdmin || staffPerms === true;
 
         const toolbar = document.getElementById('staff-toolbar');
         if (toolbar) {

@@ -447,7 +447,11 @@ window.navigateTo = function(route, updateHash = true) {
     } else if (mainRoute === 'fees') {
         if (isAdmin || perms.fees_accounting?.view || perms.fees_accounting === true) {
             document.getElementById('fees-app').classList.add('active');
-            window.feesManager.subscribe();
+            if (window.feesManager && window.feesManager.resubscribe) {
+                window.feesManager.resubscribe();
+            } else if (window.feesManager) {
+                window.feesManager.subscribe();
+            }
             if (subRoute && window.feesManager.switchView) window.feesManager.switchView(subRoute, parts[2]);
             else window.feesManager.switchView('collections');
         } else {

@@ -418,10 +418,50 @@ window.adminPanel = {
         // Define safe access helpers
         const getPerm = (module, action) => p[module] === true || (p[module] && p[module][action]) ? 'checked' : '';
 
+        const presets = {
+            admin: { isAdmin: true },
+            manager: {
+                isAdmin: false,
+                permissions: {
+                    smart_campus: { view: true, control: true },
+                    student_directory: { view: true, manage: true, attendance: true, reports: true },
+                    student_performance: { view: true, log: true },
+                    staff_directory: { view: true, manage: true, attendance: true, reports: true, pulse: true },
+                    fees_accounting: { view: true, ledger: true, transactions: true, config: false, expenses: true, expenses_all: true, fund_staff: true },
+                    whatsapp_sender: { access: true, broadcast: true, manage: true }
+                }
+            },
+            staff: {
+                isAdmin: false,
+                permissions: {
+                    smart_campus: { view: true, control: false },
+                    student_directory: { view: true, manage: false, attendance: true, reports: false },
+                    student_performance: { view: true, log: true },
+                    staff_directory: { view: true, manage: false, attendance: true, reports: false, pulse: false },
+                    fees_accounting: { view: false, ledger: false, transactions: false, config: false, expenses: true, expenses_all: false, fund_staff: false },
+                    whatsapp_sender: { access: true, broadcast: false, manage: false }
+                }
+            },
+            none: {
+                isAdmin: false,
+                permissions: {}
+            }
+        };
+
         AppDialog.confirm({
             title: `Granular Access: ${email}`,
             width: '800px',
             content: `
+                <div style="margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--card-border);">
+                    <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">Quick Presets</div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-secondary btn-sm preset-btn" data-preset="admin"><i data-lucide="shield"></i> Admin</button>
+                        <button class="btn btn-secondary btn-sm preset-btn" data-preset="manager"><i data-lucide="briefcase"></i> Manager</button>
+                        <button class="btn btn-secondary btn-sm preset-btn" data-preset="staff"><i data-lucide="user"></i> Staff</button>
+                        <button class="btn btn-secondary btn-sm preset-btn" data-preset="none"><i data-lucide="x-circle"></i> Clear All</button>
+                    </div>
+                </div>
+
                 <div class="form-group" style="padding-bottom:15px; border-bottom:1px solid var(--card-border); margin-bottom:20px;">
                     <label style="display:flex; align-items:center; gap:10px; font-size:1.1rem; color:var(--accent-primary);">
                         <input type="checkbox" id="edit-admin" ${user.isAdmin ? 'checked' : ''} style="width:20px; height:20px;"> 
@@ -465,7 +505,9 @@ window.adminPanel = {
                         <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="ledger" ${getPerm('fees_accounting', 'ledger')}> View Student Ledgers</label>
                         <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="transactions" ${getPerm('fees_accounting', 'transactions')}> Log & Reverse Payments</label>
                         <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="config" ${getPerm('fees_accounting', 'config')}> Configure Fee Templates & Waivers</label>
-                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="expenses" ${getPerm('fees_accounting', 'expenses')}> Manage Operational Expenses</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="expenses" ${getPerm('fees_accounting', 'expenses')}> Access Expense Module</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="expenses_all" ${getPerm('fees_accounting', 'expenses_all')}> View ALL Staff Expenses</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="fund_staff" ${getPerm('fees_accounting', 'fund_staff')}> Authorize Staff Funding</label>
                     </div>
 
                     <!-- WhatsApp Sender -->
@@ -482,6 +524,25 @@ window.adminPanel = {
                 const permContainer = document.getElementById('granular-permissions-container');
                 adminToggle.addEventListener('change', (e) => {
                     permContainer.style.display = e.target.checked ? 'none' : 'block';
+                });
+
+                overlay.querySelectorAll('.preset-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const presetName = btn.getAttribute('data-preset');
+                        const preset = presets[presetName];
+                        
+                        adminToggle.checked = preset.isAdmin;
+                        permContainer.style.display = preset.isAdmin ? 'none' : 'block';
+                        
+                        if (!preset.isAdmin) {
+                            overlay.querySelectorAll('.perm-check').forEach(check => {
+                                const mod = check.getAttribute('data-mod');
+                                const act = check.getAttribute('data-act');
+                                check.checked = preset.permissions[mod] && preset.permissions[mod][act];
+                            });
+                        }
+                        AppDialog.toast(`Applied ${presetName} preset`, 'info');
+                    });
                 });
             },
             onConfirm: async () => {
