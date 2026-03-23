@@ -42,6 +42,12 @@ service cloud.firestore {
       allow read: if isAuthenticated();
     }
 
+    // --- Audit Logs (System Wide) ---
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated(); // Logic in functions/code ensures users can only write, not edit
+    }
+
     // --- Student Directory Module ---
     match /modules/student_directory {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'view'));
@@ -49,11 +55,12 @@ service cloud.firestore {
       match /students/{studentId} {
         allow read: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'view'));
         allow create, update, delete: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'manage'));
-        
-        match /performance_logs/{logId} {
-          allow read: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'view'));
-          allow write: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'log'));
-        }
+      }
+
+      match /performance_logs/{logId} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'view'));
+        allow create: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'log'));
+        allow delete: if isAdmin();
       }
     }
 
@@ -64,11 +71,12 @@ service cloud.firestore {
       match /staff/{staffId} {
         allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
         allow create, update, delete: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'manage'));
-        
-        match /performance_logs/{logId} {
-          allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
-          allow write: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'pulse'));
-        }
+      }
+
+      match /performance_logs/{logId} {
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
+        allow create: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'pulse'));
+        allow delete: if isAdmin();
       }
     }
 

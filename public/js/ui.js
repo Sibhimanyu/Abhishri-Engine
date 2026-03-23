@@ -3,6 +3,21 @@
 // ─── Global App Dialog System ──────────────────────────────────────────────
 // Replaces all native alert() and confirm() calls with styled in-app modals.
 
+window.AppLogger = {
+    async log(action, module, details = {}, entityId = null) {
+        try {
+            await firestore.collection('audit_logs').add({
+                action,
+                module,
+                details,
+                entityId,
+                performedBy: auth.currentUser?.email,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (e) { console.warn("Logging failed:", e); }
+    }
+};
+
 window.AppDialog = (() => {
     // Inject toast styles once
     const styleId = 'app-dialog-styles';
@@ -201,11 +216,28 @@ window.AppDialog = (() => {
             if (typeof onOpen === 'function') setTimeout(() => onOpen(overlay), 10);
             
             const confirmed = async () => {
-                if (typeof onConfirm === 'function') {
-                    const result = await onConfirm();
-                    if (result === false) return;
+                const btn = overlay.querySelector('#app-dialog-confirm');
+                const originalHtml = btn.innerHTML;
+                
+                btn.disabled = true;
+                btn.innerHTML = '<span class="loading-spinner" style="width:14px; height:14px; border-width:2px; margin-right:8px; display:inline-block;"></span>Processing...';
+                
+                try {
+                    if (typeof onConfirm === 'function') {
+                        const result = await onConfirm();
+                        if (result === false) {
+                            btn.disabled = false;
+                            btn.innerHTML = originalHtml;
+                            return;
+                        }
+                    }
+                    overlay.remove(); 
+                    resolve(true);
+                } catch (err) {
+                    console.error("Confirm error:", err);
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
                 }
-                overlay.remove(); resolve(true);
             };
             const cancelled = () => { overlay.remove(); resolve(false); };
 
