@@ -220,7 +220,7 @@ window.adminPanel = {
                         </div>
                     </td>
                     <td>${u.email}</td>
-                    <td>${u.lastSignIn ? new Date(u.lastSignIn).toLocaleString() : 'N/A'}</td>
+                    <td>${u.lastSignIn ? new Date(u.lastSignIn).toLocaleString('en-IN') : 'N/A'}</td>
                     <td>
                         ${isAuthorized
                         ? '<span class="perm-badge perm-badge-admin" style="background:rgba(74,222,128,0.1); color:var(--success);">Authorized</span>'
@@ -344,7 +344,7 @@ window.adminPanel = {
             try {
                 const checkWallet = firebase.functions().httpsCallable('checkWhatsAppWallet');
                 const result = await checkWallet();
-                if (result.data?.wallet !== undefined) balEl.innerText = `₹${result.data.wallet.toLocaleString()}`;
+                if (result.data?.wallet !== undefined) balEl.innerText = `₹${result.data.wallet.toLocaleString('en-IN')}`;
                 else balEl.innerText = 'N/A';
             } catch (err) {
                 console.warn("Wallet Sync Error:", err);

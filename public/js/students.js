@@ -354,9 +354,9 @@ window.studentDirectory = {
                     <div class="profile-info-card" style="background:var(--surface); border:1px solid var(--card-border); padding:32px; border-radius:24px;">
                         <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="wallet"></i> Financial Status</div>
                         <div class="highlights" style="margin-top:0; grid-template-columns: repeat(3, 1fr);">
-                            <div class="highlight-item" style="border-left: 4px solid var(--accent-secondary);"><h3>Commitment</h3><div>₹${(feeData.total || 0).toLocaleString()}</div></div>
-                            <div class="highlight-item" style="border-left: 4px solid var(--success);"><h3>Received</h3><div style="color:var(--success)">₹${(feeData.paid || 0).toLocaleString()}</div></div>
-                            <div class="highlight-item" style="border-left: 4px solid var(--accent-primary);"><h3>Due</h3><div style="color:var(--accent-primary)">₹${balance.toLocaleString()}</div></div>
+                            <div class="highlight-item" style="border-left: 4px solid var(--accent-secondary);"><h3>Commitment</h3><div>₹${(feeData.total || 0).toLocaleString('en-IN')}</div></div>
+                            <div class="highlight-item" style="border-left: 4px solid var(--success);"><h3>Received</h3><div style="color:var(--success)">₹${(feeData.paid || 0).toLocaleString('en-IN')}</div></div>
+                            <div class="highlight-item" style="border-left: 4px solid var(--accent-primary);"><h3>Due</h3><div style="color:var(--accent-primary)">₹${balance.toLocaleString('en-IN')}</div></div>
                         </div>
                         <button class="btn btn-ghost btn-sm" style="margin-top:20px; width:100%; border:1px dashed rgba(255,255,255,0.1); height:45px;" onclick="window.feesManager.switchView('student_fees', '${id}')">OPEN FULL ACCOUNTING LEDGER <i data-lucide="external-link"></i></button>
                     </div>
