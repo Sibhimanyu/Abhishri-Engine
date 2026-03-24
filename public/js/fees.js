@@ -158,7 +158,7 @@ window.feesManager = {
 
     render() {
         if (!window.location.hash.startsWith('#fees')) return;
-        
+
         const toolbar = document.getElementById('fees-toolbar');
         if (toolbar) {
             toolbar.innerHTML = '';
@@ -177,16 +177,16 @@ window.feesManager = {
             const isAdmin = userData.isAdmin;
 
             if (this.currentView === 'office_expenses' && (isAdmin || feesPerms.expenses_all)) {
-                const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="plus"></i> Log Office Expense'; btn.onclick=()=>this.showOfficeExpenseForm(); toolbar.appendChild(btn);
+                const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Log Office Expense'; btn.onclick = () => this.showOfficeExpenseForm(); toolbar.appendChild(btn);
             } else if (this.currentView === 'staff_imprest') {
                 if (isAdmin || feesPerms.fund_staff) {
-                    const btn = document.createElement('button'); btn.className='btn btn-secondary'; btn.innerHTML='<i data-lucide="coins"></i> Fund Staff'; btn.onclick=()=>this.showFundingForm(); toolbar.appendChild(btn);
+                    const btn = document.createElement('button'); btn.className = 'btn btn-secondary'; btn.innerHTML = '<i data-lucide="coins"></i> Fund Staff'; btn.onclick = () => this.showFundingForm(); toolbar.appendChild(btn);
                 }
-                const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="file-plus"></i> Request Reimbursement'; btn.onclick=()=>this.showSpendForm(); toolbar.appendChild(btn);
+                const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="file-plus"></i> Request Reimbursement'; btn.onclick = () => this.showSpendForm(); toolbar.appendChild(btn);
             } else if (this.currentView === 'salaries' && (isAdmin || feesPerms.salaries_all)) {
-                const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="plus"></i> Process Payroll'; btn.onclick=()=>this.showPayrollForm(); toolbar.appendChild(btn);
+                const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Process Payroll'; btn.onclick = () => this.showPayrollForm(); toolbar.appendChild(btn);
             } else if (this.currentView === 'plans' && (isAdmin || feesPerms.config)) {
-                const btn = document.createElement('button'); btn.className='btn btn-primary'; btn.innerHTML='<i data-lucide="plus"></i> Create Fee Package'; btn.onclick=()=>this.showAddPlanForm(); toolbar.appendChild(btn);
+                const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Create Fee Package'; btn.onclick = () => this.showAddPlanForm(); toolbar.appendChild(btn);
             }
         }
 
@@ -211,10 +211,10 @@ window.feesManager = {
 
         // 1. Calculate Income & Target
         const now = new Date();
-        Object.values(this.fees).forEach(f => { 
-            totalRevGoal += (f.total || 0); 
-            totalCol += (f.paid || 0); 
-            
+        Object.values(this.fees).forEach(f => {
+            totalRevGoal += (f.total || 0);
+            totalCol += (f.paid || 0);
+
             const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
             const academicStartYear = (now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear();
             const studentInstallmentsExpected = Math.max(0, ((now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth)) + 1);
@@ -258,21 +258,21 @@ window.feesManager = {
                         <div class="section-title" style="margin-top:0;"><span>Collection Accuracy</span></div>
                         <div style="text-align:center; padding: 20px 0;">
                             <div style="font-size:3.5rem; font-weight:900; color:${colRate >= 90 ? 'var(--success)' : 'var(--accent-primary)'};">${colRate}%</div>
-                            <div style="color:var(--text-dim); margin-top:10px; font-weight:700;">₹${arrears.toLocaleString('en-IN')} IN TOTAL ARREARS</div>
+                            <div style="color:var(--text-dim); margin-top:10px; font-weight:700;">₹${arrears.toLocaleString('en-IN')} TOTAL PENDING DUES</div>
                             <p style="font-size:0.75rem; opacity:0.5; margin-top:15px; line-height:1.4;">Based on scheduled monthly installments + one-time annual fees.</p>
                         </div>
                     </div>
                     <div class="console-card" style="padding: 24px;">
                         <div class="section-title" style="margin-top:0;"><span>Institutional Outflow Breakdown</span></div>
                         <div style="display:flex; flex-direction:column; gap:16px; margin-top:20px;">
-                            ${Object.entries(expByCat).filter(([_, a]) => a > 0).sort((a,b)=>b[1]-a[1]).map(([c, a]) => `
+                            ${Object.entries(expByCat).filter(([_, a]) => a > 0).sort((a, b) => b[1] - a[1]).map(([c, a]) => `
                                 <div>
                                     <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
                                         <span style="font-weight:600;">${c}</span>
                                         <span style="opacity:0.8;">₹${a.toLocaleString('en-IN')}</span>
                                     </div>
                                     <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;">
-                                        <div style="height:100%; background:${c === 'Payroll' ? 'var(--accent-secondary)' : 'rgba(255,255,255,0.2)'}; width:${(a/totalExp)*100}%;"></div>
+                                        <div style="height:100%; background:${c === 'Payroll' ? 'var(--accent-secondary)' : 'rgba(255,255,255,0.2)'}; width:${(a / totalExp) * 100}%;"></div>
                                     </div>
                                 </div>
                             `).join('')}
@@ -285,7 +285,7 @@ window.feesManager = {
     renderOverview() {
         const container = document.getElementById('fees-content-overview');
         if (!container || !this.dataLoaded) return;
-        
+
         let html = `<table class="console-table"><thead><tr>
             <th>Student Name</th>
             <th>Class</th>
@@ -295,7 +295,7 @@ window.feesManager = {
             <th>Current Status</th>
             <th>Actions</th>
         </tr></thead><tbody>`;
-        
+
         const q = this.searchQuery;
         const sortedIds = Object.keys(this.students).filter(id => {
             const s = this.students[id];
@@ -308,13 +308,13 @@ window.feesManager = {
         sortedIds.forEach(id => {
             const s = this.students[id], f = this.fees[id] || { total: 0, paid: 0, components: [], startMonth: 5 };
             const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
-            const academicStartYear = (now.getMonth() < startMonth) ? currentYear - 1 : currentYear;
+            const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? currentYear - 1 : currentYear);
             const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
-            const installmentsExpected = Math.max(0, monthsPassed + 1);
+            const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(0, monthsPassed + 2));
 
             const monthlyRate = (f.components || []).filter(c => c.frequency === 'monthly').reduce((a, b) => a + b.amount, 0);
             const oneTimeTotal = (f.components || []).filter(c => c.frequency !== 'monthly').reduce((a, b) => a + b.amount, 0);
-            
+
             const expectedToDate = oneTimeTotal + (monthlyRate * installmentsExpected);
             const paid = f.paid || 0;
             const diff = paid - expectedToDate;
@@ -323,9 +323,9 @@ window.feesManager = {
             if (diff >= 0) {
                 statusHtml = `<span class="status-pill status-success">Up to Date ${diff > 0 ? '(+₹' + diff.toLocaleString('en-IN') + ')' : ''}</span>`;
             } else {
-                statusHtml = `<span class="status-pill status-danger" style="background:rgba(241,97,91,0.1); color:var(--accent-primary);">Arrears: ₹${Math.abs(diff).toLocaleString('en-IN')}</span>`;
+                statusHtml = `<span class="status-pill status-danger" style="background:rgba(241,97,91,0.1); color:var(--accent-primary);">Pending: ₹${Math.abs(diff).toLocaleString('en-IN')}</span>`;
             }
-            
+
             html += `<tr onclick="window.feesManager.switchView('student_fees', '${id}')" style="cursor:pointer;" class="clickable-row">
                 <td><strong>${s.name}</strong></td>
                 <td>${s.admissionForClass || 'N/A'}</td>
@@ -398,8 +398,8 @@ window.feesManager = {
 
         let walHtml = `<div class="dashboard-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 40px;">`;
         relStaff.forEach(sid => {
-            const f = this.expenses.filter(e => e.staffId === sid && e.type === 'funding').reduce((a,b)=>a+b.amount, 0),
-                  s = this.expenses.filter(e => e.staffId === sid && e.source === 'staff' && e.status === 'approved').reduce((a,b)=>a+b.amount, 0);
+            const f = this.expenses.filter(e => e.staffId === sid && e.type === 'funding').reduce((a, b) => a + b.amount, 0),
+                s = this.expenses.filter(e => e.staffId === sid && e.source === 'staff' && e.status === 'approved').reduce((a, b) => a + b.amount, 0);
             const b = f - s;
             walHtml += `<div class="console-card" style="padding: 20px; border-top: 3px solid ${b >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">
                 <div style="font-weight:700;">${this.staff[sid].name}</div>
@@ -468,17 +468,17 @@ window.feesManager = {
     renderPlans() {
         const container = document.getElementById('fees-content-plans');
         if (!container) return;
-        
+
         let html = `<div class="plans-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 24px;">`;
         const q = this.searchQuery;
         const sortedPlanIds = Object.keys(this.plans).filter(id => !q || this.plans[id].name.toLowerCase().includes(q));
 
         sortedPlanIds.forEach(id => {
             const p = this.plans[id];
-            let total = 0; 
+            let total = 0;
             const cycle = p.billingCycle || 12;
             (p.components || []).forEach(c => total += c.frequency === 'monthly' ? (c.amount * cycle) : c.amount);
-            
+
             html += `
                 <div class="console-card" style="padding: 24px; border-top: 4px solid var(--accent-secondary); display:flex; flex-direction:column; justify-content:space-between;">
                     <div>
@@ -509,12 +509,13 @@ window.feesManager = {
         if (!container || !id) return;
         const s = this.students[id] || { name: 'Student' }, f = this.fees[id] || { total: 0, paid: 0, components: [], billingCycle: 12 };
         const components = f.components || [];
-        
+
         // Prepaid Logic for Timeline & Calculations
         const now = new Date();
         const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
-        const academicStartYear = (now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear();
-        const installmentsExpected = Math.max(0, ((now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth)) + 1);
+        const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
+        const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
+        const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(0, monthsPassed + 2));
 
         const monthlyTotal = (f.components || []).filter(c => c.frequency === 'monthly').reduce((a, b) => a + b.amount, 0);
         const oneTimeTotal = (f.components || []).filter(c => c.frequency !== 'monthly').reduce((a, b) => a + b.amount, 0);
@@ -524,30 +525,30 @@ window.feesManager = {
 
         // Allocation-based status tracking
         const compPayments = f.componentPayments || {};
-        
+
         // Check coverage for a specific month
         const getMonthStatus = (monthIdx) => {
             const mName = this.MONTHS[monthIdx];
             const monthlyComps = (f.components || []).filter(c => c.frequency === 'monthly');
             if (monthlyComps.length === 0) return true;
-            
+
             let monthTotalDue = 0;
             let monthTotalPaid = 0;
-            
+
             monthlyComps.forEach(c => {
                 const key = `${c.name}-${mName}`;
                 monthTotalDue += c.amount;
                 monthTotalPaid += (compPayments[key] || 0);
             });
-            
+
             // Fallback for legacy data (if no breakdown exists, use the old pool logic)
             if (Object.keys(compPayments).length === 0 && paid > 0) {
                 const amountForMonths = Math.max(0, paid - oneTimeTotal);
                 const fullMonthsPaid = monthlyTotal > 0 ? Math.floor(amountForMonths / monthlyTotal) : (paid >= oneTimeTotal ? 12 : 0);
-                
+
                 // Determine which index this month has in the cycle
                 let cycleIdx = -1;
-                for(let i=0; i<12; i++) { if(((startMonth+i)%12) === monthIdx) cycleIdx = i; }
+                for (let i = 0; i < 12; i++) { if (((startMonth + i) % 12) === monthIdx) cycleIdx = i; }
                 return cycleIdx < fullMonthsPaid;
             }
 
@@ -561,167 +562,236 @@ window.feesManager = {
             months.push(this.MONTHS[mIdx].substring(0, 3).toUpperCase());
             monthStatuses.push(getMonthStatus(mIdx));
         }
+
+        let firstUnpaidRelativeIdx = f.billingCycle || 12;
+        for (let i = 0; i < (f.billingCycle || 12); i++) {
+            const mIdx = (startMonth + i) % 12;
+            if (!getMonthStatus(mIdx)) {
+                firstUnpaidRelativeIdx = i;
+                break;
+            }
+        }
+
+        const maxAllowedRelativeIdx = Math.min((f.billingCycle || 12) - 1, Math.max(0, installmentsExpected - 1));
+        const targetRelativeIdx = Math.min(firstUnpaidRelativeIdx, maxAllowedRelativeIdx);
+
+        const targetMonthIdx = (startMonth + targetRelativeIdx) % 12;
+        const isThisMonthPaid = getMonthStatus(targetMonthIdx);
+        const thisMonthName = this.MONTHS[targetMonthIdx];
         
-        const isThisMonthPaid = getMonthStatus(now.getMonth());
-        const thisMonthName = now.toLocaleString('default', { month: 'long' });
+        const currentDuesToDisplay = isThisMonthPaid ? 0 : Math.max(arrears, oneTimeTotal + (targetRelativeIdx + 1) * monthlyTotal - paid);
 
         let html = `
-            <div class="fee-profile-header" style="background: linear-gradient(135deg, var(--surface-light), var(--surface)); border: 1px solid var(--card-border); padding: 32px; border-radius: 24px; margin-bottom: 32px;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
-                    <div>
-                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
-                            <h2 style="margin:0; font-size:2rem; font-weight:900;">${s.name}</h2>
-                            <span class="badge" style="background:rgba(255,255,255,0.05); color:var(--text-dim); font-family:monospace; letter-spacing:1px;">ID: ${id.slice(-8).toUpperCase()}</span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:16px; font-size:0.9rem; opacity:0.7;">
-                            <span><i data-lucide="layers" style="width:14px; height:14px; vertical-align:middle; margin-right:4px;"></i> ${s.admissionForClass || 'No Class'}</span>
-                            <span><i data-lucide="calendar" style="width:14px; height:14px; vertical-align:middle; margin-right:4px;"></i> Cycle: ${f.billingCycle || 12} Months</span>
-                            ${f.updatedAt ? `<span><i data-lucide="clock" style="width:14px; height:14px; vertical-align:middle; margin-right:4px;"></i> Last Modified: ${f.updatedAt.toDate ? f.updatedAt.toDate().toLocaleDateString() : new Date(f.updatedAt).toLocaleDateString()}</span>` : ''}
-                        </div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:0.65rem; font-weight:800; opacity:0.5; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Account Standing</div>
-                        <span class="status-pill ${arrears <= 0 ? 'status-success' : 'status-danger'}" style="font-size:1.1rem; padding:8px 24px;">
-                            ${arrears <= 0 ? 'GOOD STANDING' : 'PAYMENT OVERDUE'}
-                        </span>
-                    </div>
-                </div>
-
-                <div class="highlights" style="grid-template-columns: repeat(4, 1fr); gap:20px;">
-                    <div class="highlight-item" style="border-left: 4px solid var(--accent-secondary); background:rgba(115, 199, 200, 0.03);"><h3>Monthly Rate</h3><div style="color: var(--accent-secondary)">₹${monthlyTotal.toLocaleString('en-IN')}</div></div>
-                    <div class="highlight-item" style="border-left: 4px solid #fff; background:rgba(255,255,255,0.03);"><h3>Annual Total</h3><div>₹${(f.total || 0).toLocaleString('en-IN')}</div></div>
-                    <div class="highlight-item" style="border-left: 4px solid var(--success); background:rgba(34, 197, 94, 0.03);"><h3>Total Paid</h3><div style="color: var(--success)">₹${paid.toLocaleString('en-IN')}</div></div>
-                    <div class="highlight-item" style="border-left: 4px solid ${isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)'}; background:${isThisMonthPaid ? 'rgba(34, 197, 94, 0.03)' : 'rgba(241, 97, 91, 0.03)'};">
-                        <h3>${thisMonthName} Status</h3>
-                        <div style="color: ${isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)'}; font-size: 1.4rem; font-weight: 900;">${isThisMonthPaid ? 'PAID' : 'PENDING'}</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="section-title" style="margin-top:40px; display:flex; justify-content:space-between; align-items:center;">
-                <span>Prepaid Billing Timeline</span>
-                <div style="font-size:0.75rem; color:var(--text-dim);">Academic Year Coverage Tracking</div>
-            </div>
-            
-            <div class="timeline-container" style="display:grid; grid-template-columns: repeat(12, 1fr); gap:10px; margin-bottom:40px; background:rgba(255,255,255,0.02); padding:20px; border-radius:20px; border:1px solid var(--card-border);">
-                ${months.map((m, i) => {
-                    const isFullyPaid = monthStatuses[i];
-                    const isExpected = i < installmentsExpected;
-                    let bg = 'rgba(255,255,255,0.03)';
-                    let color = 'var(--text-dim)';
-                    let border = '1px solid rgba(255,255,255,0.05)';
-                    if (isFullyPaid) { bg = 'var(--success)'; color = '#000'; border = 'none'; }
-                    const dot = isExpected && !isFullyPaid ? '<div style="width:6px; height:6px; background:var(--accent-primary); border-radius:50%; margin: 8px auto 0;"></div>' : '';
-                    return `<div style="text-align:center;"><div style="height:60px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:${bg}; color:${color}; border:${border}; border-radius:12px; font-weight:800; font-size:0.8rem; position:relative;">${m}</div>${dot}</div>`;
-                }).join('')}
-            </div>
-
-            <div style="display:grid; grid-template-columns: 1.5fr 1fr; gap:32px; margin-top:40px;">
+            <!-- Header Banner -->
+            <div class="fees-dashboard-banner" style="background:var(--surface-light); border: 1px solid var(--card-border); border-radius: 20px; padding: 32px; margin-bottom: 24px; display:flex; justify-content:space-between; align-items:center;">
                 <div>
-                    <div class="section-title"><span>Detailed Fee Architecture</span></div>
-                    <div class="console-card" style="padding:0; overflow:hidden; border: 1px solid var(--card-border);">
+                    <div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">
+                        <h1 style="margin:0; font-size:2rem; font-weight:800; letter-spacing:-0.5px;">${s.name}</h1>
+                        <span style="background:var(--accent-primary); color:#000; padding:4px 10px; border-radius:6px; font-weight:800; font-size:0.7rem;">${s.admissionForClass || 'STUDENT'}</span>
+                    </div>
+                    <div style="color:var(--text-dim); font-size:0.85rem; font-weight:500; display:flex; gap:16px;">
+                        <span>ID: ${id.slice(-8).toUpperCase()}</span>
+                        <span>${f.billingCycle || 12}-Month Cycle</span>
+                    </div>
+                </div>
+                <div style="display:flex; gap:16px; align-items:center;">
+                    <div style="text-align:right; margin-right: 16px;">
+                        <div style="font-size:0.65rem; font-weight:800; opacity:0.6; text-transform:uppercase; margin-bottom:4px;">Standing</div>
+                        <div style="font-weight:900; color:${arrears <= 0 ? 'var(--success)' : 'var(--accent-primary)'}; font-size:1.1rem;">
+                            ${arrears <= 0 ? 'CLEAR' : 'OVERDUE: ₹' + arrears.toLocaleString('en-IN')}
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" style="height:48px; padding:0 24px; border-radius:12px; font-weight:800; display:flex; align-items:center; gap:8px; box-shadow: 0 4px 12px rgba(241, 97, 91, 0.2);" onclick="window.feesManager.showPaymentForm('${id}')">
+                        <i data-lucide="plus-circle" style="width:18px;"></i> LOG PAYMENT
+                    </button>
+                </div>
+            </div>
+
+            <!-- Core Financials -->
+            <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:20px; margin-bottom:32px;">
+                <div class="console-card" style="padding:24px; border-radius:16px;">
+                    <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Net Annual Fee</div>
+                    <div style="font-size:1.8rem; font-weight:900;">₹${(f.total || 0).toLocaleString('en-IN')}</div>
+                </div>
+                <div class="console-card" style="padding:24px; border-radius:16px;">
+                    <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Realized to Date</div>
+                    <div style="font-size:1.8rem; font-weight:900; color:var(--success);">₹${paid.toLocaleString('en-IN')}</div>
+                </div>
+                <div class="console-card" style="padding:24px; border-radius:16px;">
+                    <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Annual Remaining</div>
+                    <div style="font-size:1.8rem; font-weight:900; color:var(--text-main);">₹${Math.max(0, (f.total || 0) - paid).toLocaleString('en-IN')}</div>
+                </div>
+                <div class="console-card" style="padding:24px; border-radius:16px;">
+                    <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Current Dues</div>
+                    <div style="font-size:1.8rem; font-weight:900; color:${currentDuesToDisplay > 0 ? 'var(--accent-primary)' : 'var(--success)'};">₹${Math.max(0, currentDuesToDisplay).toLocaleString('en-IN')}</div>
+                </div>
+                <div class="console-card" style="padding:24px; border-radius:16px; border-bottom: 4px solid ${isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)'};">
+                    <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">${thisMonthName} Status</div>
+                    <div style="font-size:1.8rem; font-weight:900; color:${isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)'};">${isThisMonthPaid ? 'PAID' : 'PENDING'}</div>
+                </div>
+            </div>
+
+            <!-- Pending Dues Analysis (Conditional) -->
+            ${arrears > 0 ? (() => {
+                const overdueItems = [];
+                components.filter(c => c.frequency !== 'monthly').forEach(c => {
+                    const p = compPayments[c.name] || 0;
+                    if (p < c.amount) overdueItems.push({ name: c.name, due: c.amount - p });
+                });
+                for (let i = 0; i < installmentsExpected; i++) {
+                    const mIdx = (startMonth + i) % 12;
+                    const mName = this.MONTHS[mIdx];
+                    components.filter(c => c.frequency === 'monthly').forEach(c => {
+                        const key = `${c.name}-${mName}`;
+                        const p = compPayments[key] || 0;
+                        if (p < c.amount) overdueItems.push({ name: c.name, detail: mName, due: c.amount - p });
+                    });
+                }
+                if (overdueItems.length === 0) return '';
+                return `
+                <div style="background:rgba(241, 97, 91, 0.05); border: 1px solid rgba(241, 97, 91, 0.2); border-left: 4px solid var(--accent-primary); border-radius: 16px; padding: 24px; margin-bottom: 32px;">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px; color:var(--accent-primary);">
+                        <i data-lucide="alert-triangle" style="width:20px;"></i>
+                        <h3 style="margin:0; font-size:1.1rem; font-weight:800;">Action Required: Pending Dues Breakdown</h3>
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap:16px;">
+                        ${overdueItems.map(item => `
+                            <div style="background:var(--surface); padding:12px 16px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+                                <div style="font-size:0.8rem; font-weight:600; text-transform:uppercase; opacity:0.8; margin-bottom:4px;">${item.name} ${item.detail ? `(${item.detail})` : ''}</div>
+                                <div style="font-size:1.2rem; font-weight:800; color:var(--accent-primary);">₹${item.due.toLocaleString('en-IN')}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+            })() : ''}
+
+            <!-- Visual Timeline -->
+            <div class="console-card" style="padding:24px; border-radius:16px; margin-bottom:32px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h3 style="margin:0; font-size:1.1rem; font-weight:800;">Academic Coverage Timeline</h3>
+                    <div style="display:flex; gap:16px; font-size:0.75rem; color:var(--text-dim); font-weight:600;">
+                        <span style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; background:var(--success); border-radius:3px;"></div> Covered</span>
+                        <span style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; background:var(--accent-primary); border-radius:3px;"></div> Pending</span>
+                        <span style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; background:rgba(255,255,255,0.1); border-radius:3px;"></div> Upcoming</span>
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    ${months.map((m, i) => {
+                const isFullyPaid = monthStatuses[i];
+                const isExpected = i < installmentsExpected;
+                let bg = 'rgba(255,255,255,0.03)';
+                let col = 'var(--text-dim)';
+                let border = '1px solid rgba(255,255,255,0.05)';
+                if (isFullyPaid) { bg = 'var(--success)'; col = '#000'; border = 'none'; }
+                else if (isExpected) { bg = 'transparent'; col = 'var(--accent-primary)'; border = '2px solid var(--accent-primary)'; }
+
+                return `
+                            <div style="flex:1; height:48px; display:flex; align-items:center; justify-content:center; background:${bg}; border:${border}; border-radius:8px; color:${col}; font-weight:800; font-size:0.8rem;">
+                                ${m}
+                            </div>`;
+            }).join('')}
+                </div>
+            </div>
+
+            <!-- Fee Architecture & Ledger Grid (Continuous Flow) -->
+            <div style="display:flex; flex-direction:column; gap:32px; margin-bottom:80px;">
+                <!-- Fee Architecture -->
+                <div>
+                    <h3 style="margin-top:0; margin-bottom:16px; font-size:1.1rem; font-weight:800; display:flex; align-items:center; gap:8px;"><i data-lucide="layers" style="width:18px;"></i> Detailed Fee Architecture</h3>
+                    <div class="console-card" style="padding:0; overflow:hidden; border-radius:16px;">
                         <table class="console-table" style="margin:0;">
-                            <thead style="background:rgba(255,255,255,0.03);">
-                                <tr><th>Component</th><th style="text-align:right;">Std. Rate</th><th style="text-align:center;">Multiplier</th><th style="text-align:right;">Annual Standard</th><th style="text-align:right; color:var(--accent-primary);">Waiver</th><th style="text-align:right;">Net Payable</th></tr>
+                            <thead style="background:rgba(255,255,255,0.02);">
+                                <tr>
+                                    <th style="padding:16px 24px;">Component</th>
+                                    <th>Term Rate</th>
+                                    <th style="text-align:center;">Cycle</th>
+                                    <th style="text-align:right;">Std Annual</th>
+                                    <th style="text-align:right; white-space:nowrap;">Waiver</th>
+                                    <th style="text-align:right; padding:16px 24px;">Net Payable</th>
+                                </tr>
                             </thead>
                             <tbody>
                                 ${f.components?.length > 0 ? f.components.map(c => {
-                                    const mult = c.frequency === 'monthly' ? (f.billingCycle || 12) : 1;
-                                    const stdRate = (c.originalAmount || c.amount), stdTotal = stdRate * mult, netTotal = c.amount * mult, wav = Math.max(0, stdTotal - netTotal);
-                                    return `<tr><td><strong>${c.name}</strong><div style="font-size:0.6rem; opacity:0.5; text-transform:uppercase;">${c.frequency}</div></td><td style="text-align:right; opacity:0.7;">₹${stdRate.toLocaleString('en-IN')}</td><td style="text-align:center; font-family:monospace; opacity:0.5;">× ${mult}</td><td style="text-align:right; opacity:0.7;">₹${stdTotal.toLocaleString('en-IN')}</td><td style="text-align:right; color:var(--accent-primary); font-weight:700;">${wav > 0 ? '- ₹' + wav.toLocaleString('en-IN') : '—'}</td><td style="text-align:right;"><strong>₹${netTotal.toLocaleString('en-IN')}</strong></td></tr>`;
-                                }).join('') : '<tr><td colspan="6" style="text-align:center; padding:40px;">No structure configured.</td></tr>'}
-                                <tr style="background:rgba(255,255,255,0.02); border-top: 2px solid var(--card-border);"><td colspan="5" style="text-align:right; font-weight:700; font-size:0.75rem; color:var(--text-dim);">NET ANNUAL COMMITMENT</td><td style="text-align:right;"><strong style="font-size:1.1rem; color:var(--text-main);">₹${(f.total || 0).toLocaleString('en-IN')}</strong></td></tr>
+                const mult = c.frequency === 'monthly' ? (f.billingCycle || 12) : 1;
+                const stdRate = (c.originalAmount || c.amount), stdTotal = stdRate * mult, netTotal = c.amount * mult, wav = Math.max(0, stdTotal - netTotal);
+                return `
+                                        <tr>
+                                            <td style="padding:16px 24px;">
+                                                <div style="font-weight:700; font-size:0.95rem;">${c.name}</div>
+                                                <div style="font-size:0.65rem; opacity:0.5; text-transform:uppercase; margin-top:4px;">${c.frequency}</div>
+                                            </td>
+                                            <td style="opacity:0.8;">₹${stdRate.toLocaleString('en-IN')}</td>
+                                            <td style="text-align:center; font-weight:600; opacity:0.8;">${mult}x</td>
+                                            <td style="text-align:right; opacity:0.8;">₹${stdTotal.toLocaleString('en-IN')}</td>
+                                            <td style="text-align:right; color:var(--accent-primary); font-weight:700; white-space:nowrap;">${wav > 0 ? '-₹' + wav.toLocaleString('en-IN') : '—'}</td>
+                                            <td style="text-align:right; padding:16px 24px;"><strong style="font-size:1.05rem;">₹${netTotal.toLocaleString('en-IN')}</strong></td>
+                                        </tr>`;
+            }).join('') : '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">No components configured.</td></tr>'}
                             </tbody>
                         </table>
                     </div>
                 </div>
 
+                <!-- Transaction Audit Trail -->
                 <div>
-                    <div class="section-title"><span>Arrears Analysis</span></div>
-                    <div class="console-card" style="padding:24px; margin-bottom:24px; border: 1px solid var(--card-border);">
-                        <div style="font-size:0.7rem; font-weight:800; color:var(--accent-primary); text-transform:uppercase; margin-bottom:16px; letter-spacing:1px;">Currently Overdue Items</div>
-                        <div style="display:flex; flex-direction:column; gap:12px;">
-                            ${(() => {
-                                const overdueItems = [];
-                                // Check one-time items
-                                components.filter(c => c.frequency !== 'monthly').forEach(c => {
-                                    const p = compPayments[c.name] || 0;
-                                    if (p < c.amount) overdueItems.push({ name: c.name, due: c.amount - p });
-                                });
-                                // Check monthly items up to installmentsExpected
-                                for (let i = 0; i < installmentsExpected; i++) {
-                                    const mIdx = (startMonth + i) % 12;
-                                    const mName = this.MONTHS[mIdx];
-                                    components.filter(c => c.frequency === 'monthly').forEach(c => {
-                                        const key = `${c.name}-${mName}`;
-                                        const p = compPayments[key] || 0;
-                                        if (p < c.amount) overdueItems.push({ name: `${c.name} (${mName})`, due: c.amount - p });
-                                    });
-                                }
-                                
-                                if (overdueItems.length === 0) return '<div style="text-align:center; padding:20px; background:rgba(34, 197, 94, 0.05); border-radius:12px; color:var(--success); font-weight:700; font-size:0.85rem;">No Current Arrears</div>';
-                                
-                                return overdueItems.map(item => `
-                                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85rem; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.03);">
-                                        <span style="opacity:0.7;">${item.name}</span>
-                                        <strong style="color:var(--accent-primary);">₹${item.due.toLocaleString('en-IN')}</strong>
-                                    </div>
-                                `).join('') + `<div style="display:flex; justify-content:space-between; margin-top:8px; font-weight:900; color:var(--accent-primary); font-size:1.1rem;"><span>Total Arrears</span> <span>₹${arrears.toLocaleString('en-IN')}</span></div>`;
-                            })()}
-                        </div>
-                    </div>
-
-                    <div class="section-title"><span>Account Financial Health</span></div>
-                    <div class="console-card" style="padding:24px; border: 1px solid var(--card-border);">
-                        <div style="display:flex; flex-direction:column; gap:16px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <div style="font-size:0.65rem; opacity:0.5; text-transform:uppercase; font-weight:800;">Annual Commitment</div>
-                                <div style="font-weight:700;">₹${(f.total || 0).toLocaleString('en-IN')}</div>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <div style="font-size:0.65rem; opacity:0.5; text-transform:uppercase; font-weight:800;">Total Realized</div>
-                                <div style="font-weight:700; color:var(--success);">₹${paid.toLocaleString('en-IN')}</div>
-                            </div>
-                            <div style="height:8px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden; margin:4px 0;">
-                                <div style="height:100%; background:var(--success); width:${Math.min(100, (paid/(f.total||1))*100)}%;"></div>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
-                                <div style="font-size:0.65rem; opacity:0.5; text-transform:uppercase; font-weight:800;">Balance for Year</div>
-                                <div style="font-weight:900; font-size:1.2rem;">₹${Math.max(0, (f.total || 0) - paid).toLocaleString('en-IN')}</div>
-                            </div>
-                        </div>
-                        <button class="btn btn-primary" style="width:100%; margin-top:24px; height:50px; font-weight:800; font-size:0.9rem;" onclick="window.feesManager.showPaymentForm('${id}')">
-                            <i data-lucide="plus-circle" style="width:18px; height:18px;"></i> LOG NEW COLLECTION
-                        </button>
+                    <h3 style="margin-top:0; margin-bottom:16px; font-size:1.1rem; font-weight:800; display:flex; align-items:center; gap:8px;"><i data-lucide="list-checks" style="width:18px;"></i> Payment Audit Trail</h3>
+                    <div class="console-card" style="padding:0; overflow:hidden; border-radius:16px;">
+                        <table class="console-table" style="margin:0;">
+                            <thead style="background:rgba(255,255,255,0.02);">
+                                <tr>
+                                    <th style="padding:16px 24px;">Date</th>
+                                    <th>Ref / Details</th>
+                                    <th style="text-align:right;">Amount</th>
+                                    <th style="text-align:right; padding:16px 24px;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${this.transactions.filter(t => t.studentId === id).sort((a, b) => {
+                const da = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+                const db = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+                return db - da;
+            }).map(t => {
+                const d = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
+                const isAdmin = (window.currentUserData || {}).isAdmin;
+                const breakdownHtml = t.breakdown ? `
+                                        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
+                                            ${Object.entries(t.breakdown).map(([k, v]) => `
+                                                <span style="font-size:0.6rem; padding:2px 6px; background:rgba(255,255,255,0.05); border-radius:4px; color:var(--text-dim);">
+                                                    ${k}: <strong style="color:var(--text-main);">₹${v.toLocaleString('en-IN')}</strong>
+                                                </span>
+                                            `).join('')}
+                                        </div>` : '';
+                return `
+                                        <tr>
+                                            <td style="padding:16px 24px;">
+                                                <div style="font-weight:700;">${d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                                                <div style="font-size:0.65rem; opacity:0.5; margin-top:4px;">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                            </td>
+                                            <td>
+                                                <div style="display:flex; align-items:center; gap:8px;">
+                                                    <span style="font-size:0.65rem; font-weight:800; padding:2px 6px; border-radius:4px; background:rgba(255,255,255,0.1);">${t.method || 'CASH'}</span>
+                                                    <span style="font-size:0.85rem; opacity:0.9;">${t.reference || t.details || 'No ref'}</span>
+                                                </div>
+                                                ${breakdownHtml}
+                                            </td>
+                                            <td style="text-align:right;">
+                                                <div style="font-weight:800; font-size:1.1rem; color:var(--success);">₹${t.amount.toLocaleString('en-IN')}</div>
+                                            </td>
+                                            <td style="text-align:right; padding:16px 24px;">
+                                                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                                                    <button class="btn-icon" title="Print Receipt" onclick="window.feesManager.printTransactionReceipt('${t.id}')"><i data-lucide="printer" style="width:16px;"></i></button>
+                                                    ${isAdmin ? `<button class="btn-icon text-danger" title="Delete" onclick="window.feesManager.deleteTransaction('${t.id}', '${id}', ${t.amount})"><i data-lucide="trash-2" style="width:16px;"></i></button>` : ''}
+                                                </div>
+                                            </td>
+                                        </tr>`;
+            }).join('') || '<tr><td colspan="4" style="text-align:center; padding:48px; color:var(--text-dim);">No transactions recorded.</td></tr>'}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
-
-            <div class="section-title" style="margin-top:48px; display:flex; justify-content:space-between; align-items:center;">
-                <span>Full Transaction Ledger</span>
-                <div style="font-size:0.75rem; color:var(--text-dim);">Historical Payment Audit Trail</div>
-            </div>
-            <div class="console-card" style="padding:0; overflow:hidden; border: 1px solid var(--card-border); margin-bottom:60px;">
-                <table class="console-table" style="margin:0;">
-                    <thead style="background:rgba(255,255,255,0.03);">
-                        <tr><th>Transaction Date</th><th>Method</th><th>Reference / Note</th><th style="text-align:right;">Amount</th><th style="text-align:right;">Actions</th></tr>
-                    </thead>
-                    <tbody>
-                        ${this.transactions.filter(t => t.studentId === id).sort((a,b) => {
-                            const da = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
-                            const db = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
-                            return db - da;
-                        }).map(t => {
-                            const d = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
-                            const isAdmin = (window.currentUserData || {}).isAdmin;
-                            const breakdownText = t.breakdown ? `<div style="font-size:0.6rem; opacity:0.6; margin-top:4px;">${Object.entries(t.breakdown).map(([k,v])=>`${k}: ₹${v.toLocaleString('en-IN')}`).join(' | ')}</div>` : '';
-                            return `<tr><td><div style="font-weight:700;">${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div><div style="font-size:0.6rem; opacity:0.5;">${d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div></td><td><span class="badge" style="background:rgba(255,255,255,0.05);">${t.method || 'Cash'}</span></td><td style="opacity:0.7; font-size:0.85rem;">${t.reference || t.details || '—'}${breakdownText}</td><td style="text-align:right;"><strong style="color:var(--success); font-size:1.1rem;">₹${t.amount.toLocaleString('en-IN')}</strong></td><td style="text-align:right;"><div class="table-actions" style="justify-content:flex-end;"><button class="btn-icon" onclick="window.feesManager.printTransactionReceipt('${t.id}')"><i data-lucide="printer"></i></button>${isAdmin ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteTransaction('${t.id}', '${id}', ${t.amount})"><i data-lucide="trash-2"></i></button>` : ''}</div></td></tr>`;
-                        }).join('') || '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-dim);">No transactions recorded for this student.</td></tr>'}
-                    </tbody>
-                </table>
-            </div>
         `;
-        
+
         container.innerHTML = html;
         const toolbar = document.getElementById('fees-toolbar');
         if (toolbar) toolbar.innerHTML = `<button class="btn btn-secondary" onclick="window.feesManager.switchView('overview')"><i data-lucide="arrow-left"></i> Back to Ledger</button><div style="margin-left:auto; display:flex; gap:10px;"><button class="btn btn-secondary" onclick="window.feesManager.printStudentInvoice('${id}')"><i data-lucide="printer"></i> Print Invoice</button><button class="btn btn-primary" onclick="window.feesManager.showSetupFeesForm('${id}')"><i data-lucide="settings"></i> Configure Fees</button></div>`;
@@ -730,23 +800,23 @@ window.feesManager = {
 
     showAddPlanForm(id = null) {
         const p = id ? this.plans[id] : { name: '', billingCycle: 12, components: [], startMonth: 5 };
-        const renderRow = (c = {name: '', frequency: 'onetime', amount: 0}) => `
+        const renderRow = (c = { name: '', frequency: 'onetime', amount: 0 }) => `
             <div class="form-row plan-component-row" style="display:grid; grid-template-columns: 1.8fr 1fr 1.2fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;">
-                <input type="text" class="form-control pc-name" value="${c.name}" placeholder="Fee Name"><select class="form-control pc-freq"><option value="onetime" ${c.frequency==='onetime'?'selected':''}>One-time</option><option value="monthly" ${c.frequency==='monthly'?'selected':''}>Monthly</option></select><input type="number" class="form-control pc-amount" value="${c.amount||''}" placeholder="Rate"><button onclick="this.parentElement.remove(); window.feesManager.recalcPlanTotal();" class="btn-icon text-danger"><i data-lucide="x"></i></button>
+                <input type="text" class="form-control pc-name" value="${c.name}" placeholder="Fee Name"><select class="form-control pc-freq"><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select><input type="number" class="form-control pc-amount" value="${c.amount || ''}" placeholder="Rate"><button onclick="this.parentElement.remove(); window.feesManager.recalcPlanTotal();" class="btn-icon text-danger"><i data-lucide="x"></i></button>
             </div>`;
         AppDialog.confirm({
             title: id ? 'Edit Template' : 'Create Template', width: '850px',
-            content: `<div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;"><div><div class="form-group"><label>Package Name</label><input type="text" id="plan-name" class="form-control" value="${p.name}"></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;"><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="plan-cycle" class="form-control" value="${p.billingCycle||12}"></div><div class="form-group"><label>Start Month</label><select id="plan-start" class="form-control">${this.MONTHS.map((m,i)=>`<option value="${i}" ${i===(p.startMonth===undefined?5:p.startMonth)?'selected':''}>${m}</option>`).join('')}</select></div></div><div id="plan-total-display" style="font-size:2rem; font-weight:900; margin-top:20px; color:var(--accent-secondary);">₹0</div></div><div><div class="form-section-title" style="display:flex; justify-content:space-between;"><span>Components</span><button class="btn btn-secondary btn-sm" id="add-plan-comp-btn">Add Item</button></div><div id="plan-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px;">${p.components.length>0?p.components.map(c=>renderRow(c)).join(''):renderRow()}</div></div></div>`,
+            content: `<div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;"><div><div class="form-group"><label>Package Name</label><input type="text" id="plan-name" class="form-control" value="${p.name}"></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;"><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="plan-cycle" class="form-control" value="${p.billingCycle || 12}"></div><div class="form-group"><label>Start Month</label><select id="plan-start" class="form-control">${this.MONTHS.map((m, i) => `<option value="${i}" ${i === (p.startMonth === undefined ? 5 : p.startMonth) ? 'selected' : ''}>${m}</option>`).join('')}</select></div></div><div id="plan-total-display" style="font-size:2rem; font-weight:900; margin-top:20px; color:var(--accent-secondary);">₹0</div></div><div><div class="form-section-title" style="display:flex; justify-content:space-between;"><span>Components</span><button class="btn btn-secondary btn-sm" id="add-plan-comp-btn">Add Item</button></div><div id="plan-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px;">${p.components.length > 0 ? p.components.map(c => renderRow(c)).join('') : renderRow()}</div></div></div>`,
             onOpen: (overlay) => {
                 const cycI = overlay.querySelector('#plan-cycle'), totD = overlay.querySelector('#plan-total-display'), compC = overlay.querySelector('#plan-components-container');
-                this.recalcPlanTotal = () => { let t = 0; const c = parseInt(cycI.value)||12; overlay.querySelectorAll('.plan-component-row').forEach(row => { const a = parseFloat(row.querySelector('.pc-amount').value)||0, f = row.querySelector('.pc-freq').value; t += f==='monthly'?(a*c):a; }); totD.innerText = `₹${t.toLocaleString('en-IN')}`; return t; };
-                overlay.querySelector('#add-plan-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow(); compC.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({root:compC}); this.recalcPlanTotal(); };
+                this.recalcPlanTotal = () => { let t = 0; const c = parseInt(cycI.value) || 12; overlay.querySelectorAll('.plan-component-row').forEach(row => { const a = parseFloat(row.querySelector('.pc-amount').value) || 0, f = row.querySelector('.pc-freq').value; t += f === 'monthly' ? (a * c) : a; }); totD.innerText = `₹${t.toLocaleString('en-IN')}`; return t; };
+                overlay.querySelector('#add-plan-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow(); compC.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({ root: compC }); this.recalcPlanTotal(); };
                 overlay.addEventListener('input', this.recalcPlanTotal); this.recalcPlanTotal();
             },
             onConfirm: async () => {
                 const name = document.getElementById('plan-name').value; if (!name) return false;
-                const components = []; document.querySelectorAll('.plan-component-row').forEach(row => { const n = row.querySelector('.pc-name').value, a = parseFloat(row.querySelector('.pc-amount').value)||0; if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'academic' }); });
-                const data = { name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value)||12, startMonth: parseInt(document.getElementById('plan-start').value), updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: auth.currentUser.email };
+                const components = []; document.querySelectorAll('.plan-component-row').forEach(row => { const n = row.querySelector('.pc-name').value, a = parseFloat(row.querySelector('.pc-amount').value) || 0; if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'academic' }); });
+                const data = { name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12, startMonth: parseInt(document.getElementById('plan-start').value), updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: auth.currentUser.email };
                 if (!id) data.createdAt = data.updatedAt;
                 const ref = firestore.collection('modules').doc('fees_accounting').collection('plans');
                 if (id) await ref.doc(id).update(data); else await ref.add(data); return true;
@@ -757,9 +827,9 @@ window.feesManager = {
     showSetupFeesForm(studentId) {
         const f = this.fees[studentId] || { total: 0, paid: 0, planId: '', components: [], billingCycle: 12, startMonth: 5 }, s = this.students[studentId] || { name: 'Student' };
         let opts = '<option value="">-- Select Template --</option>';
-        Object.keys(this.plans).sort((a,b)=>this.plans[a].name.localeCompare(this.plans[b].name)).forEach(pid => opts += `<option value="${pid}" ${pid === f.planId ? 'selected' : ''}>${this.plans[pid].name}</option>`);
+        Object.keys(this.plans).sort((a, b) => this.plans[a].name.localeCompare(this.plans[b].name)).forEach(pid => opts += `<option value="${pid}" ${pid === f.planId ? 'selected' : ''}>${this.plans[pid].name}</option>`);
 
-        const renderRow = (c = {name: '', frequency: 'onetime', amount: 0, originalAmount: 0}) => {
+        const renderRow = (c = { name: '', frequency: 'onetime', amount: 0, originalAmount: 0 }) => {
             const orig = c.originalAmount || c.amount || 0;
             return `
             <div class="form-row component-row" style="display:grid; grid-template-columns: 1.8fr 1fr 1fr 1fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;">
@@ -773,16 +843,16 @@ window.feesManager = {
 
         AppDialog.confirm({
             title: `Configure Fees: ${s.name}`, width: '950px',
-            content: `<div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;"><div><div class="form-group"><label>Apply Template</label><select id="sf-plan-id" class="form-control">${opts}</select></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;"><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}"></div><div class="form-group"><label>Start Month</label><select id="sf-start" class="form-control">${this.MONTHS.map((m,i)=>`<option value="${i}" ${i===(f.startMonth===undefined?5:f.startMonth)?'selected':''}>${m}</option>`).join('')}</select></div></div><div id="setup-summary-card" style="margin-top:32px; padding:20px; background:rgba(255,255,255,0.03); border-radius:24px; border:1px solid var(--card-border); word-break: break-all; overflow: hidden;"><div style="margin-bottom:10px;"><label style="font-size:0.6rem; opacity:0.6;">ANNUAL TOTAL</label><div id="sf-final-total-display" style="font-size:1.5rem; font-weight:900;">₹0</div></div><div style="margin-bottom:10px;"><label style="font-size:0.6rem; opacity:0.6;">TOTAL WAIVERS</label><div id="sf-waiver-display" style="font-size:1.2rem; color:var(--accent-primary);">₹0</div></div><div><label style="font-size:0.6rem; opacity:0.6;">BALANCE DUE</label><div id="sf-balance-display" style="font-size:1.8rem; font-weight:900; color:var(--accent-primary);">₹0</div></div></div></div><div><div class="form-section-title" style="display:flex; justify-content:space-between;"><span>Components</span><button class="btn btn-secondary btn-sm" id="add-custom-comp-btn">Add Item</button></div><div id="setup-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px;">${f.components?.length > 0 ? f.components.map(c => renderRow(c)).join('') : renderRow()}</div></div></div>`,
+            content: `<div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;"><div><div class="form-group"><label>Apply Template</label><select id="sf-plan-id" class="form-control">${opts}</select></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;"><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}"></div><div class="form-group"><label>Start Month</label><select id="sf-start" class="form-control">${this.MONTHS.map((m, i) => `<option value="${i}" ${i === (f.startMonth === undefined ? 5 : f.startMonth) ? 'selected' : ''}>${m}</option>`).join('')}</select></div></div><div class="form-group" style="margin-top:12px;"><label>Start Year</label><input type="number" id="sf-start-year" class="form-control" value="${f.academicStartYear !== undefined ? f.academicStartYear : (new Date().getMonth() < (f.startMonth !== undefined ? f.startMonth : 5) ? new Date().getFullYear() - 1 : new Date().getFullYear())}"></div><div id="setup-summary-card" style="margin-top:20px; padding:20px; background:rgba(255,255,255,0.03); border-radius:24px; border:1px solid var(--card-border); word-break: break-all; overflow: hidden;"><div style="margin-bottom:10px;"><label style="font-size:0.6rem; opacity:0.6;">ANNUAL TOTAL</label><div id="sf-final-total-display" style="font-size:1.5rem; font-weight:900;">₹0</div></div><div style="margin-bottom:10px;"><label style="font-size:0.6rem; opacity:0.6;">TOTAL WAIVERS</label><div id="sf-waiver-display" style="font-size:1.2rem; color:var(--accent-primary);">₹0</div></div><div><label style="font-size:0.6rem; opacity:0.6;">BALANCE DUE</label><div id="sf-balance-display" style="font-size:1.8rem; font-weight:900; color:var(--accent-primary);">₹0</div></div></div></div><div><div class="form-section-title" style="display:flex; justify-content:space-between;"><span>Components</span><button class="btn btn-secondary btn-sm" id="add-custom-comp-btn">Add Item</button></div><div id="setup-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px;">${f.components?.length > 0 ? f.components.map(c => renderRow(c)).join('') : renderRow()}</div></div></div>`,
             onOpen: (overlay) => {
                 const ps = overlay.querySelector('#sf-plan-id'), cc = overlay.querySelector('#setup-components-container'), cy = overlay.querySelector('#sf-cycle'), st = overlay.querySelector('#sf-start');
                 const totalOut = overlay.querySelector('#sf-final-total-display'), waiverOut = overlay.querySelector('#sf-waiver-display'), balOut = overlay.querySelector('#sf-balance-display');
                 this.recalcSetupTotal = () => {
                     let t = 0, w = 0; const c = parseInt(cy.value) || 12;
                     overlay.querySelectorAll('.component-row').forEach(row => { const orig = parseFloat(row.querySelector('.c-orig').value) || 0, payable = parseFloat(row.querySelector('.c-amount').value) || 0, f = row.querySelector('.c-freq').value; const mult = f === 'monthly' ? c : 1; t += (payable * mult); w += Math.max(0, (orig - payable) * mult); });
-                    totalOut.innerText = `₹${t.toLocaleString('en-IN')}`; waiverOut.innerText = `₹${w.toLocaleString('en-IN')}`; balOut.innerText = `₹${Math.max(0, t - (f.paid||0)).toLocaleString('en-IN')}`; return t;
+                    totalOut.innerText = `₹${t.toLocaleString('en-IN')}`; waiverOut.innerText = `₹${w.toLocaleString('en-IN')}`; balOut.innerText = `₹${Math.max(0, t - (f.paid || 0)).toLocaleString('en-IN')}`; return t;
                 };
-                ps.onchange = (e) => { const p = this.plans[e.target.value]; if (p) { cc.innerHTML = (p.components || []).map(c => renderRow({...c, originalAmount: c.amount})).join(''); cy.value = p.billingCycle || 12; st.value = p.startMonth !== undefined ? p.startMonth : 5; if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); } };
+                ps.onchange = (e) => { const p = this.plans[e.target.value]; if (p) { cc.innerHTML = (p.components || []).map(c => renderRow({ ...c, originalAmount: c.amount })).join(''); cy.value = p.billingCycle || 12; st.value = p.startMonth !== undefined ? p.startMonth : 5; if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); } };
                 overlay.querySelector('#add-custom-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow(); cc.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); };
                 overlay.addEventListener('input', this.recalcSetupTotal); this.recalcSetupTotal();
                 if (window.lucide) window.lucide.createIcons({ root: overlay });
@@ -790,7 +860,7 @@ window.feesManager = {
             onConfirm: () => {
                 const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0, o = parseFloat(row.querySelector('.c-orig').value) || a; if (n) components.push({ name: n, amount: a, originalAmount: o, frequency: row.querySelector('.pc-freq')?.value || row.querySelector('.c-freq').value, type: 'other' }); });
                 const total = this.recalcSetupTotal();
-                firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, startMonth: parseInt(document.getElementById('sf-start').value), components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, startMonth: parseInt(document.getElementById('sf-start').value), academicStartYear: parseInt(document.getElementById('sf-start-year').value), components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 AppDialog.toast('Fee structure updated', 'success'); return true;
             }
         });
@@ -814,7 +884,7 @@ window.feesManager = {
                         ${monthIdx !== null ? `<div style="font-size:0.6rem; opacity:0.5; text-transform:uppercase;">${this.MONTHS[monthIdx]}</div>` : ''}
                     </div>
                     <div style="font-size:0.75rem; opacity:0.6; text-align:right;">Due: ₹${due.toLocaleString('en-IN')}</div>
-                    <input type="number" class="form-control alloc-input" data-key="${key}" data-due="${due}" placeholder="₹0" style="height:32px; font-size:0.85rem;">
+                    <input type="number" class="form-control alloc-input" data-key="${key}" data-due="${due}" max="${due}" min="0" placeholder="₹0" style="height:32px; font-size:0.85rem;">
                 </div>`;
         };
 
@@ -847,6 +917,7 @@ window.feesManager = {
             onOpen: (overlay) => {
                 const amtI = overlay.querySelector('#pf-amount'), remD = overlay.querySelector('#alloc-remaining span');
                 const inputs = overlay.querySelectorAll('.alloc-input');
+
                 const updateRemaining = () => {
                     const total = parseFloat(amtI.value) || 0;
                     let allocated = 0;
@@ -855,8 +926,33 @@ window.feesManager = {
                     remD.innerText = `₹${rem.toLocaleString('en-IN')}`;
                     remD.style.color = rem === 0 ? 'var(--success)' : (rem < 0 ? 'var(--accent-primary)' : 'var(--text-dim)');
                 };
-                amtI.oninput = updateRemaining;
-                inputs.forEach(i => i.oninput = updateRemaining);
+
+                amtI.oninput = (e) => {
+                    let totalToAlloc = parseFloat(e.target.value) || 0;
+                    inputs.forEach(i => {
+                        const due = parseFloat(i.dataset.due) || 0;
+                        if (totalToAlloc >= due && due > 0) {
+                            i.value = due;
+                            totalToAlloc -= due;
+                        } else if (totalToAlloc > 0 && due > 0) {
+                            i.value = totalToAlloc;
+                            totalToAlloc = 0;
+                        } else {
+                            i.value = '';
+                        }
+                    });
+                    updateRemaining();
+                };
+
+                inputs.forEach(i => {
+                    i.oninput = (e) => {
+                        let val = parseFloat(e.target.value) || 0;
+                        const due = parseFloat(e.target.dataset.due) || 0;
+                        if (val > due) e.target.value = due;
+                        else if (val < 0) e.target.value = 0;
+                        updateRemaining();
+                    };
+                });
             },
             onConfirm: () => {
                 const amount = parseFloat(document.getElementById('pf-amount').value);
@@ -869,13 +965,13 @@ window.feesManager = {
                     if (val > 0) breakdown[i.dataset.key] = val;
                 });
 
-                this.savePayment(studentId, { 
-                    amount, 
-                    method: document.getElementById('pf-method').value, 
-                    reference: document.getElementById('pf-ref').value, 
+                this.savePayment(studentId, {
+                    amount,
+                    method: document.getElementById('pf-method').value,
+                    reference: document.getElementById('pf-ref').value,
                     breakdown,
-                    backDate: customDate !== today ? customDate : null, 
-                    createdBy: auth.currentUser.email 
+                    backDate: customDate !== today ? customDate : null,
+                    createdBy: auth.currentUser.email
                 });
                 return true;
             }
@@ -895,7 +991,7 @@ window.feesManager = {
                 });
             }
 
-            firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(sid).set({ 
+            firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(sid).set({
                 paid: curr + data.amount,
                 componentPayments: newCompPayments
             }, { merge: true });
@@ -922,7 +1018,7 @@ window.feesManager = {
 
                 const batch = firestore.batch();
                 batch.delete(firestore.collection('modules').doc('fees_accounting').collection('transactions').doc(tid));
-                batch.set(firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId), { 
+                batch.set(firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId), {
                     paid: Math.max(0, curr - amount),
                     componentPayments: compPayments
                 }, { merge: true });
@@ -983,30 +1079,30 @@ window.feesManager = {
     },
 
     showPayrollForm() {
-        let opts = '<option value="">-- Select Staff Member --</option>'; 
-        Object.values(this.staff).sort((a,b)=>a.name.localeCompare(b.name)).forEach(s => opts += `<option value="${s.id}">${s.name}</option>`);
+        let opts = '<option value="">-- Select Staff Member --</option>';
+        Object.values(this.staff).sort((a, b) => a.name.localeCompare(b.name)).forEach(s => opts += `<option value="${s.id}">${s.name}</option>`);
         const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
         const now = new Date(), curM = months[now.getMonth()], curY = now.getFullYear();
         AppDialog.confirm({
             title: 'Process Monthly Payroll', width: '700px',
-            content: `<div class="form-grid-2"><div class="form-group"><label>Staff Member</label><select id="p-staff" class="form-control">${opts}</select></div><div class="form-group"><label>Payroll Month</label><select id="p-month" class="form-control">${months.map(m=>`<option ${m===curM?'selected':''}>${m} ${curY}</option>`).join('')}</select></div></div><div id="payroll-calc-area" style="margin-top:20px; display:none;"><div class="form-grid-2"><div class="form-group"><label>Base Salary (₹)</label><input type="number" id="p-base" class="form-control"></div><div class="form-group"><label>Bonus / Additions (₹)</label><input type="number" id="p-bonus" class="form-control" value="0"></div></div><div id="reimb-info" style="margin-top:10px; color:var(--success); font-size:0.8rem; display:none;">Approved Reimbursements: <strong id="reimb-amt">₹0</strong></div><div class="form-group" style="margin-top:15px;"><label>Deductions (₹)</label><input type="number" id="p-ded" class="form-control" value="0"></div><div style="margin-top:20px; font-size:1.2rem; font-weight:900;">Net Payout: <span id="p-net" style="color:var(--success)">₹0</span></div></div>`,
+            content: `<div class="form-grid-2"><div class="form-group"><label>Staff Member</label><select id="p-staff" class="form-control">${opts}</select></div><div class="form-group"><label>Payroll Month</label><select id="p-month" class="form-control">${months.map(m => `<option ${m === curM ? 'selected' : ''}>${m} ${curY}</option>`).join('')}</select></div></div><div id="payroll-calc-area" style="margin-top:20px; display:none;"><div class="form-grid-2"><div class="form-group"><label>Base Salary (₹)</label><input type="number" id="p-base" class="form-control"></div><div class="form-group"><label>Bonus / Additions (₹)</label><input type="number" id="p-bonus" class="form-control" value="0"></div></div><div id="reimb-info" style="margin-top:10px; color:var(--success); font-size:0.8rem; display:none;">Approved Reimbursements: <strong id="reimb-amt">₹0</strong></div><div class="form-group" style="margin-top:15px;"><label>Deductions (₹)</label><input type="number" id="p-ded" class="form-control" value="0"></div><div style="margin-top:20px; font-size:1.2rem; font-weight:900;">Net Payout: <span id="p-net" style="color:var(--success)">₹0</span></div></div>`,
             onOpen: (overlay) => {
                 const sel = overlay.querySelector('#p-staff'), area = overlay.querySelector('#payroll-calc-area');
                 const baseI = overlay.querySelector('#p-base'), bonI = overlay.querySelector('#p-bonus'), dedI = overlay.querySelector('#p-ded'), netD = overlay.querySelector('#p-net');
-                const recalc = () => { netD.innerText = `₹${(parseFloat(baseI.value||0) + parseFloat(bonI.value||0) - parseFloat(dedI.value||0)).toLocaleString('en-IN')}`; };
+                const recalc = () => { netD.innerText = `₹${(parseFloat(baseI.value || 0) + parseFloat(bonI.value || 0) - parseFloat(dedI.value || 0)).toLocaleString('en-IN')}`; };
                 sel.onchange = () => {
                     const s = this.staff[sel.value]; if (!s) { area.style.display = 'none'; return; }
                     area.style.display = 'block'; baseI.value = s.baseSalary || 0;
                     const r = this.expenses.filter(e => e.staffId === s.id && e.source === 'staff' && e.status === 'approved' && !e.paidInSalary);
-                    const t = r.reduce((a,b) => a + b.amount, 0);
-                    if (t > 0) { overlay.querySelector('#reimb-info').style.display='block'; overlay.querySelector('#reimb-amt').innerText=`₹${t.toLocaleString('en-IN')}`; bonI.value = t; } else { overlay.querySelector('#reimb-info').style.display='none'; bonI.value = 0; }
+                    const t = r.reduce((a, b) => a + b.amount, 0);
+                    if (t > 0) { overlay.querySelector('#reimb-info').style.display = 'block'; overlay.querySelector('#reimb-amt').innerText = `₹${t.toLocaleString('en-IN')}`; bonI.value = t; } else { overlay.querySelector('#reimb-info').style.display = 'none'; bonI.value = 0; }
                     recalc();
                 };
                 [baseI, bonI, dedI].forEach(i => i.oninput = recalc);
             },
             onConfirm: async () => {
                 const sid = document.getElementById('p-staff').value, s = this.staff[sid]; if (!s) return false;
-                const base = parseFloat(document.getElementById('p-base').value)||0, bonus = parseFloat(document.getElementById('p-bonus').value)||0, ded = parseFloat(document.getElementById('p-ded').value)||0;
+                const base = parseFloat(document.getElementById('p-base').value) || 0, bonus = parseFloat(document.getElementById('p-bonus').value) || 0, ded = parseFloat(document.getElementById('p-ded').value) || 0;
                 const salRef = await firestore.collection('modules').doc('fees_accounting').collection('salaries').add({ staffId: sid, month: document.getElementById('p-month').value, baseSalary: base, bonus, deductions: ded, netSalary: base + bonus - ded, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
                 const batch = firestore.batch();
                 this.expenses.filter(e => e.staffId === sid && e.source === 'staff' && e.status === 'approved' && !e.paidInSalary).forEach(e => { batch.update(firestore.collection('modules').doc('fees_accounting').collection('expenses').doc(e.id), { paidInSalary: true, salaryId: salRef.id }); });
@@ -1015,7 +1111,7 @@ window.feesManager = {
         });
     },
 
-    deletePlan(id) { 
+    deletePlan(id) {
         AppDialog.confirm({
             title: 'Delete Fee Package', content: 'Permanently delete this package?', confirmClass: 'btn-danger', onConfirm: () => { firestore.collection('modules').doc('fees_accounting').collection('plans').doc(id).delete(); return true; }
         });
@@ -1048,13 +1144,13 @@ window.feesManager = {
 
     printStudentInvoice(id) {
         const s = this.students[id] || { name: 'Student' }, f = this.fees[id] || { total: 0, paid: 0, components: [], billingCycle: 12 };
-        
+
         // Prepaid Logic for Invoice
         const now = new Date();
         const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
         const academicStartYear = (now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear();
         const installmentsExpected = Math.max(0, ((now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth)) + 1);
-        
+
         const monthlyTotal = (f.components || []).filter(c => c.frequency === 'monthly').reduce((a, b) => a + b.amount, 0);
         const oneTimeTotal = (f.components || []).filter(c => c.frequency !== 'monthly').reduce((a, b) => a + b.amount, 0);
         const expectedToDate = oneTimeTotal + (monthlyTotal * installmentsExpected);
@@ -1111,9 +1207,10 @@ window.feesManager = {
                     <div class="info-box">
                         <h3>Institution Details</h3>
                         <div class="info-content">
-                            Abhishri Academy, Salem, Tamil Nadu<br>
-                            Contact: +91 98765 43210<br>
-                            Email: office@abhishriacademy.in
+                            Abhishri Academy<br>
+                            84, Dhalavaipattinam Road<br>
+                            (Opposite to DSP Office), Dharapuram<br>
+                            Tiruppur District - 638656
                         </div>
                     </div>
                     <div class="info-box" style="text-align: right;">
@@ -1139,12 +1236,12 @@ window.feesManager = {
                     </thead>
                     <tbody>
                         ${(f.components || []).map(c => {
-                            const mult = c.frequency === 'monthly' ? (f.billingCycle || 12) : 1;
-                            const stdRate = (c.originalAmount || c.amount);
-                            const stdTotal = stdRate * mult;
-                            const netTotal = c.amount * mult;
-                            const wav = Math.max(0, stdTotal - netTotal);
-                            return `
+            const mult = c.frequency === 'monthly' ? (f.billingCycle || 12) : 1;
+            const stdRate = (c.originalAmount || c.amount);
+            const stdTotal = stdRate * mult;
+            const netTotal = c.amount * mult;
+            const wav = Math.max(0, stdTotal - netTotal);
+            return `
                                 <tr>
                                     <td>
                                         <div style="font-weight: bold;">${c.name}</div>
@@ -1156,13 +1253,13 @@ window.feesManager = {
                                     <td style="text-align: right;">${wav > 0 ? '- ₹' + wav.toLocaleString('en-IN') : '—'}</td>
                                     <td style="text-align: right; font-weight: bold;">₹${netTotal.toLocaleString('en-IN')}</td>
                                 </tr>`;
-                        }).join('')}
+        }).join('')}
                     </tbody>
                 </table>
 
                 <div class="summary-section">
                     <div>
-                        <div style="font-size: 0.7rem; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #000;">Arrears Status (To Date)</div>
+                        <div style="font-size: 0.7rem; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #000;">Dues Status (To Date)</div>
                         <div style="font-size: 0.85rem;">
                             Expected to Date: ₹${expectedToDate.toLocaleString('en-IN')}<br>
                             Amount Paid to Date: ₹${(f.paid || 0).toLocaleString('en-IN')}<br>
