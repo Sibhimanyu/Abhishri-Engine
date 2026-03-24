@@ -580,6 +580,11 @@ window.feesManager = {
         const thisMonthName = this.MONTHS[targetMonthIdx];
         
         const currentDuesToDisplay = isThisMonthPaid ? 0 : Math.max(arrears, oneTimeTotal + (targetRelativeIdx + 1) * monthlyTotal - paid);
+        const isConfigured = (f.components && f.components.length > 0) || f.total > 0;
+        const displayStatusName = isConfigured ? `${thisMonthName} Status` : 'Setup Status';
+        const displayStatusValue = isConfigured ? (isThisMonthPaid ? 'PAID' : 'PENDING') : 'MISSING';
+        const displayStatusColor = isConfigured ? (isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)') : 'var(--text-dim)';
+        const displayStatusBorder = isConfigured ? (isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)') : 'rgba(255,255,255,0.1)';
 
         let html = `
             <!-- Header Banner -->
@@ -597,8 +602,8 @@ window.feesManager = {
                 <div style="display:flex; gap:16px; align-items:center;">
                     <div style="text-align:right; margin-right: 16px;">
                         <div style="font-size:0.65rem; font-weight:800; opacity:0.6; text-transform:uppercase; margin-bottom:4px;">Standing</div>
-                        <div style="font-weight:900; color:${arrears <= 0 ? 'var(--success)' : 'var(--accent-primary)'}; font-size:1.1rem;">
-                            ${arrears <= 0 ? 'CLEAR' : 'OVERDUE: ₹' + arrears.toLocaleString('en-IN')}
+                        <div style="font-weight:900; color:${!isConfigured ? 'var(--text-main)' : (arrears <= 0 ? 'var(--success)' : 'var(--accent-primary)')}; font-size:1.1rem;">
+                            ${!isConfigured ? 'UNCONFIGURED' : (arrears <= 0 ? 'CLEAR' : 'OVERDUE: ₹' + arrears.toLocaleString('en-IN'))}
                         </div>
                     </div>
                     <button class="btn btn-primary" style="height:48px; padding:0 24px; border-radius:12px; font-weight:800; display:flex; align-items:center; gap:8px; box-shadow: 0 4px 12px rgba(241, 97, 91, 0.2);" onclick="window.feesManager.showPaymentForm('${id}')">
@@ -625,9 +630,9 @@ window.feesManager = {
                     <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Current Dues</div>
                     <div style="font-size:1.8rem; font-weight:900; color:${currentDuesToDisplay > 0 ? 'var(--accent-primary)' : 'var(--success)'};">₹${Math.max(0, currentDuesToDisplay).toLocaleString('en-IN')}</div>
                 </div>
-                <div class="console-card" style="padding:24px; border-radius:16px; border-bottom: 4px solid ${isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)'};">
-                    <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">${thisMonthName} Status</div>
-                    <div style="font-size:1.8rem; font-weight:900; color:${isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)'};">${isThisMonthPaid ? 'PAID' : 'PENDING'}</div>
+                <div class="console-card" style="padding:24px; border-radius:16px; border-bottom: 4px solid ${displayStatusBorder};">
+                    <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">${displayStatusName}</div>
+                    <div style="font-size:1.8rem; font-weight:900; color:${displayStatusColor};">${displayStatusValue}</div>
                 </div>
             </div>
 
