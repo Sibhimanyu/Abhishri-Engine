@@ -41,7 +41,7 @@ if (!window.whatsAppSender) {
 
         // 3. Subscribe to Conversations (Metadata from RTDB)
         if (this._convosUnsubscribe) this._convosUnsubscribe();
-        
+
         const convosRef = firebase.database().ref('modules/whatsapp_sender/conversations');
         const listener = convosRef.on('value', (snapshot) => {
             const data = snapshot.val() || {};
@@ -64,7 +64,7 @@ if (!window.whatsAppSender) {
 
         const safeKey = phoneNumber.replace(/[.#$/[\]]/g, '_');
         const messagesRef = firebase.database().ref(`modules/whatsapp_sender/conversations/${safeKey}/messages`);
-        
+
         const listener = messagesRef.orderByChild('timestamp').limitToLast(50).on('value', (snapshot) => {
             const messages = [];
             snapshot.forEach(child => {
@@ -72,9 +72,9 @@ if (!window.whatsAppSender) {
             });
             this.activeMessages = messages;
             this.renderMessages();
-            
+
             // Reset unread count in RTDB
-            firebase.database().ref(`modules/whatsapp_sender/conversations/${safeKey}/metadata`).update({ unreadCount: 0 }).catch(() => {});
+            firebase.database().ref(`modules/whatsapp_sender/conversations/${safeKey}/metadata`).update({ unreadCount: 0 }).catch(() => { });
         });
 
         this._messagesUnsubscribe = () => messagesRef.off('value', listener);
@@ -97,8 +97,8 @@ if (!window.whatsAppSender) {
             const audienceSelect = document.getElementById('wa-broadcast-audience');
             if (audienceSelect) {
                 const currentValue = audienceSelect.value;
-                
-                audienceSelect.innerHTML = `<option value="none" disabled selected>-- Choose Audience --</option>` + 
+
+                audienceSelect.innerHTML = `<option value="none" disabled selected>-- Choose Audience --</option>` +
                     Object.entries(this.lists).map(([id, list]) =>
                         `<option value="list:${id}">${list.name} (${list.contactsCount ?? list.count ?? 0})</option>`
                     ).join('');
@@ -206,7 +206,7 @@ if (!window.whatsAppSender) {
             const variables = Array.from(inputs)
                 .filter(inp => inp.id !== 'wa-header-media-url')
                 .map(inp => inp.value);
-                
+
             const customMediaUrl = document.getElementById('wa-header-media-url')?.value;
             const needsImageHeader = selectedOption.getAttribute('data-needs-image') === 'true';
             const headerImageUrl = customMediaUrl || selectedOption.getAttribute('data-header-image') || null;
@@ -239,7 +239,7 @@ if (!window.whatsAppSender) {
             const excluded = this.excludedNumbers || [];
             const excludedSet = new Set(excluded.map(n => n.replace(/[^\d]/g, "")));
             const activeRecipients = recipients.filter(r => !excludedSet.has(r.phone.replace(/[^\d]/g, "")));
-            
+
             let ratePerMsg = 0.95;
             let rateType = 'Marketing Rate';
             if (templateCategory.toUpperCase() === 'UTILITY') {
@@ -310,9 +310,9 @@ if (!window.whatsAppSender) {
             // Reset button state before showing confirmation
             if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = originalBtnHtml; if (window.lucide) window.lucide.createIcons({ root: sendBtn }); }
 
-            const confirmed = await AppDialog.confirm(dialogHtml, { 
-                title: 'Launch Broadcast', 
-                confirmText: `Launch Campaign`, 
+            const confirmed = await AppDialog.confirm(dialogHtml, {
+                title: 'Launch Broadcast',
+                confirmText: `Launch Campaign`,
                 confirmButtonClass: 'btn-primary',
                 isHtml: true,
                 width: '500px'
@@ -353,13 +353,13 @@ if (!window.whatsAppSender) {
                 this.startLocalSimulation(broadcastId, activeRecipients);
             } else {
                 this.sendBroadcastAPI({
-                    templateName, 
+                    templateName,
                     recipients: fullRecipients, // SEND FULL LIST
-                    variables, 
-                    broadcastId, 
-                    headerImageUrl, 
-                    contactsCount, 
-                    excludedNumbers: finalExcluded 
+                    variables,
+                    broadcastId,
+                    headerImageUrl,
+                    contactsCount,
+                    excludedNumbers: finalExcluded
                 }).then(() => {
                     this.excludedNumbers = [];
                 }).catch(e => {
@@ -374,10 +374,10 @@ if (!window.whatsAppSender) {
     };
 
     window.whatsAppSender.stopBroadcast = async function (logId) {
-        const confirmed = await AppDialog.confirm('Are you sure you want to stop this broadcast? Messages already in queue will still be sent.', { 
-            title: 'Stop Broadcast', 
+        const confirmed = await AppDialog.confirm('Are you sure you want to stop this broadcast? Messages already in queue will still be sent.', {
+            title: 'Stop Broadcast',
             confirmText: 'Stop Now',
-            danger: true 
+            danger: true
         });
         if (!confirmed) return;
 
@@ -699,9 +699,9 @@ if (!window.whatsAppSender) {
             customSelectsHTML += `
                 <div style="margin-bottom: 12px;">
                     <label style="display:block; margin-bottom:4px; font-weight:500; font-size:0.9rem;">${field}</label>
-                    <select id="${safeId}" class="wa-modal-input wa-mapping-custom-select" data-fieldname="${field}" style="padding:8px; width:100%; border-radius:4px; border:1px solid var(--border); background:var(--surface);">
-                        <option value="">Skip this field</option>
+                    <select id="${safeId}" multiple class="wa-modal-input wa-mapping-custom-select" data-fieldname="${field}" style="padding:8px; width:100%; border-radius:4px; border:1px solid var(--border); background:var(--surface); height: 100px;">
                     </select>
+                    <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px;">Hold Ctrl/Cmd to merge multiple columns (comma-separated).</div>
                 </div>
             `;
         });
@@ -737,17 +737,17 @@ if (!window.whatsAppSender) {
                     <p style="font-size:0.85rem;color:var(--text-dim);margin-bottom:12px;">Map the CSV columns to your directory fields.</p>
                     
                     <div style="margin-bottom: 12px;">
-                        <label style="display:block; margin-bottom:4px; font-weight:500; font-size:0.9rem;">Name Column <span style="color:var(--danger)">*</span></label>
-                        <select id="wa-mapping-name" class="wa-modal-input" style="padding:8px; width:100%; border-radius:4px; border:1px solid var(--border); background:var(--surface);">
-                            <option value="">Select column...</option>
+                        <label style="display:block; margin-bottom:4px; font-weight:500; font-size:0.9rem;">Name Column(s) <span style="color:var(--danger)">*</span></label>
+                        <select id="wa-mapping-name" multiple class="wa-modal-input" style="padding:8px; width:100%; border-radius:4px; border:1px solid var(--border); background:var(--surface); height: 100px;">
                         </select>
+                        <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px;">Hold Ctrl/Cmd to merge multiple columns (e.g. First + Last Name).</div>
                     </div>
 
                     <div style="margin-bottom: 12px;">
-                        <label style="display:block; margin-bottom:4px; font-weight:500; font-size:0.9rem;">Phone Number Column <span style="color:var(--danger)">*</span></label>
-                        <select id="wa-mapping-phone" class="wa-modal-input" style="padding:8px; width:100%; border-radius:4px; border:1px solid var(--border); background:var(--surface);">
-                            <option value="">Select column...</option>
+                        <label style="display:block; margin-bottom:4px; font-weight:500; font-size:0.9rem;">Phone Number(s) <span style="color:var(--danger)">*</span></label>
+                        <select id="wa-mapping-phone" multiple class="wa-modal-input" style="padding:8px; width:100%; border-radius:4px; border:1px solid var(--border); background:var(--surface); height: 100px;">
                         </select>
+                        <div style="font-size:0.75rem; color:var(--text-dim); margin-top:4px;">Hold Ctrl/Cmd to select multiple (comma-separated).</div>
                     </div>
 
                     ${customFields.length > 0 ? '<div style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px; margin-bottom:12px; font-weight:600; font-size:0.95rem;">Custom Directory Fields</div>' : ''}
@@ -818,12 +818,12 @@ if (!window.whatsAppSender) {
                 });
 
                 // Populate Name and Phone selects
-                phoneSelect.innerHTML = '<option value="">Select column...</option>';
-                nameSelect.innerHTML = '<option value="">Select column...</option>';
+                phoneSelect.innerHTML = '';
+                nameSelect.innerHTML = '';
 
                 // Reset all Custom Field selects
                 customSelects.forEach(sel => {
-                    sel.innerHTML = '<option value="">Skip this field</option>';
+                    sel.innerHTML = '';
                 });
 
                 // Populate all selects with CSV header options
@@ -851,16 +851,16 @@ if (!window.whatsAppSender) {
                 // Simple auto-guess for base fields
                 const lowerHeaders = parsedHeaders.map(h => h.toLowerCase());
                 const guessNameIdx = lowerHeaders.findIndex(h => h.includes('name') && !h.includes('father') && !h.includes('mother'));
-                if (guessNameIdx !== -1) nameSelect.value = guessNameIdx;
+                if (guessNameIdx !== -1 && nameSelect.options[guessNameIdx]) nameSelect.options[guessNameIdx].selected = true;
 
                 const guessPhoneIdx = lowerHeaders.findIndex(h => h.includes('phone') || h.includes('number') || h.includes('contact'));
-                if (guessPhoneIdx !== -1) phoneSelect.value = guessPhoneIdx;
+                if (guessPhoneIdx !== -1 && phoneSelect.options[guessPhoneIdx]) phoneSelect.options[guessPhoneIdx].selected = true;
 
                 // Auto-guess for custom fields (exact or close match)
                 customSelects.forEach(sel => {
                     const fieldName = sel.getAttribute('data-fieldname').toLowerCase();
                     const guessIdx = lowerHeaders.findIndex(h => h === fieldName || h.includes(fieldName));
-                    if (guessIdx !== -1) sel.value = guessIdx;
+                    if (guessIdx !== -1 && sel.options[guessIdx]) sel.options[guessIdx].selected = true;
                 });
 
                 step1.style.display = 'none';
@@ -882,22 +882,22 @@ if (!window.whatsAppSender) {
 
         // --- Step 2 Final Upload logic ---
         uploadBtn.addEventListener('click', async () => {
-            const phoneIdx = parseInt(phoneSelect.value);
-            const nameIdx = parseInt(nameSelect.value);
+            const phoneIdxs = Array.from(phoneSelect.selectedOptions).map(opt => parseInt(opt.value)).filter(v => !isNaN(v));
+            const nameIdxs = Array.from(nameSelect.selectedOptions).map(opt => parseInt(opt.value)).filter(v => !isNaN(v));
 
-            if (isNaN(phoneIdx) || isNaN(nameIdx)) {
-                AppDialog.toast('Please select both a Name and a Phone Number column.', 'warn');
+            if (phoneIdxs.length === 0 || nameIdxs.length === 0) {
+                AppDialog.toast('Please select at least one Name and Phone Number column.', 'warn');
                 return;
             }
 
             // Gather mapped indices for custom fields
             const mappedCustomFields = [];
             customSelects.forEach(sel => {
-                const idx = parseInt(sel.value);
-                if (!isNaN(idx)) {
+                const idxs = Array.from(sel.selectedOptions).map(opt => parseInt(opt.value)).filter(v => !isNaN(v));
+                if (idxs.length > 0) {
                     mappedCustomFields.push({
                         fieldName: sel.getAttribute('data-fieldname'),
-                        colIdx: idx
+                        colIdxs: idxs
                     });
                 }
             });
@@ -932,17 +932,28 @@ if (!window.whatsAppSender) {
                 row.push(currentVal);
                 row = row.map(c => c.trim().replace(/"/g, ''));
 
-                if (row.length <= Math.max(phoneIdx, nameIdx)) continue;
-
-                let phone = row[phoneIdx];
-                let name = row[nameIdx];
-                if (!phone || !name) continue;
-
-                phone = phone.replace(/[^\d+]/g, '');
-                if (!phone.startsWith('+')) {
-                    if (phone.length === 10) phone = '+91' + phone;
-                    else phone = '+' + phone;
+                let nameParts = [];
+                for (let idx of nameIdxs) {
+                    if (row[idx]) nameParts.push(row[idx]);
                 }
+                let name = nameParts.join(' ').trim();
+
+                let phoneParts = [];
+                for (let idx of phoneIdxs) {
+                    let p = row[idx];
+                    if (p) {
+                         p = p.replace(/[^\d+]/g, '');
+                         if (p.length >= 10) {
+                             if (!p.startsWith('+')) {
+                                 if (p.length === 10) p = '+91' + p;
+                                 else p = '+' + p;
+                             }
+                             phoneParts.push(p);
+                         }
+                    }
+                }
+                let phone = phoneParts.join(','); 
+                if (!phone || !name) continue;
 
                 // Explicit schema mapping! Only the requested mapped fields go into memberData.
                 const memberData = {
@@ -952,9 +963,12 @@ if (!window.whatsAppSender) {
                 };
 
                 mappedCustomFields.forEach(mapping => {
-                    const cellValue = row[mapping.colIdx];
-                    if (cellValue !== undefined && cellValue !== "") {
-                        memberData[mapping.fieldName] = cellValue;
+                    let parts = [];
+                    mapping.colIdxs.forEach(idx => {
+                        if (row[idx] !== undefined && row[idx] !== "") parts.push(row[idx]);
+                    });
+                    if (parts.length > 0) {
+                        memberData[mapping.fieldName] = parts.join(', ');
                     }
                 });
 
@@ -1028,7 +1042,7 @@ if (!window.whatsAppSender) {
             const snap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(val.split(':')[1]).collection('members').get();
             snap.docs.forEach(doc => addRecipient(doc.data().phone, doc.data().name));
         }
-        
+
         const seen = new Set();
         return recipients.filter(r => seen.has(r.phone) ? false : seen.add(r.phone));
     };
@@ -1050,11 +1064,11 @@ if (!window.whatsAppSender) {
 
             for (const bId of bIds) {
                 const snap = await firebase.database().ref('modules/whatsapp_sender/broadcast_logs').orderByChild('broadcastId').equalTo(bId).once('value');
-                Object.values(snap.val() || {}).forEach(log => { 
+                Object.values(snap.val() || {}).forEach(log => {
                     const status = (log.status || '').toLowerCase();
                     if (log.status !== 'failed' && (log.recipientId || log.phone)) {
                         const phone = log.recipientId || log.phone;
-                        dupPhones.add(String(phone).replace(/\D/g, '')); 
+                        dupPhones.add(String(phone).replace(/\D/g, ''));
                     }
                 });
             }
@@ -1108,13 +1122,12 @@ if (!window.whatsAppSender) {
                 const phones = String(doc.data().phone || "").split(/[\/,;]/).map(n => n.trim().replace(/[^\d]/g, '')).filter(n => n.length >= 10);
                 phones.forEach(p => allPhones.add(p));
             });
-            await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).update({ 
-                contactsCount: cCount, 
-                numbersCount: allPhones.size, 
-                count: cCount 
+            await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).update({
+                contactsCount: cCount,
+                numbersCount: allPhones.size,
+                count: cCount
             });
         } catch (e) { console.error(e); }
     };
 
 }
-
