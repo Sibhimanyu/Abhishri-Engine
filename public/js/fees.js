@@ -11,10 +11,13 @@ window.feesManager = {
     expenses: [],
     salaries: [],
     transactions: [],
+    auditLogs: [],
     isSubscribed: false,
     dataLoaded: false,
-    currentView: 'collections', // collections, overview, transactions, office_expenses, staff_imprest, salaries, plans, student_fees
+    currentView: 'collections', // collections, overview, transactions, office_expenses, staff_imprest, salaries, plans, student_fees, audit_logs
     searchQuery: '',
+    logModuleFilter: 'all',
+    logActionFilter: 'all',
 
     initialize() {
         this.subscribe();
@@ -69,7 +72,17 @@ window.feesManager = {
                 this.render();
             });
 
-        // 6. Expenses & Salaries
+        // 6. Audit Logs
+        firestore.collection('audit_logs')
+            .orderBy('timestamp', 'desc').limit(200)
+            .onSnapshot((snapshot) => {
+                const logs = [];
+                snapshot.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+                this.auditLogs = logs;
+                this.render();
+            });
+
+        // 7. Expenses & Salaries
         this.subscribeExpenses();
         this.subscribeSalaries();
     },
@@ -147,7 +160,8 @@ window.feesManager = {
                 office_expenses: 'Direct Office Expenditure',
                 staff_imprest: 'Staff Wallets & Reimbursements',
                 salaries: 'Payroll & Salary Management',
-                plans: 'Package Template Configuration'
+                plans: 'Package Template Configuration',
+                audit_logs: 'System Audit History & Activity Log'
             };
             subtitle.innerText = labels[viewName] || 'Financial Management';
         }
@@ -157,19 +171,42 @@ window.feesManager = {
     },
 
     render() {
-        if (!window.location.hash.startsWith('#fees')) return;
+        if (!window.location.hash.startsWith('#fees') && !window.location.hash.startsWith('#admin/audit_logs')) return;
 
-        const toolbar = document.getElementById('fees-toolbar');
+        const feesToolbar = document.getElementById('fees-toolbar');
+        const adminToolbar = document.getElementById('admin-audit-toolbar');
+        const toolbar = this.currentView === 'audit_logs' && adminToolbar ? adminToolbar : feesToolbar;
+
         if (toolbar) {
             toolbar.innerHTML = '';
-            if (['overview', 'office_expenses', 'staff_imprest', 'salaries', 'transactions', 'plans'].includes(this.currentView)) {
+            if (['overview', 'office_expenses', 'staff_imprest', 'salaries', 'transactions', 'plans', 'audit_logs'].includes(this.currentView)) {
                 const search = document.createElement('div');
                 search.className = 'search-box';
                 search.style.maxWidth = '300px';
-                search.style.marginRight = 'auto';
+                search.style.marginRight = '12px';
                 search.innerHTML = `<i data-lucide="search"></i><input type="text" placeholder="Search..." value="${this.searchQuery}">`;
                 search.querySelector('input').oninput = (e) => { this.searchQuery = e.target.value.toLowerCase(); this.render(); };
                 toolbar.appendChild(search);
+            }
+
+            if (this.currentView === 'audit_logs') {
+                const modules = [...new Set(this.auditLogs.map(l => l.module))].filter(Boolean);
+                const modSelect = document.createElement('select');
+                modSelect.className = 'btn btn-secondary';
+                modSelect.style.marginRight = '8px';
+                modSelect.innerHTML = `<option value="all">All Modules</option>` + modules.map(m => `<option value="${m}" ${this.logModuleFilter === m ? 'selected' : ''}>${m.replace(/_/g, ' ')}</option>`).join('');
+                modSelect.onchange = (e) => { this.logModuleFilter = e.target.value; this.render(); };
+                toolbar.appendChild(modSelect);
+
+                const actions = [...new Set(this.auditLogs.map(l => l.action))].filter(Boolean);
+                const actSelect = document.createElement('select');
+                actSelect.className = 'btn btn-secondary';
+                actSelect.style.marginRight = 'auto';
+                actSelect.innerHTML = `<option value="all">All Actions</option>` + actions.map(a => `<option value="${a}" ${this.logActionFilter === a ? 'selected' : ''}>${a.replace(/_/g, ' ')}</option>`).join('');
+                actSelect.onchange = (e) => { this.logActionFilter = e.target.value; this.render(); };
+                toolbar.appendChild(actSelect);
+            } else if (toolbar.firstChild && toolbar.firstChild.className === 'search-box') {
+                toolbar.firstChild.style.marginRight = 'auto';
             }
 
             const userData = window.currentUserData || {};
@@ -198,6 +235,7 @@ window.feesManager = {
         else if (this.currentView === 'salaries') this.renderSalaries();
         else if (this.currentView === 'student_fees') this.renderStudentFees();
         else if (this.currentView === 'plans') this.renderPlans();
+        else if (this.currentView === 'audit_logs') this.renderAuditLogs();
 
         if (typeof lucide !== 'undefined') lucide.createIcons();
     },
@@ -288,7 +326,6 @@ window.feesManager = {
 
         let html = `<table class="console-table"><thead><tr>
             <th>Student Name</th>
-            <th>Class</th>
             <th>Monthly Rate</th>
             <th>Expected to Date</th>
             <th>Paid</th>
@@ -299,7 +336,7 @@ window.feesManager = {
         const q = this.searchQuery;
         const sortedIds = Object.keys(this.students).filter(id => {
             const s = this.students[id];
-            return !q || (s.name || '').toLowerCase().includes(q) || (s.admissionForClass || '').toLowerCase().includes(q);
+            return !q || (s.name || '').toLowerCase().includes(q);
         }).sort((a, b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
 
         const now = new Date();
@@ -328,7 +365,6 @@ window.feesManager = {
 
             html += `<tr onclick="window.feesManager.switchView('student_fees', '${id}')" style="cursor:pointer;" class="clickable-row">
                 <td><strong>${s.name}</strong></td>
-                <td>${s.admissionForClass || 'N/A'}</td>
                 <td>₹${monthlyRate.toLocaleString('en-IN')}</td>
                 <td>₹${expectedToDate.toLocaleString('en-IN')}</td>
                 <td>₹${paid.toLocaleString('en-IN')}</td>
@@ -592,7 +628,6 @@ window.feesManager = {
                 <div>
                     <div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">
                         <h1 style="margin:0; font-size:2rem; font-weight:800; letter-spacing:-0.5px;">${s.name}</h1>
-                        <span style="background:var(--accent-primary); color:#000; padding:4px 10px; border-radius:6px; font-weight:800; font-size:0.7rem;">${s.admissionForClass || 'STUDENT'}</span>
                     </div>
                     <div style="color:var(--text-dim); font-size:0.85rem; font-weight:500; display:flex; gap:16px;">
                         <span>ID: ${id.slice(-8).toUpperCase()}</span>
@@ -834,21 +869,23 @@ window.feesManager = {
         let opts = '<option value="">-- Select Template --</option>';
         Object.keys(this.plans).sort((a, b) => this.plans[a].name.localeCompare(this.plans[b].name)).forEach(pid => opts += `<option value="${pid}" ${pid === f.planId ? 'selected' : ''}>${this.plans[pid].name}</option>`);
 
-        const renderRow = (c = { name: '', frequency: 'onetime', amount: 0, originalAmount: 0 }) => {
+        const renderRow = (c = { name: '', frequency: 'onetime', amount: 0, originalAmount: 0, type: 'other' }) => {
+            const isTemplate = c.type === 'academic';
             const orig = c.originalAmount || c.amount || 0;
+            const disabledAttr = isTemplate ? 'disabled' : '';
             return `
-            <div class="form-row component-row" style="display:grid; grid-template-columns: 1.8fr 1fr 1fr 1fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;">
-                <input type="text" class="form-control c-name" value="${c.name}" placeholder="Name">
-                <select class="form-control c-freq"><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select>
-                <div class="form-group" style="margin:0;"><label style="font-size:0.5rem; opacity:0.5;">STD</label><input type="number" class="form-control c-orig" value="${orig}"></div>
+            <div class="form-row component-row" style="display:grid; grid-template-columns: 1.8fr 1fr 1fr 1fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;" data-type="${c.type || 'other'}">
+                <input type="text" class="form-control c-name" value="${c.name}" placeholder="Name" ${disabledAttr}>
+                <select class="form-control c-freq" ${disabledAttr}><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select>
+                <div class="form-group" style="margin:0;"><label style="font-size:0.5rem; opacity:0.5;">STD</label><input type="number" class="form-control c-orig" value="${orig}" ${disabledAttr}></div>
                 <div class="form-group" style="margin:0;"><label style="font-size:0.5rem; opacity:0.5; color:var(--accent-primary);">PAY</label><input type="number" class="form-control c-amount" value="${c.amount === 0 ? '0' : (c.amount || '')}"></div>
-                <button onclick="this.parentElement.remove(); window.feesManager.recalcSetupTotal();" class="btn-icon text-danger"><i data-lucide="x"></i></button>
+                <button onclick="this.parentElement.remove(); window.feesManager.recalcSetupTotal();" class="btn-icon text-danger" ${disabledAttr}><i data-lucide="x"></i></button>
             </div>`;
         };
 
         AppDialog.confirm({
             title: `Configure Fees: ${s.name}`, width: '950px',
-            content: `<div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;"><div><div class="form-group"><label>Apply Template</label><select id="sf-plan-id" class="form-control">${opts}</select></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;"><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}"></div><div class="form-group"><label>Start Month</label><select id="sf-start" class="form-control">${this.MONTHS.map((m, i) => `<option value="${i}" ${i === (f.startMonth === undefined ? 5 : f.startMonth) ? 'selected' : ''}>${m}</option>`).join('')}</select></div></div><div class="form-group" style="margin-top:12px;"><label>Start Year</label><input type="number" id="sf-start-year" class="form-control" value="${f.academicStartYear !== undefined ? f.academicStartYear : (new Date().getMonth() < (f.startMonth !== undefined ? f.startMonth : 5) ? new Date().getFullYear() - 1 : new Date().getFullYear())}"></div><div id="setup-summary-card" style="margin-top:20px; padding:20px; background:rgba(255,255,255,0.03); border-radius:24px; border:1px solid var(--card-border); word-break: break-all; overflow: hidden;"><div style="margin-bottom:10px;"><label style="font-size:0.6rem; opacity:0.6;">ANNUAL TOTAL</label><div id="sf-final-total-display" style="font-size:1.5rem; font-weight:900;">₹0</div></div><div style="margin-bottom:10px;"><label style="font-size:0.6rem; opacity:0.6;">TOTAL WAIVERS</label><div id="sf-waiver-display" style="font-size:1.2rem; color:var(--accent-primary);">₹0</div></div><div><label style="font-size:0.6rem; opacity:0.6;">BALANCE DUE</label><div id="sf-balance-display" style="font-size:1.8rem; font-weight:900; color:var(--accent-primary);">₹0</div></div></div></div><div><div class="form-section-title" style="display:flex; justify-content:space-between;"><span>Components</span><button class="btn btn-secondary btn-sm" id="add-custom-comp-btn">Add Item</button></div><div id="setup-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px;">${f.components?.length > 0 ? f.components.map(c => renderRow(c)).join('') : renderRow()}</div></div></div>`,
+            content: `<div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;"><div><div class="form-group"><label>Apply Template</label><select id="sf-plan-id" class="form-control">${opts}</select></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;"><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="sf-cycle" class="form-control" value="${f.billingCycle || 12}"></div><div class="form-group"><label>Start Month</label><select id="sf-start" class="form-control">${this.MONTHS.map((m, i) => `<option value="${i}" ${i === (f.startMonth === undefined ? 5 : f.startMonth) ? 'selected' : ''}>${m}</option>`).join('')}</select></div></div><div class="form-group" style="margin-top:12px;"><label>Start Year</label><input type="number" id="sf-start-year" class="form-control" value="${f.academicStartYear !== undefined ? f.academicStartYear : (new Date().getMonth() < (f.startMonth !== undefined ? f.startMonth : 5) ? new Date().getFullYear() - 1 : new Date().getFullYear())}"></div><div id="setup-summary-card" style="margin-top:20px; padding:20px; background:rgba(255,255,255,0.03); border-radius:24px; border:1px solid var(--card-border); word-break: break-all; overflow: hidden;"><div style="margin-bottom:10px;"><label style="font-size:0.6rem; opacity:0.6;">ANNUAL TOTAL</label><div id="sf-final-total-display" style="font-size:1.5rem; font-weight:900;">₹0</div></div><div style="margin-bottom:10px;"><label style="font-size:0.6rem; opacity:0.6;">TOTAL WAIVERS</label><div id="sf-waiver-display" style="font-size:1.2rem; color:var(--accent-primary);">₹0</div></div><div><label style="font-size:0.6rem; opacity:0.6;">BALANCE DUE</label><div id="sf-balance-display" style="font-size:1.8rem; font-weight:900; color:var(--accent-primary);">₹0</div></div></div></div><div><div class="form-section-title" style="display:flex; justify-content:space-between;"><span>Components</span><div style="display:flex; gap:8px;"><button class="btn btn-secondary btn-sm" id="add-discount-btn"><i data-lucide="minus-circle" style="width:14px; margin-right:4px;"></i> Add Discount</button><button class="btn btn-secondary btn-sm" id="add-custom-comp-btn">Add Item</button></div></div><div id="setup-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px;">${f.components?.length > 0 ? f.components.map(c => renderRow(c)).join('') : renderRow()}</div></div></div>`,
             onOpen: (overlay) => {
                 const ps = overlay.querySelector('#sf-plan-id'), cc = overlay.querySelector('#setup-components-container'), cy = overlay.querySelector('#sf-cycle'), st = overlay.querySelector('#sf-start');
                 const totalOut = overlay.querySelector('#sf-final-total-display'), waiverOut = overlay.querySelector('#sf-waiver-display'), balOut = overlay.querySelector('#sf-balance-display');
@@ -857,13 +894,14 @@ window.feesManager = {
                     overlay.querySelectorAll('.component-row').forEach(row => { const orig = parseFloat(row.querySelector('.c-orig').value) || 0, payable = parseFloat(row.querySelector('.c-amount').value) || 0, f = row.querySelector('.c-freq').value; const mult = f === 'monthly' ? c : 1; t += (payable * mult); w += Math.max(0, (orig - payable) * mult); });
                     totalOut.innerText = `₹${t.toLocaleString('en-IN')}`; waiverOut.innerText = `₹${w.toLocaleString('en-IN')}`; balOut.innerText = `₹${Math.max(0, t - (f.paid || 0)).toLocaleString('en-IN')}`; return t;
                 };
-                ps.onchange = (e) => { const p = this.plans[e.target.value]; if (p) { cc.innerHTML = (p.components || []).map(c => renderRow({ ...c, originalAmount: c.amount })).join(''); cy.value = p.billingCycle || 12; st.value = p.startMonth !== undefined ? p.startMonth : 5; if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); } };
+                ps.onchange = (e) => { const p = this.plans[e.target.value]; if (p) { cc.innerHTML = (p.components || []).map(c => renderRow({ ...c, originalAmount: c.amount, type: 'academic' })).join(''); cy.value = p.billingCycle || 12; st.value = p.startMonth !== undefined ? p.startMonth : 5; if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); } };
                 overlay.querySelector('#add-custom-comp-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow(); cc.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); };
+                overlay.querySelector('#add-discount-btn').onclick = () => { const div = document.createElement('div'); div.innerHTML = renderRow({ name: 'One-time Discount', frequency: 'onetime', amount: -500, originalAmount: 0, type: 'other' }); cc.appendChild(div.firstElementChild); if (window.lucide) window.lucide.createIcons({ root: cc }); this.recalcSetupTotal(); };
                 overlay.addEventListener('input', this.recalcSetupTotal); this.recalcSetupTotal();
                 if (window.lucide) window.lucide.createIcons({ root: overlay });
             },
             onConfirm: () => {
-                const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0, o = parseFloat(row.querySelector('.c-orig').value) || a; if (n) components.push({ name: n, amount: a, originalAmount: o, frequency: row.querySelector('.pc-freq')?.value || row.querySelector('.c-freq').value, type: 'other' }); });
+                const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0, o = parseFloat(row.querySelector('.c-orig').value) || a, t = row.getAttribute('data-type') || 'other'; if (n) components.push({ name: n, amount: a, originalAmount: o, frequency: row.querySelector('.c-freq').value, type: t }); });
                 const total = this.recalcSetupTotal();
                 firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, startMonth: parseInt(document.getElementById('sf-start').value), academicStartYear: parseInt(document.getElementById('sf-start-year').value), components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 AppDialog.toast('Fee structure updated', 'success'); return true;
@@ -1142,13 +1180,173 @@ window.feesManager = {
     printTransactionReceipt(id) {
         const t = this.transactions.find(x => x.id === id); if (!t) return;
         const s = this.students[t.studentId] || { name: 'Student' };
+        
+        // Audit Logging
+        window.AppLogger.log('DOWNLOAD_RECEIPT', 'fees_accounting', { 
+            studentName: s.name, 
+            transactionId: id,
+            amount: t.amount 
+        }, t.studentId);
+
+        const f = this.fees[t.studentId] || { total: 0, paid: 0 };
         const win = window.open('', '_blank');
-        win.document.write(`<html><head><style>body { font-family: sans-serif; padding: 40px; } .header { border-bottom: 2px solid #000; padding-bottom: 20px; display: flex; justify-content: space-between; align-items: center; } .info { margin: 30px 0; display: grid; grid-template-columns: 1fr 1fr; } table { width: 100%; border-collapse: collapse; margin: 30px 0; } th, td { padding: 12px; border: 1px solid #000; }</style></head><body><div class="header"><div><h1>ABHISHRI ACADEMY</h1></div><div><h2>FEE INVOICE</h2><p>No: ${id.slice(-8).toUpperCase()}</p></div></div><div class="info"><div><strong>Student:</strong> ${s.name}<br><strong>Class:</strong> ${s.admissionForClass}</div><div><strong>Date:</strong> ${new Date(t.timestamp?.toDate ? t.timestamp.toDate() : t.timestamp).toLocaleDateString()}</div></div><table><thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead><tbody><tr><td>School Fees / Academic Charges</td><td style="text-align:right">₹${t.amount.toLocaleString('en-IN')}</td></tr></tbody></table><div style="text-align:right; font-size:24px; font-weight:900;">TOTAL PAID: ₹${t.amount.toLocaleString('en-IN')}</div><div style="margin-top:100px; text-align:center;"><div style="border-top:1px solid #000; width:200px; margin:0 auto; padding-top:10px;">SCHOOL OFFICIAL STAMP</div></div><script>window.onload=()=>{window.print(); setTimeout(()=>window.close(),500);};</script></body></html>`);
+        
+        const date = new Date(t.timestamp?.toDate ? t.timestamp.toDate() : t.timestamp).toLocaleDateString('en-IN', {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+
+        const breakdownHtml = t.breakdown ? Object.entries(t.breakdown).map(([key, amount]) => {
+            const [name, month] = key.split('-');
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight: bold;">${name}</div>
+                        <div style="font-size: 0.65rem; text-transform: uppercase; color: #666;">${month || 'One-time'}</div>
+                    </td>
+                    <td style="text-align: right; font-weight: bold;">₹${amount.toLocaleString('en-IN')}</td>
+                </tr>`;
+        }).join('') : `<tr><td>School Fees / Academic Charges</td><td style="text-align: right; font-weight: bold;">₹${t.amount.toLocaleString('en-IN')}</td></tr>`;
+
+        win.document.write(`
+            <html>
+            <head>
+                <title>Receipt - ${id.slice(-8).toUpperCase()}</title>
+                <style>
+                    body { font-family: 'Helvetica', 'Arial', sans-serif; padding: 30px; color: #000; line-height: 1.4; font-size: 10pt; }
+                    .header { display: flex; justify-content: space-between; border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 25px; }
+                    .inst-name { font-size: 1.8rem; font-weight: 900; margin: 0; color: #000; letter-spacing: -0.5px; }
+                    .receipt-title { font-size: 1.1rem; font-weight: 700; text-transform: uppercase; color: #000; margin-top: 4px; }
+                    
+                    .info-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 30px; margin-bottom: 30px; }
+                    .info-box h3 { font-size: 0.75rem; text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid #000; padding-bottom: 4px; color: #000; }
+                    .info-content { font-size: 0.95rem; }
+                    
+                    table { width: 100%; border-collapse: collapse; margin-bottom: 30px; border: 1px solid #000; }
+                    th { text-align: left; padding: 12px 8px; font-size: 0.75rem; text-transform: uppercase; border-bottom: 2px solid #000; background: #fff; }
+                    td { padding: 12px 8px; border-bottom: 1px solid #000; font-size: 0.9rem; }
+                    
+                    .summary-container { display: grid; grid-template-columns: 1fr 320px; gap: 40px; }
+                    .payment-details { background: #fff; border: 1px solid #000; padding: 15px; border-radius: 8px; }
+                    .payment-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.85rem; }
+                    
+                    .totals-card { background: #fff; color: #000; padding: 20px; border-radius: 12px; border: 2px solid #000; }
+                    .total-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+                    .total-row.main { border-top: 2px solid #000; padding-top: 12px; margin-top: 12px; font-size: 1.3rem; font-weight: 900; }
+                    .total-row.due { color: #000; font-weight: 700; }
+                    
+                    .footer { margin-top: 60px; font-size: 0.75rem; text-align: center; color: #000; border-top: 1px solid #000; padding-top: 20px; }
+                    .signature-box { margin-top: 40px; text-align: right; }
+                    .signature-line { display: inline-block; width: 200px; border-top: 1px solid #000; margin-top: 40px; text-align: center; font-size: 0.7rem; text-transform: uppercase; font-weight: 700; }
+
+                    @media print { 
+                        html, body { height: 100%; overflow: hidden; margin: 0; padding: 0; }
+                        body { padding: 1cm; } 
+                        @page { size: auto; margin: 0; }
+                        .totals-card { -webkit-print-color-adjust: exact; background-color: #fff !important; color: #000 !important; border: 2px solid #000 !important; }
+                        .footer { position: fixed; bottom: 1cm; left: 1cm; right: 1cm; }
+                        * { page-break-inside: avoid; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div>
+                        <h1 class="inst-name">ABHISHRI ACADEMY</h1>
+                        <div class="receipt-title">Official Fee Receipt</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-weight: 800; font-size: 1.1rem;">Academic Year 2025-26</div>
+                        <div style="color: #000; font-size: 0.85rem; margin-top: 4px;">Receipt No: ${id.slice(-8).toUpperCase()}</div>
+                    </div>
+                </div>
+
+                <div class="info-grid">
+                    <div class="info-box">
+                        <h3>Student Information</h3>
+                        <div class="info-content">
+                            <strong style="font-size: 1.2rem;">${s.name}</strong><br>
+                            <div style="margin-top: 6px; color: #333; font-size: 0.85rem;">
+                                ${s.fatherName ? `<strong>Father:</strong> ${s.fatherName} (${s.fatherPhone || 'N/A'})<br>` : ''}
+                                ${s.motherName ? `<strong>Mother:</strong> ${s.motherName} (${s.motherPhone || 'N/A'})` : ''}
+                                ${!s.fatherName && !s.motherName ? '<strong>Parent:</strong> N/A' : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="info-box" style="text-align: right;">
+                        <h3>Transaction Details</h3>
+                        <div class="info-content">
+                            <span style="color: #000;">Date & Time:</span> ${date}<br>
+                            <span style="color: #000;">Payment Mode:</span> <strong>${(t.method || 'CASH').toUpperCase()}</strong><br>
+                            ${t.reference ? `<span style="color: #000;">Reference:</span> ${t.reference}` : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th style="text-align: right;">Amount Paid</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${breakdownHtml}
+                    </tbody>
+                </table>
+
+                <div class="summary-container">
+                    <div>
+                        <div class="payment-details">
+                            <h4 style="margin: 0 0 10px 0; font-size: 0.7rem; text-transform: uppercase; color: #888;">Note</h4>
+                            <p style="margin: 0; font-size: 0.85rem; color: #555;">
+                                This receipt confirms the successful collection of the mentioned amount towards school fees. 
+                                Please retain this copy for your records.
+                            </p>
+                        </div>
+                        <div class="signature-box">
+                            <div style="border: 1px dashed #000; width: 150px; height: 80px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.6rem; text-transform: uppercase; color: #888; border-radius: 8px;">
+                                School Stamp & Seal
+                            </div>
+                        </div>
+                    </div>
+                    <div class="totals-card">
+                        <div class="total-row">
+                            <span>Amount Received</span>
+                            <span>₹${t.amount.toLocaleString('en-IN')}</span>
+                        </div>
+                        <div class="total-row main">
+                            <span>TOTAL PAID</span>
+                            <span>₹${t.amount.toLocaleString('en-IN')}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <strong>Abhishri Academy</strong><br>
+                    84, Dhalavaipattinam Road, Dharapuram, Tamil Nadu 638656 | <strong>Contact: +91 95 004 004 59</strong><br>
+                    <span style="font-size: 0.65rem; opacity: 0.8; margin-top: 8px; display: block;">This is a computer-generated receipt. No physical signature is mandatory.</span>
+                </div>
+
+                <script>
+                    window.onload = () => {
+                        window.print();
+                        setTimeout(() => window.close(), 1000);
+                    };
+                </script>
+            </body>
+            </html>
+        `);
         win.document.close();
     },
 
     printStudentInvoice(id) {
         const s = this.students[id] || { name: 'Student' }, f = this.fees[id] || { total: 0, paid: 0, components: [], billingCycle: 12 };
+
+        // Audit Logging
+        window.AppLogger.log('DOWNLOAD_INVOICE', 'fees_accounting', { 
+            studentName: s.name,
+            totalDue: (f.total || 0) - (f.paid || 0)
+        }, id);
 
         // Prepaid Logic for Invoice
         const now = new Date();
@@ -1167,31 +1365,34 @@ window.feesManager = {
             <head>
                 <title>Invoice - ${s.name}</title>
                 <style>
-                    body { font-family: 'Helvetica', 'Arial', sans-serif; padding: 20px; color: #000; line-height: 1.2; font-size: 10pt; }
-                    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
-                    .inst-name { font-size: 1.6rem; font-weight: bold; margin: 0; }
-                    .statement-title { font-size: 1rem; font-weight: bold; text-transform: uppercase; margin-top: 2px; }
+                    body { font-family: 'Helvetica', 'Arial', sans-serif; padding: 10px; color: #000; line-height: 1.1; font-size: 8.5pt; }
+                    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px; }
+                    .inst-name { font-size: 1.4rem; font-weight: bold; margin: 0; }
+                    .statement-title { font-size: 0.9rem; font-weight: bold; text-transform: uppercase; margin-top: 2px; }
 
-                    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-                    .info-box h3 { font-size: 0.7rem; text-transform: uppercase; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 2px; }
-                    .info-content { font-size: 0.9rem; }
+                    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 12px; }
+                    .info-box h3 { font-size: 0.65rem; text-transform: uppercase; margin-bottom: 4px; border-bottom: 1px solid #000; padding-bottom: 2px; }
+                    .info-content { font-size: 0.85rem; }
 
-                    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                    th { text-align: left; padding: 8px 5px; font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid #000; border-top: 1px solid #000; }
-                    td { padding: 8px 5px; border-bottom: 1px solid #eee; font-size: 0.85rem; }
+                    table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+                    th { text-align: left; padding: 6px 4px; font-size: 0.65rem; text-transform: uppercase; border-bottom: 1.5px solid #000; border-top: 1.5px solid #000; }
+                    td { padding: 5px 4px; border-bottom: 1px solid #eee; font-size: 0.8rem; }
 
-                    .summary-section { display: grid; grid-template-columns: 1fr 280px; gap: 40px; }
-                    .summary-card { border: 1px solid #000; padding: 15px; }
-                    .summary-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.9rem; }
-                    .summary-row.bold { font-weight: bold; border-top: 1px solid #000; padding-top: 5px; margin-top: 5px; }
-                    .summary-row.total { border-top: 1px solid #000; padding-top: 8px; margin-top: 8px; font-weight: bold; font-size: 1.1rem; }
+                    .summary-section { display: grid; grid-template-columns: 1fr 260px; gap: 25px; margin-top: 5px; }
+                    .summary-card { border: 1px solid #000; padding: 10px; }
+                    .summary-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.8rem; }
+                    .summary-row.bold { font-weight: bold; border-top: 1px solid #000; padding-top: 4px; margin-top: 4px; }
+                    .summary-row.total { border-top: 1px solid #000; padding-top: 6px; margin-top: 6px; font-weight: bold; font-size: 1rem; }
 
-                    .footer { margin-top: 40px; font-size: 0.7rem; text-align: center; border-top: 1px solid #000; padding-top: 10px; }
-                    .stamp-box { border: 1px dashed #000; width: 150px; height: 80px; margin-top: 20px; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; text-transform: uppercase; color: #888; }
+                    .footer { margin-top: 20px; font-size: 0.65rem; text-align: center; border-top: 1px solid #000; padding-top: 8px; }
+                    .stamp-box { border: 1px dashed #000; width: 140px; height: 70px; margin-top: 15px; display: flex; align-items: center; justify-content: center; font-size: 0.55rem; text-transform: uppercase; color: #888; }
                     
                     @media print { 
-                        body { padding: 0; } 
-                        @page { margin: 1cm; }
+                        html, body { height: 99%; overflow: hidden; margin: 0; padding: 0; }
+                        body { padding: 0.5cm; } 
+                        @page { size: A4; margin: 0; }
+                        * { page-break-inside: avoid; }
+                        .summary-section { page-break-inside: avoid; }
                     }
                 </style>
             </head>
@@ -1208,22 +1409,16 @@ window.feesManager = {
                     </div>
                 </div>
 
-                <div class="info-grid">
-                    <div class="info-box">
-                        <h3>Institution Details</h3>
-                        <div class="info-content">
-                            Abhishri Academy<br>
-                            84, Dhalavaipattinam Road<br>
-                            (Opposite to DSP Office), Dharapuram<br>
-                            Tiruppur District - 638656
-                        </div>
-                    </div>
-                    <div class="info-box" style="text-align: right;">
+                <div class="info-grid" style="grid-template-columns: 1fr;">
+                    <div class="info-box" style="text-align: right; border-bottom: 2px solid #000; padding-bottom: 10px;">
                         <h3>Student Details</h3>
                         <div class="info-content">
-                            <strong>${s.name}</strong><br>
-                            Grade / Class: ${s.admissionForClass || 'N/A'}<br>
-                            Student ID: ${id.slice(-8).toUpperCase()}
+                            <strong style="font-size: 1.1rem;">${s.name}</strong><br>
+                            <div style="font-size: 0.85rem; color: #333; margin-top: 6px;">
+                                ${s.fatherName ? `Father: ${s.fatherName} (${s.fatherPhone || 'N/A'})<br>` : ''}
+                                ${s.motherName ? `Mother: ${s.motherName} (${s.motherPhone || 'N/A'})` : ''}
+                                ${!s.fatherName && !s.motherName ? 'Parent: N/A' : ''}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1264,26 +1459,31 @@ window.feesManager = {
 
                 <div class="summary-section">
                     <div>
-                        <div style="font-size: 0.7rem; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #000;">Dues Status (To Date)</div>
-                        <div style="font-size: 0.85rem;">
+                        <div style="font-size: 0.75rem; font-weight: 800; text-transform: uppercase; margin-bottom: 12px; border-bottom: 2px solid #000; padding-bottom: 4px; letter-spacing: 0.05em;">Dues Status (To Date)</div>
+                        <div style="font-size: 0.95rem; line-height: 1.6;">
                             Expected to Date: ₹${expectedToDate.toLocaleString('en-IN')}<br>
                             Amount Paid to Date: ₹${(f.paid || 0).toLocaleString('en-IN')}<br>
-                            <strong>Outstanding Due: ₹${Math.max(0, arrears).toLocaleString('en-IN')}</strong>
+                            <strong style="font-size: 1.1rem; border-top: 1px solid #eee; display: block; margin-top: 5px; padding-top: 5px;">Outstanding Due: ₹${Math.max(0, arrears).toLocaleString('en-IN')}</strong>
                         </div>
-                        <div class="stamp-box">Office Stamp & Signature</div>
+                        <div style="margin-top: 30px;">
+                            <div style="border: 1px dashed #000; width: 160px; height: 90px; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; text-transform: uppercase; color: #888; border-radius: 12px; background: #fafafa;">
+                                Office Stamp & Seal
+                            </div>
+                        </div>
                     </div>
-                    <div class="summary-card">
+                    <div class="summary-card" style="border-radius: 16px; border-width: 2px; background: #fff;">
                         <div class="summary-row"><span>Annual Fee Total</span><span>₹${((f.components || []).reduce((acc, c) => acc + ((c.originalAmount || c.amount) * (c.frequency === 'monthly' ? (f.billingCycle || 12) : 1)), 0)).toLocaleString('en-IN')}</span></div>
-                        <div class="summary-row"><span>Total Waivers</span><span>- ₹${((f.components || []).reduce((acc, c) => acc + (Math.max(0, (c.originalAmount || c.amount) - c.amount) * (c.frequency === 'monthly' ? (f.billingCycle || 12) : 1)), 0)).toLocaleString('en-IN')}</span></div>
-                        <div class="summary-row bold"><span>Net Annual Commitment</span><span>₹${(f.total || 0).toLocaleString('en-IN')}</span></div>
-                        <div class="summary-row total"><span>Total Received</span><span>₹${(f.paid || 0).toLocaleString('en-IN')}</span></div>
-                        <div class="summary-row total" style="border-top: 2px solid #000;"><span>Balance Due</span><span>₹${Math.max(0, (f.total || 0) - (f.paid || 0)).toLocaleString('en-IN')}</span></div>
+                        <div class="summary-row" style="color: #666;"><span>Total Waivers</span><span>- ₹${((f.components || []).reduce((acc, c) => acc + (Math.max(0, (c.originalAmount || c.amount) - c.amount) * (c.frequency === 'monthly' ? (f.billingCycle || 12) : 1)), 0)).toLocaleString('en-IN')}</span></div>
+                        <div class="summary-row bold" style="border-top: 2px solid #000; margin-top: 10px; padding-top: 10px;"><span>Net Annual Commitment</span><span>₹${(f.total || 0).toLocaleString('en-IN')}</span></div>
+                        <div class="summary-row total" style="color: #22c55e;"><span>Total Received</span><span>₹${(f.paid || 0).toLocaleString('en-IN')}</span></div>
+                        <div class="summary-row total" style="border-top: 3px solid #000; font-size: 1.3rem; margin-top: 15px; padding-top: 15px;"><span>Balance Due</span><span>₹${Math.max(0, (f.total || 0) - (f.paid || 0)).toLocaleString('en-IN')}</span></div>
                     </div>
                 </div>
 
-                <div class="footer">
-                    This is a computer-generated statement and does not require a physical signature.<br>
-                    <strong>ABHISHRI ACADEMY</strong>
+                <div class="footer" style="margin-top: 60px; border-top: 2px solid #000; padding-top: 20px;">
+                    <strong>Abhishri Academy</strong><br>
+                    84, Dhalavaipattinam Road, Dharapuram, Tamil Nadu 638656 | <strong>Contact: +91 95 004 004 59</strong><br>
+                    <span style="font-size: 0.65rem; opacity: 0.8; margin-top: 10px; display: block; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Computer Generated Statement • Official Record</span>
                 </div>
 
                 <script>
@@ -1296,5 +1496,82 @@ window.feesManager = {
             </html>
         `);
         win.document.close();
+    },
+
+    renderAuditLogs() {
+        const container = document.getElementById('fees-content-audit_logs');
+        if (!container) return;
+
+        const q = this.searchQuery;
+        const modF = this.logModuleFilter;
+        const actF = this.logActionFilter;
+
+        const filtered = this.auditLogs.filter(log => {
+            if (modF !== 'all' && log.module !== modF) return false;
+            if (actF !== 'all' && log.action !== actF) return false;
+            if (!q) return true;
+            const searchStr = `${log.action} ${log.module} ${log.performedBy} ${JSON.stringify(log.details)}`.toLowerCase();
+            return searchStr.includes(q);
+        });
+
+        let html = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:0 8px;">
+                <div style="font-size:0.9rem; color:var(--text-dim); font-weight:600;">
+                    Showing ${filtered.length} entries ${modF !== 'all' || actF !== 'all' || q ? '(filtered)' : ''}
+                </div>
+                ${modF !== 'all' || actF !== 'all' || q ? `<button class="btn btn-ghost btn-sm" onclick="feesManager.searchQuery=''; feesManager.logModuleFilter='all'; feesManager.logActionFilter='all'; feesManager.render();" style="color:var(--accent); font-weight:700;">RESET FILTERS</button>` : ''}
+            </div>
+            <div class="console-card" style="padding:0; overflow:hidden; border-radius:24px;">
+                <table class="console-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Action</th>
+                            <th>Module</th>
+                            <th>Performed By</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        filtered.forEach(log => {
+            const date = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
+            const timeStr = date.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            
+            // Format details for readability
+            let detailsHtml = '';
+            if (log.details) {
+                detailsHtml = Object.entries(log.details).map(([k, v]) => {
+                    if (typeof v === 'object') return '';
+                    return `<span style="font-size:0.7rem; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; margin-right:4px;">${k}: <strong>${v}</strong></span>`;
+                }).join('');
+            }
+
+            const actionClass = log.action.includes('DELETE') || log.action.includes('REVERSE') ? 'badge-danger' : 
+                              log.action.includes('ADD') || log.action.includes('COLLECT') || log.action.includes('APPROVE') ? 'badge-success' : 'badge-outline';
+
+            html += `
+                <tr>
+                    <td style="white-space:nowrap; padding: 16px 12px;">
+                        <div style="font-weight:700; color:var(--text-main); font-size:0.85rem;">${timeStr.split(',')[0]}</div>
+                        <div style="font-size:0.7rem; opacity:0.6;">${timeStr.split(',')[1] || ''}</div>
+                    </td>
+                    <td style="padding: 16px 12px;"><span class="badge ${actionClass}" style="font-size:0.65rem; padding: 4px 10px; border-radius:8px;">${log.action.replace(/_/g, ' ')}</span></td>
+                    <td style="padding: 16px 12px;"><span style="font-size:0.75rem; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.02em;">${log.module.replace(/_/g, ' ')}</span></td>
+                    <td style="padding: 16px 12px;">
+                        <div style="font-weight:600; font-size:0.85rem;">${log.performedBy || 'System'}</div>
+                    </td>
+                    <td style="padding: 16px 12px; max-width:400px;">
+                        <div style="display:flex; flex-wrap:wrap; gap:6px;">${detailsHtml}</div>
+                    </td>
+                </tr>`;
+        });
+
+        if (filtered.length === 0) {
+            html += `<tr><td colspan="5" style="text-align:center; padding:60px; color:var(--text-dim);">No activity logs found matching your search.</td></tr>`;
+        }
+
+        html += `</tbody></table></div>`;
+        container.innerHTML = html;
     }
 };

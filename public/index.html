@@ -714,6 +714,10 @@
           <i data-lucide="zap"></i>
           <span>Scenes Manager</span>
         </div>
+        <div class="nav-item" onclick="switchAdminView('audit_logs')" id="nav-item-audit_logs">
+          <i data-lucide="scroll"></i>
+          <span>Audit History</span>
+        </div>
       </nav>
 
     </aside>
@@ -811,6 +815,14 @@
               <!-- User rows injected here -->
             </tbody>
           </table>
+        </div>
+
+        <!-- Audit History Tab -->
+        <div id="admin-content-audit_logs" class="admin-content">
+          <div id="admin-audit-toolbar" class="admin-toolbar" style="margin-bottom: 20px;">
+            <!-- Toolbar for audit logs will be moved here -->
+          </div>
+          <div id="fees-content-audit_logs"></div>
         </div>
       </div>
     </main>

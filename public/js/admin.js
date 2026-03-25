@@ -50,6 +50,10 @@ window.adminPanel = {
             titleEl.innerText = 'Scene Management';
             subtitleEl.innerText = 'Configure smart campus automation';
             window.smartCampus.renderAdminScenes();
+        } else if (view === 'audit_logs') {
+            titleEl.innerText = 'System Audit History';
+            subtitleEl.innerText = 'Detailed activity and access logs';
+            if (window.feesManager) window.feesManager.renderAuditLogs();
         }
 
         if (window.lucide) lucide.createIcons();

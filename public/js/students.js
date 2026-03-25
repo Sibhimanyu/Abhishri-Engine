@@ -141,7 +141,7 @@ window.studentDirectory = {
         const sortedIds = Object.keys(this.students).filter(id => {
             const s = this.students[id];
             const q = this.searchQuery.toLowerCase();
-            return (s.name || '').toLowerCase().includes(q) || (s.admissionForClass || '').toLowerCase().includes(q);
+            return (s.name || '').toLowerCase().includes(q);
         }).sort((a, b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
 
         if (sortedIds.length === 0) {
@@ -151,13 +151,12 @@ window.studentDirectory = {
 
         let html = `<div class="metrics-grid">
             <div class="metric-card"><div class="metric-icon" style="background: rgba(241, 97, 91, 0.15); color: var(--accent-primary);"><i data-lucide="users"></i></div><div class="metric-info"><h3>Total Enrolled</h3><div class="metric-value">${Object.keys(this.students).length}</div></div></div>
-            <div class="metric-card"><div class="metric-icon" style="background: rgba(115, 199, 200, 0.15); color: var(--accent-secondary);"><i data-lucide="layers"></i></div><div class="metric-info"><h3>Active Classes</h3><div class="metric-value">${new Set(Object.values(this.students).map(s => s.admissionForClass)).size}</div></div></div>
         </div><div class="directory-grid">`;
 
         sortedIds.forEach(id => {
             const s = this.students[id];
             html += `<div class="directory-card" onclick="window.studentDirectory.switchView('report', '${id}')">
-                <div class="member-header"><div class="member-avatar">${(s.name || 'S').charAt(0).toUpperCase()}</div><div class="member-info"><h3>${s.name}</h3><p>${s.admissionForClass || 'No Class'}</p></div></div>
+                <div class="member-header"><div class="member-avatar">${(s.name || 'S').charAt(0).toUpperCase()}</div><div class="member-info"><h3>${s.name}</h3></div></div>
                 <div class="member-details">
                     <div class="detail-item"><i data-lucide="phone"></i><span>${s.fatherPhone || s.motherPhone || 'No Phone'}</span></div>
                     <div class="detail-item"><i data-lucide="map-pin"></i><span class="text-truncate">${s.address || 'No Address'}</span></div>
@@ -181,13 +180,13 @@ window.studentDirectory = {
         const sortedIds = Object.keys(this.students).filter(id => {
             const s = this.students[id];
             const q = this.searchQuery.toLowerCase();
-            return (s.name || '').toLowerCase().includes(q) || (s.admissionForClass || '').toLowerCase().includes(q);
+            return (s.name || '').toLowerCase().includes(q);
         }).sort((a, b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
 
-        let html = `<div class="section-title">Admission Records</div><table class="console-table"><thead><tr><th>Student</th><th>Parent</th><th>Contact</th><th>Class</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+        let html = `<div class="section-title">Admission Records</div><table class="console-table"><thead><tr><th>Student</th><th>Parent</th><th>Contact</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
         sortedIds.forEach(id => {
             const s = this.students[id];
-            html += `<tr><td><strong>${s.name}</strong></td><td>${s.fatherName || s.motherName || 'N/A'}</td><td>${s.fatherPhone || s.motherPhone || 'N/A'}</td><td>${s.admissionForClass || 'N/A'}</td>
+            html += `<tr><td><strong>${s.name}</strong></td><td>${s.fatherName || s.motherName || 'N/A'}</td><td>${s.fatherPhone || s.motherPhone || 'N/A'}</td>
                 <td style="text-align:right"><div class="table-actions" style="justify-content:flex-end">
                     <button class="btn-icon" onclick="window.studentDirectory.showStudentForm('${id}')"><i data-lucide="edit-3"></i></button>
                     <button class="btn-icon text-danger" onclick="window.studentDirectory.deleteStudent('${id}')"><i data-lucide="trash-2"></i></button>
@@ -218,14 +217,13 @@ window.studentDirectory = {
                 </div>
                 <div class="report-body">
                     <table class="console-table">
-                        <thead><tr><th>Student</th><th>Class</th><th style="text-align:right; min-width:280px;">Status</th></tr></thead>
+                        <thead><tr><th>Student</th><th style="text-align:right; min-width:280px;">Status</th></tr></thead>
                         <tbody>${sortedIds.map(id => {
                             const s = this.students[id];
                             const att = this.attendance[id] || { status: 'none' };
                             return `
                                 <tr>
                                     <td><strong>${s.name}</strong></td>
-                                    <td>${s.admissionForClass || 'N/A'}</td>
                                     <td style="text-align:right">
                                         <div class="attendance-actions" style="justify-content:flex-end; gap:10px;">
                                             <button class="btn-chip ${att.status === 'present' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'present')">PRESENT</button>
@@ -281,7 +279,6 @@ window.studentDirectory = {
                         <div class="profile-main-info">
                             <h1 style="font-size: 3rem; margin-bottom: 12px; font-weight:900; letter-spacing:-1px;">${s.name}</h1>
                             <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
-                                <span class="badge badge-primary" style="padding: 8px 20px; font-size:1rem;">${s.admissionForClass || 'No Class'}</span>
                                 <span style="background:rgba(255,255,255,0.05); padding:8px 20px; border-radius:12px; font-size:0.9rem; font-family:monospace; color:var(--text-dim);">UID: ${id.slice(-8).toUpperCase()}</span>
                                 <span style="color:var(--success); font-weight:700; font-size:0.9rem;"><i data-lucide="shield-check" style="width:16px; height:16px; vertical-align:middle; margin-right:6px;"></i> VERIFIED ADMISSION</span>
                             </div>

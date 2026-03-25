@@ -24,7 +24,7 @@ if (!window.whatsAppSender) {
      */
     window.whatsAppSender.formatWhatsAppText = function (text) {
         if (!text) return "";
-        
+
         // Escape existing HTML to prevent injection
         let formatted = text
             .replace(/&/g, "&amp;")
@@ -36,7 +36,7 @@ if (!window.whatsAppSender) {
         // _italic_ -> <i>italic</i>
         // ~strikethrough~ -> <strike>strikethrough</strike>
         // ```monospace``` -> <code>monospace</code>
-        
+
         formatted = formatted
             .replace(/\*(.*?)\*/g, "<b>$1</b>")
             .replace(/_(.*?)_/g, "<i>$1</i>")
@@ -551,7 +551,7 @@ if (!window.whatsAppSender) {
                     const buttonsComp = components.find(c => c.type === 'BUTTONS') || {};
                     const buttonsJson = buttonsComp.buttons ? encodeURIComponent(JSON.stringify(buttonsComp.buttons)) : '';
                     return `<option value="${name}" data-content="${encodeURIComponent(content)}" data-category="${category}" data-header-image="${headerImageUrl}" data-needs-image="${hasImageHeader}" data-footer="${encodeURIComponent(footerText)}" data-buttons="${buttonsJson}">${name} (${category} - ${t.language || 'en'})</option>`;
-                    }).join('')                : `<option value="" disabled selected>No templates found from API</option>`}
+                }).join('') : `<option value="" disabled selected>No templates found from API</option>`}
                             </select>
                         </div>
 
@@ -695,14 +695,14 @@ if (!window.whatsAppSender) {
         // Generate Input Fields if this template just got selected (not on every keystroke)
         // We check if the container is empty or we changed templates.
         const currentInputs = varsContainer.querySelectorAll('.wa-var-input');
-        
+
         // Find if template requires an image header (from the dataset we embedded)
         const needsImageHeader = select.options[select.selectedIndex].getAttribute('data-needs-image') === 'true';
         const headerImageUrl = select.options[select.selectedIndex].getAttribute('data-header-image');
 
         if (currentInputs.length !== uniqueVars.length || !varsContainer.querySelector('.wa-media-upload-section')) {
             let html = '';
-            
+
             // Add Media Upload section if needed
             if (needsImageHeader) {
                 html += `
@@ -737,8 +737,8 @@ if (!window.whatsAppSender) {
                         </div>
                     `).join('')}
                 `;
-            } 
-            
+            }
+
             varsContainer.innerHTML = html;
             if (window.lucide) window.lucide.createIcons();
 
@@ -775,11 +775,11 @@ if (!window.whatsAppSender) {
         let hydratedText = decodeURIComponent(contentRaw);
         const footerText = footerRaw ? decodeURIComponent(footerRaw) : '';
         let buttons = [];
-        try { buttons = buttonsRaw ? JSON.parse(decodeURIComponent(buttonsRaw)) : []; } catch(e) { buttons = []; }
+        try { buttons = buttonsRaw ? JSON.parse(decodeURIComponent(buttonsRaw)) : []; } catch (e) { buttons = []; }
 
         // Replace body variables with entered values
         const inputs = document.querySelectorAll('.wa-var-input');
-        inputs.forEach(function(input) {
+        inputs.forEach(function (input) {
             const varNum = input.getAttribute('data-var');
             if (!varNum) return;
             const val = input.value || ('{{' + varNum + '}}');
@@ -808,7 +808,7 @@ if (!window.whatsAppSender) {
         // --- Buttons ---
         if (buttons.length > 0) {
             const self = this;
-            const btnHtml = buttons.map(function(btn) {
+            const btnHtml = buttons.map(function (btn) {
                 let icon = '';
                 let label = self.escapeHtml(btn.text || '');
                 if (btn.type === 'PHONE_NUMBER') {
@@ -969,7 +969,7 @@ if (!window.whatsAppSender) {
         const previewContainer = document.getElementById('wa-header-media-preview');
         const previewImg = previewContainer ? previewContainer.querySelector('img') : null;
         const btnText = document.getElementById('wa-media-btn-text');
-        
+
         if (input) input.value = url || '';
 
         if (!url) {
@@ -1013,7 +1013,7 @@ if (!window.whatsAppSender) {
             const text = select.options[select.selectedIndex].text;
             let html = `<div style="display:flex; flex-direction:column; gap:4px; margin-top:8px; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--border);">
                 <div style="font-size:0.75rem; color:var(--text-dim); font-weight:600;">Selection: <span style="color:var(--text-main);">${text}</span></div>`;
-            
+
             if (this.excludedNumbers && this.excludedNumbers.length > 0) {
                 html += `<div style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:#ef4444; font-weight:700; background:rgba(239, 68, 68, 0.1); padding:4px 8px; border-radius:6px; margin-top:4px;">
                     <i data-lucide="shield-check" style="width:12px;height:12px;"></i>
@@ -1021,7 +1021,7 @@ if (!window.whatsAppSender) {
                     <button onclick="window.whatsAppSender.excludedNumbers=[]; window.whatsAppSender.updateRecipientCount()" style="margin-left:auto; background:none; border:none; color:#ef4444; cursor:pointer; font-weight:800; text-decoration:underline;">Reset</button>
                 </div>`;
             }
-            
+
             html += `</div>`;
             display.innerHTML = html;
             if (window.lucide) window.lucide.createIcons({ root: display });
@@ -1372,7 +1372,7 @@ if (!window.whatsAppSender) {
         const rows = document.querySelectorAll('.wa-report-item:not([style*="display: none"])');
         const expandText = document.getElementById('wa-expand-all-text');
         const isCurrentlyExpanded = expandText && expandText.innerText === 'Collapse All';
-        
+
         rows.forEach(row => {
             if (isCurrentlyExpanded) {
                 row.classList.remove('expanded');
@@ -1396,7 +1396,7 @@ if (!window.whatsAppSender) {
         const searchInput = document.getElementById('wa-report-search');
         const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
         const errorType = document.getElementById('wa-report-error-filter')?.value || 'all';
-        
+
         const rows = document.querySelectorAll('.wa-report-item');
         let visibleCount = 0;
 
@@ -1405,10 +1405,10 @@ if (!window.whatsAppSender) {
             const rowError = (row.getAttribute('data-error') || '').toLowerCase();
             const phoneEl = row.querySelector('.wa-report-tab-header div div div:nth-child(2)');
             const nameEl = row.querySelector('.wa-report-tab-header div div div:nth-child(1)');
-            
+
             const phoneText = phoneEl ? phoneEl.textContent.trim().toLowerCase() : '';
             const nameText = nameEl ? nameEl.textContent.trim().toLowerCase() : '';
-            
+
             // 1. Status Check
             let statusMatch = status === 'all' || rowStatus === status;
             if (status === 'delivered' && rowStatus === 'read') statusMatch = true;
@@ -1444,7 +1444,7 @@ if (!window.whatsAppSender) {
                 }, 200);
             }
         });
-        
+
         const countEl = document.getElementById('wa-report-count');
         if (countEl) {
             countEl.textContent = `Showing ${visibleCount} Recipients`;
@@ -1632,7 +1632,7 @@ if (!window.whatsAppSender) {
                         </div>
                         <div style="display:flex; flex-direction:column; gap:6px; padding-left:24px;">
                 `;
-                
+
                 dup.occurrences.forEach(occ => {
                     reportHtml += `
                         <div style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
@@ -1642,7 +1642,7 @@ if (!window.whatsAppSender) {
                         </div>
                     `;
                 });
-                
+
                 reportHtml += `
                         </div>
                     </div>
@@ -1694,7 +1694,7 @@ if (!window.whatsAppSender) {
         const usedLists = lists.filter(l => l.used === true);
 
         const colors = ['#25d366', '#f97316', '#a78bfa', '#38bdf8', '#fb7185', '#4ade80'];
-        
+
         let htmlStr = '';
 
         if (newLists.length > 0) {
@@ -1707,7 +1707,7 @@ if (!window.whatsAppSender) {
                 const count = list.contactsCount || list.count || 0;
                 const numbersCount = list.numbersCount || count;
                 const dateStr = list.createdAt ? (list.createdAt.toDate ? list.createdAt.toDate() : new Date(list.createdAt)).toLocaleDateString() : 'N/A';
-                
+
                 return `
                         <div class="wa-list-row" onclick="window.whatsAppSender.viewListDetails('${list.id}')">
                             <div class="wa-list-avatar" style="background:${color}22;color:${color};">${initials}</div>
@@ -1971,7 +1971,7 @@ if (!window.whatsAppSender) {
         if (this.currentView !== 'history') {
             this.switchView('history');
         }
-        
+
         // Find the refresh button if it exists to show immediate feedback
         const refreshBtn = document.querySelector('button[onclick*="viewBroadcastDetails"]');
         if (refreshBtn) {
@@ -1997,9 +1997,9 @@ if (!window.whatsAppSender) {
         // Fetch initial meta once to render skeleton properly before listeners start
         const metaDoc = await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).get();
         const initialMeta = metaDoc.data() || {};
-        
+
         container.setAttribute('data-active-report', logId);
-        
+
         // Stability: Only render skeleton if it's not already there for this logId
         if (!isAlreadyActive) {
             this._renderReportSkeleton(container, broadcastId, logId, initialMeta);
@@ -2008,16 +2008,16 @@ if (!window.whatsAppSender) {
         let meta = initialMeta, recipients = {};
 
         this._historyDetailsUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId)
-            .onSnapshot(doc => { 
-                meta = doc.data() || {}; 
-                this.renderBroadcastDetails(broadcastId, logId, meta, recipients); 
+            .onSnapshot(doc => {
+                meta = doc.data() || {};
+                this.renderBroadcastDetails(broadcastId, logId, meta, recipients);
             });
 
         const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
         const query = logsRef.orderByChild('broadcastId').equalTo(broadcastId);
-        const listener = query.on('value', snap => { 
-            recipients = snap.val() || {}; 
-            this.renderBroadcastDetails(broadcastId, logId, meta, recipients); 
+        const listener = query.on('value', snap => {
+            recipients = snap.val() || {};
+            this.renderBroadcastDetails(broadcastId, logId, meta, recipients);
         }, err => {
             console.error(err);
             AppDialog.toast('Error loading recipient logs.', 'error');
@@ -2102,7 +2102,7 @@ if (!window.whatsAppSender) {
     window.whatsAppSender.renderBroadcastDetails = function (broadcastId, logId, meta, recipients) {
         const container = document.getElementById('whatsapp-content-history');
         if (!container) return;
-        
+
         // Skeleton should already be there from viewBroadcastDetails, but safety check
         if (!container.querySelector('.wa-report-container') || container.getAttribute('data-active-report') !== logId) {
             container.setAttribute('data-active-report', logId);
@@ -2125,10 +2125,10 @@ if (!window.whatsAppSender) {
         }
 
         const sortVal = document.getElementById('wa-report-sort')?.value || 'oldest';
-        
+
         // Convert to array and preserve RTDB keys for deletion
         const recipientsArray = Object.entries(recipients).map(([key, val]) => ({ key, ...val }));
-        
+
         // Apply Sorting
         recipientsArray.sort((a, b) => {
             if (sortVal === 'newest') return (b.timestamp || 0) - (a.timestamp || 0);
@@ -2146,7 +2146,7 @@ if (!window.whatsAppSender) {
         });
 
         let queued = 0, processing = 0, sent = 0, read = 0, deliv = 0, fail = 0, excluded = 0, total = recipientsArray.length;
-        
+
         recipientsArray.forEach(m => {
             const { status } = this._getEffectiveStatus(m);
             if (status === 'queued') queued++;
@@ -2300,7 +2300,7 @@ if (!window.whatsAppSender) {
     window.whatsAppSender._updateReportLiveProgress = function (logId, meta, liveStats) {
         const mount = document.getElementById('wa-live-progress-mount');
         if (!mount) return;
-        
+
         const isDispatching = meta.status === 'dispatching' || meta.status === 'processing';
         const isStopped = meta.status === 'stopped';
         const isCompleted = meta.status === 'dispatched' || meta.status === 'completed';
@@ -2309,12 +2309,12 @@ if (!window.whatsAppSender) {
         const totalNumbers = liveStats ? liveStats.total : (meta.recipientsCount || 0);
         const excluded = liveStats ? liveStats.excluded : (meta.excludedCount || 0);
         const queued = liveStats ? liveStats.queued : 0;
-        
+
         // "Processed" for the progress bar means messages that have actually been attempted (sent/failed)
         // We must subtract 'queued' and 'processing' because they are still in the pipeline.
         // We also subtract 'excluded' because they aren't part of the "Delivery" progress (they are skipped).
-        const processedNumbers = liveStats ? 
-            (liveStats.total - liveStats.queued - liveStats.processing - liveStats.excluded) : 
+        const processedNumbers = liveStats ?
+            (liveStats.total - liveStats.queued - liveStats.processing - liveStats.excluded) :
             ((meta.processedNumbersCount || 0) - (meta.excludedCount || 0));
 
         const nPct = totalNumbers > 0 ? Math.round((processedNumbers / (totalNumbers - excluded || 1)) * 100) : 0;
@@ -2395,16 +2395,17 @@ if (!window.whatsAppSender) {
                         </div>
                     </div>
                 </div>
-            </div>`;    };
+            </div>`;
+    };
 
     window.whatsAppSender._updateReportStatsDashboard = function (total, processing, sent, deliv, read, fail, excluded, queued = 0) {
         const mount = document.getElementById('wa-report-dashboard-mount');
         if (!mount) return;
-        
+
         const billable = total - excluded;
-        const readPct = billable > 0 ? Math.round((read/billable)*100) : 0;
-        const delivPct = billable > 0 ? Math.round(((deliv+read)/billable)*100) : 0;
-        const failPct = billable > 0 ? Math.round((fail/billable)*100) : 0;
+        const readPct = billable > 0 ? Math.round((read / billable) * 100) : 0;
+        const delivPct = billable > 0 ? Math.round(((deliv + read) / billable) * 100) : 0;
+        const failPct = billable > 0 ? Math.round((fail / billable) * 100) : 0;
 
         mount.innerHTML = `
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:20px; margin-bottom:32px;">
@@ -2441,7 +2442,7 @@ if (!window.whatsAppSender) {
     window.whatsAppSender._updateRecipientRowsList = function (recipients, broadcastId, logId) {
         const grid = document.getElementById('wa-report-recipients-grid');
         if (!grid) return;
-        
+
         const statusConfig = {
             queued: { color: '#94a3b8', icon: 'clock', label: 'Queued', bg: 'rgba(148,163,184,0.1)' },
             processing: { color: '#f59e0b', icon: 'loader', label: 'Processing', bg: 'rgba(245,158,11,0.1)' },
@@ -2455,7 +2456,7 @@ if (!window.whatsAppSender) {
 
         // 1. Track which IDs are present in the new data
         const currentDataIds = new Set();
-        
+
         recipients.forEach(m => {
             const cleanPhone = String(m.phone || m.recipientId || '').replace(/\D/g, '');
             const rowId = `wa-row-${m.messageId ? m.messageId.replace(/[.#$/[\]]/g, "_") : cleanPhone}`;
@@ -2463,28 +2464,28 @@ if (!window.whatsAppSender) {
 
             const { status, error } = this._getEffectiveStatus(m);
             let row = document.getElementById(rowId);
-            
+
             if (!row) {
                 row = document.createElement('div');
                 row.id = rowId;
                 row.className = 'wa-report-item';
                 grid.appendChild(row);
             }
-            
+
             // Optimization: Only re-render if status, error, or timestamp changed
             const currentStatus = row.getAttribute('data-status');
             const currentError = row.getAttribute('data-error');
             const currentUpdated = row.getAttribute('data-updated');
-            
+
             if (currentStatus === status && currentError === String(error) && currentUpdated === String(m.timestamp)) return;
-            
+
             const isExpanded = row.classList.contains('expanded');
             row.setAttribute('data-status', status);
             row.setAttribute('data-error', String(error));
             row.setAttribute('data-updated', String(m.timestamp));
-            
+
             const conf = statusConfig[status] || { color: '#94a3b8', icon: 'circle', label: status, bg: 'rgba(148,163,184,0.1)' };
-            
+
             row.innerHTML = `
                 <div class="wa-status-stripe" style="background:${conf.color};"></div>
                 
@@ -2524,23 +2525,23 @@ if (!window.whatsAppSender) {
                             <div style="position:absolute; top:6px; left:12px; right:12px; height:2px; background:rgba(255,255,255,0.05); z-index:0;"></div>
                             
                             ${['sent', 'delivered', 'read'].map((step, si) => {
-                                const ts = step === 'sent' ? m.sentAt : step === 'delivered' ? m.deliveredAt : m.readAt;
-                                const active = !!ts;
-                                const stepColor = active ? statusConfig[step].color : 'var(--border)';
-                                
-                                return `
+                const ts = step === 'sent' ? m.sentAt : step === 'delivered' ? m.deliveredAt : m.readAt;
+                const active = !!ts;
+                const stepColor = active ? statusConfig[step].color : 'var(--border)';
+
+                return `
                                     <div class="wa-pipeline-step ${active ? 'active' : ''}" style="color:${active ? stepColor : 'var(--text-dim)'}">
                                         <div class="wa-step-circle" style="background:${active ? stepColor : 'var(--card-bg)'}; border:2px solid ${active ? stepColor : 'rgba(255,255,255,0.1)'};"></div>
                                         <span style="font-size:0.6rem; font-weight:700; text-transform:uppercase;">${step}</span>
-                                        <span style="font-size:0.55rem; opacity:0.8;">${ts ? new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--:--'}</span>
+                                        <span style="font-size:0.55rem; opacity:0.8;">${ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
                                     </div>
                                 `;
-                            }).join('')}
+            }).join('')}
                         </div>
                     </div>
                 </div>
             `;
-            
+
             if (isExpanded) row.classList.add('expanded');
         });
 
@@ -2551,14 +2552,14 @@ if (!window.whatsAppSender) {
                 row.remove();
             }
         });
-        
+
         if (window.lucide) window.lucide.createIcons({ root: grid });
     };
 
     window.whatsAppSender.toggleRecipientExpansion = function (rowId) {
         const row = document.getElementById(rowId);
         if (!row) return;
-        
+
         row.classList.toggle('expanded');
     };
 
@@ -2578,7 +2579,7 @@ if (!window.whatsAppSender) {
 
         if (bulkBar) bulkBar.style.display = checked.length > 0 ? 'flex' : 'none';
         if (countEl) countEl.innerText = `${checked.length} Selected`;
-        
+
         // Update Select All state
         if (selectAll) {
             const allVisible = document.querySelectorAll('.wa-report-item:not([style*="display: none"]) .wa-row-select');
@@ -2615,13 +2616,13 @@ if (!window.whatsAppSender) {
             AppDialog.toast(`Deleting ${selectedChecks.length} records...`, 'info');
             const updates = {};
             const keys = Array.from(selectedChecks).map(c => c.value);
-            
+
             // Stats aggregation for Firestore update
             const counts = { read: 0, delivered: 0, sent: 0, processing: 0, failed: 0, excluded: 0 };
-            
+
             keys.forEach((key, index) => {
                 updates[`modules/whatsapp_sender/broadcast_logs/${key}`] = null;
-                
+
                 const row = selectedChecks[index].closest('.wa-report-item');
                 if (row) {
                     const status = row.getAttribute('data-status');
@@ -2661,7 +2662,7 @@ if (!window.whatsAppSender) {
             await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).update(firestoreUpdate);
 
             AppDialog.toast(`Successfully deleted ${keys.length} records.`, 'success');
-            
+
             // Clear selection bar
             const selectAll = document.getElementById('wa-report-select-all');
             if (selectAll) selectAll.checked = false;
@@ -2685,7 +2686,7 @@ if (!window.whatsAppSender) {
 
     window.whatsAppSender.deleteBroadcastHistory = async function (logId, broadcastId) {
         if (!logId) return;
-        
+
         const confirmed = await AppDialog.confirm('Are you sure you want to delete this broadcast instance? This will remove the history record and all associated delivery logs. This action cannot be undone.', {
             title: 'Delete History',
             danger: true,
@@ -2713,7 +2714,7 @@ if (!window.whatsAppSender) {
             }
 
             AppDialog.toast('History instance deleted successfully.', 'success');
-            
+
             // If we are currently viewing this report, go back to history
             const container = document.getElementById('whatsapp-content-history');
             if (container && container.getAttribute('data-active-report') === logId) {
@@ -2727,10 +2728,10 @@ if (!window.whatsAppSender) {
 
     // --- Frequency Protection Feature ---
 
-    window.whatsAppSender.openFrequencyProtection = async function() {
+    window.whatsAppSender.openFrequencyProtection = async function () {
         const audienceSelect = document.getElementById('wa-broadcast-audience');
         const templateSelect = document.getElementById('wa-template-select');
-        
+
         const audienceVal = audienceSelect ? audienceSelect.value : 'none';
         const templateName = templateSelect ? templateSelect.value : '';
 
@@ -2794,10 +2795,10 @@ if (!window.whatsAppSender) {
         }
     };
 
-    window.whatsAppSender.runFrequencyCheck = async function(audienceVal, templateName, days) {
+    window.whatsAppSender.runFrequencyCheck = async function (audienceVal, templateName, days) {
         try {
             AppDialog.toast('Running frequency check...', 'info');
-            
+
             // 1. Get recipients from current audience
             const recipients = await this._getCurrentlySelectedRecipients();
 
@@ -2827,7 +2828,7 @@ if (!window.whatsAppSender) {
             const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
             const broadcastIds = matchingHistoryDocs.map(doc => doc.id);
             const snapshots = await Promise.all(broadcastIds.map(bId => logsRef.orderByChild('broadcastId').equalTo(bId).once('value')));
-            
+
             const normalize = (phone) => {
                 let cleaned = String(phone || '').replace(/\D/g, '');
                 if (cleaned.length === 10) cleaned = '91' + cleaned;
@@ -2848,7 +2849,7 @@ if (!window.whatsAppSender) {
                         // Extract a concise error message
                         let errorMsg = (log.error || 'Unknown Error').split(':')[0].split('.')[0].trim();
                         if (errorMsg.length > 60) errorMsg = errorMsg.substring(0, 57) + '...';
-                        
+
                         if (!failuresByError[errorMsg]) failuresByError[errorMsg] = new Set();
                         failuresByError[errorMsg].add(cleanPhone);
                     }
@@ -2857,7 +2858,7 @@ if (!window.whatsAppSender) {
 
             // 4. Filter recipients
             const successDuplicates = recipients.filter(r => alreadySentTo.has(r.phone));
-            
+
             // Map failures to recipients
             const failureCategories = Object.entries(failuresByError).map(([error, phones]) => {
                 const affectedRecipients = recipients.filter(r => phones.has(r.phone) && !alreadySentTo.has(r.phone));
@@ -2870,7 +2871,7 @@ if (!window.whatsAppSender) {
                 const overlay = document.createElement('div');
                 overlay.className = 'app-dialog-overlay';
                 overlay.style.zIndex = '100000';
-                
+
                 overlay.innerHTML = `
                     <div class="app-dialog-box" style="max-width: 520px;">
                         <div style="display:flex; flex-direction:column; gap:24px;">
@@ -2938,19 +2939,19 @@ if (!window.whatsAppSender) {
                 if (window.lucide) window.lucide.createIcons({ root: overlay });
 
                 overlay.querySelector('#wa-fp-cancel').onclick = () => overlay.remove();
-                
+
                 overlay.querySelector('#wa-fp-apply').onclick = () => {
                     const excluded = new Set();
-                    
+
                     // 1. Get manually selected successes
                     overlay.querySelectorAll('.wa-fp-success-check:checked').forEach(c => excluded.add(c.value));
-                    
+
                     // 2. Get recipients from selected error categories
                     overlay.querySelectorAll('.wa-fp-error-cat-check:checked').forEach(c => {
                         const idx = parseInt(c.getAttribute('data-idx'));
                         failureCategories[idx].recipients.forEach(r => excluded.add(r.phone));
                     });
-                    
+
                     this.excludedNumbers = Array.from(excluded);
                     overlay.remove();
                     AppDialog.toast(`Successfully applied ${this.excludedNumbers.length} exclusions to your broadcast selection.`, 'success');
