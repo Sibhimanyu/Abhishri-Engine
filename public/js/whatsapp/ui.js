@@ -1222,12 +1222,12 @@ if (!window.whatsAppSender) {
                             <div style="color:var(--text-dim);">${total - excl - queued} / ${billable}</div>
                         </div>
                         <div class="wa-health-bar">
-                            <div class="wa-health-fill read" style="width:${readPct}%" title="Read"></div>
-                            <div class="wa-health-fill delivered" style="width:${delivPct}%" title="Delivered"></div>
-                            <div class="wa-health-fill sent" style="width:${sentPct}%" title="Sent"></div>
-                            <div class="wa-health-fill processing" style="width:${procPct}%" title="Processing"></div>
-                            <div class="wa-health-fill queued" style="width:${queuedPct}%" title="Queued"></div>
-                            <div class="wa-health-fill failed" style="width:${failPct}%" title="Failed"></div>
+                            <div class="wa-health-fill read" style="width:${readPct}%" title="Read">${read > 0 && readPct > 5 ? read : ''}</div>
+                            <div class="wa-health-fill delivered" style="width:${delivPct}%" title="Delivered">${deliv > 0 && delivPct > 5 ? deliv : ''}</div>
+                            <div class="wa-health-fill sent" style="width:${sentPct}%" title="Sent">${sent > 0 && sentPct > 5 ? sent : ''}</div>
+                            <div class="wa-health-fill processing" style="width:${procPct}%" title="Processing">${proc > 0 && procPct > 5 ? proc : ''}</div>
+                            <div class="wa-health-fill queued" style="width:${queuedPct}%" title="Queued">${queued > 0 && queuedPct > 5 ? queued : ''}</div>
+                            <div class="wa-health-fill failed" style="width:${failPct}%" title="Failed">${fail > 0 && failPct > 5 ? fail : ''}</div>
                         </div>
                     </div>
 
@@ -1381,18 +1381,17 @@ if (!window.whatsAppSender) {
 
 
     window.whatsAppSender._filterReportRows = function (status) {
-        document.querySelectorAll('#wa-report-filters .wa-history-tab').forEach(btn => {
-            if (btn.getAttribute('data-filter') === status) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
+        const btn = document.querySelector(`#wa-report-filters .wa-history-tab[data-filter="${status}"]`);
+        if (!btn) return;
 
-        // Show/Hide Error Type filter based on status
+        // Toggle active state
+        btn.classList.toggle('active');
+
+        // Show/Hide Error Type filter based on 'failed' status being active
         const errorFilter = document.getElementById('wa-report-error-filter-container');
         if (errorFilter) {
-            errorFilter.style.display = (status === 'failed') ? 'flex' : 'none';
+            const isFailedActive = document.querySelector(`#wa-report-filters .wa-history-tab[data-filter="failed"].active`);
+            errorFilter.style.display = isFailedActive ? 'flex' : 'none';
         }
 
         window.whatsAppSender._applyReportFilters();
@@ -1425,8 +1424,9 @@ if (!window.whatsAppSender) {
 
     // Apply both status and search filters
     window.whatsAppSender._applyReportFilters = function () {
-        const activeBtn = document.querySelector('#wa-report-filters .wa-history-tab.active');
-        const status = activeBtn ? activeBtn.getAttribute('data-filter') : 'all';
+        const activeBtns = document.querySelectorAll('#wa-report-filters .wa-history-tab.active');
+        const activeStatuses = Array.from(activeBtns).map(btn => btn.getAttribute('data-filter'));
+        
         const searchInput = document.getElementById('wa-report-search');
         const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
         const errorType = document.getElementById('wa-report-error-filter')?.value || 'all';
@@ -1444,14 +1444,23 @@ if (!window.whatsAppSender) {
             const nameText = nameEl ? nameEl.textContent.trim().toLowerCase() : '';
 
             // 1. Status Check
-            let statusMatch = status === 'all' || rowStatus === status;
-            if (status === 'delivered' && rowStatus === 'read') statusMatch = true;
-            if (status === 'sent' && (rowStatus === 'delivered' || rowStatus === 'read')) statusMatch = true;
-            if (status === 'failed' && (rowStatus === 'error' || rowStatus === 'failed')) statusMatch = true;
+            let statusMatch = false;
+            if (activeStatuses.length === 0) {
+                statusMatch = false;
+            } else {
+                activeStatuses.forEach(s => {
+                    if (s === 'sent' && (rowStatus === 'sent' || rowStatus === 'delivered' || rowStatus === 'read')) statusMatch = true;
+                    if (s === 'delivered' && (rowStatus === 'delivered' || rowStatus === 'read')) statusMatch = true;
+                    if (s === 'read' && rowStatus === 'read') statusMatch = true;
+                    if (s === 'failed' && (rowStatus === 'failed' || rowStatus === 'error')) statusMatch = true;
+                    if (s === 'excluded' && rowStatus === 'excluded') statusMatch = true;
+                    if (s === 'queued' && (rowStatus === 'queued' || rowStatus === 'processing')) statusMatch = true;
+                });
+            }
 
             // 2. Error Type Sub-filter (only if status is failed)
             let errorMatch = true;
-            if (status === 'failed' && errorType !== 'all') {
+            if (activeStatuses.includes('failed') && errorType !== 'all') {
                 errorMatch = rowError.includes(errorType.toLowerCase());
             }
 
@@ -1757,11 +1766,11 @@ if (!window.whatsAppSender) {
                     <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:24px; overflow:hidden;">
                         <div style="padding:24px 32px; background:rgba(255,255,255,0.01); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;">
                             <div class="wa-history-tabs" id="wa-report-filters" style="margin-bottom:0; background:rgba(0,0,0,0.2);">
-                                <div class="wa-history-tab active" data-filter="all" onclick="window.whatsAppSender._filterReportRows('all')">All</div>
-                                <div class="wa-history-tab" data-filter="sent" onclick="window.whatsAppSender._filterReportRows('sent')">Sent</div>
-                                <div class="wa-history-tab" data-filter="delivered" onclick="window.whatsAppSender._filterReportRows('delivered')">Delivered</div>
-                                <div class="wa-history-tab" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')">Read</div>
-                                <div class="wa-history-tab" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')">Failed</div>
+                                <div class="wa-history-tab active" data-filter="sent" onclick="window.whatsAppSender._filterReportRows('sent')">Sent</div>
+                                <div class="wa-history-tab active" data-filter="delivered" onclick="window.whatsAppSender._filterReportRows('delivered')">Delivered</div>
+                                <div class="wa-history-tab active" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')">Read</div>
+                                <div class="wa-history-tab active" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')">Failed</div>
+                                <div class="wa-history-tab" data-filter="queued" onclick="window.whatsAppSender._filterReportRows('queued')">Queued</div>
                                 <div class="wa-history-tab" data-filter="excluded" onclick="window.whatsAppSender._filterReportRows('excluded')">Excluded</div>
                             </div>
                             
@@ -1790,6 +1799,8 @@ if (!window.whatsAppSender) {
                                     <span style="font-size:0.75rem; color:var(--text-dim); font-weight:800; text-transform:uppercase; letter-spacing:0.05em;">Select All</span>
                                 </div>
                                 
+                                <div id="wa-report-count" style="font-size:0.75rem; color:var(--text-dim); font-weight:800; text-transform:uppercase; letter-spacing:0.05em; padding-right:16px; border-right:1px solid rgba(255,255,255,0.1);">0 Recipients</div>
+
                                 <div id="wa-bulk-actions" style="display:none; align-items:center; gap:12px; padding:6px 14px; background:rgba(239, 94, 73, 0.1); border-radius:12px; border:1px solid rgba(239, 94, 73, 0.2);">
                                     <span id="wa-selection-count" style="font-size:0.75rem; font-weight:900; color:var(--accent); text-transform:uppercase;">0 Selected</span>
                                     <div style="width:1px; height:14px; background:rgba(239, 94, 73, 0.2);"></div>
@@ -1910,13 +1921,13 @@ if (!window.whatsAppSender) {
                         <span style="font-size:0.75rem; color:var(--text-dim); font-weight:700; text-transform:uppercase;">Campaign Progress Lifecycle</span>
                         <span style="font-size:0.75rem; color:var(--text-main); font-weight:800;">${Math.round(100 - queuedPct)}% Processed</span>
                     </div>
-                    <div class="wa-health-bar" style="height:12px; background:rgba(255,255,255,0.05); border-radius:6px; overflow:hidden;">
-                        <div class="wa-health-fill read" style="width:${readPct}%" title="Read"></div>
-                        <div class="wa-health-fill delivered" style="width:${delivPct}%" title="Delivered"></div>
-                        <div class="wa-health-fill sent" style="width:${sentPct}%" title="Sent"></div>
-                        <div class="wa-health-fill processing" style="width:${procPct}%" title="Processing"></div>
-                        <div class="wa-health-fill queued" style="width:${queuedPct}%" title="Queued"></div>
-                        <div class="wa-health-fill failed" style="width:${failPct}%" title="Failed"></div>
+                    <div class="wa-health-bar" style="height:28px; background:rgba(255,255,255,0.05); border-radius:14px; overflow:hidden;">
+                        <div class="wa-health-fill read" style="width:${readPct}%" title="Read">${read > 0 && readPct > 5 ? read : ''}</div>
+                        <div class="wa-health-fill delivered" style="width:${delivPct}%" title="Delivered">${deliv > 0 && delivPct > 5 ? deliv : ''}</div>
+                        <div class="wa-health-fill sent" style="width:${sentPct}%" title="Sent">${sent > 0 && sentPct > 5 ? sent : ''}</div>
+                        <div class="wa-health-fill processing" style="width:${procPct}%" title="Processing">${proc > 0 && procPct > 5 ? proc : ''}</div>
+                        <div class="wa-health-fill queued" style="width:${queuedPct}%" title="Queued">${queued > 0 && queuedPct > 5 ? queued : ''}</div>
+                        <div class="wa-health-fill failed" style="width:${failPct}%" title="Failed">${fail > 0 && failPct > 5 ? fail : ''}</div>
                     </div>
                     <div style="display:flex; gap:16px; margin-top:12px; flex-wrap:wrap;">
                         <div style="display:flex; align-items:center; gap:6px; font-size:0.7rem; font-weight:700; color:#a855f7;"><div style="width:8px;height:8px;border-radius:2px;background:#a855f7;"></div> READ</div>
@@ -2108,6 +2119,9 @@ if (!window.whatsAppSender) {
         });
 
         if (window.lucide) window.lucide.createIcons({ root: grid });
+
+        // Apply filters whenever the list is updated
+        window.whatsAppSender._applyReportFilters();
     };
 
     window.whatsAppSender.toggleRecipientExpansion = function (cardId) {
