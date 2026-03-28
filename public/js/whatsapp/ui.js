@@ -1173,7 +1173,7 @@ if (!window.whatsAppSender) {
             const total = log.recipientsCount || 0;
             const excl = log.excludedCount || 0;
             const billable = total - excl;
-            
+
             // Counts are now exclusive in DB
             const read = log.readCount || 0;
             const deliv = log.deliveredCount || 0;
@@ -1181,7 +1181,7 @@ if (!window.whatsAppSender) {
             const fail = log.failedCount || 0;
             const proc = log.processingCount || 0;
             const queued = log.queuedCount || Math.max(0, billable - (log.processedNumbersCount || 0) - proc);
-            
+
             const readPct = billable > 0 ? (read / billable * 100) : 0;
             const delivPct = billable > 0 ? (deliv / billable * 100) : 0;
             const sentPct = billable > 0 ? (sent / billable * 100) : 0;
@@ -1426,7 +1426,7 @@ if (!window.whatsAppSender) {
     window.whatsAppSender._applyReportFilters = function () {
         const activeBtns = document.querySelectorAll('#wa-report-filters .wa-history-tab.active');
         const activeStatuses = Array.from(activeBtns).map(btn => btn.getAttribute('data-filter'));
-        
+
         const searchInput = document.getElementById('wa-report-search');
         const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
         const errorType = document.getElementById('wa-report-error-filter')?.value || 'all';
@@ -2127,14 +2127,14 @@ if (!window.whatsAppSender) {
     window.whatsAppSender.toggleRecipientExpansion = function (cardId) {
         const card = document.getElementById(cardId);
         if (!card) return;
-        
+
         const content = card.querySelector('.wa-recipient-card-content');
         const isExpanded = card.classList.toggle('expanded');
-        
+
         if (content) {
             content.style.display = isExpanded ? 'block' : 'none';
         }
-        
+
         const chevron = card.querySelector('.wa-card-chevron');
         if (chevron) {
             chevron.style.transform = isExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
@@ -2845,7 +2845,7 @@ if (!window.whatsAppSender) {
             const file = overlay.querySelector('#wa-csv-file').files[0]; if (!file) return;
             const reader = new FileReader(); reader.onload = (e) => {
                 rows = e.target.result.split('\n'); headers = rows[0].split(',').map(h => h.trim().replace(/[.#$/[\]"]/g, ''));
-                overlay.querySelectorAll('select').forEach(sel => headers.forEach((h, i) => { const opt = new Option(h || `Col ${i+1}`, i); sel.add(opt); }));
+                overlay.querySelectorAll('select').forEach(sel => headers.forEach((h, i) => { const opt = new Option(h || `Col ${i + 1}`, i); sel.add(opt); }));
                 overlay.querySelector('#wa-csv-step-1').style.display = 'none'; overlay.querySelector('#wa-csv-step-2').style.display = 'block';
             }; reader.readAsText(file);
         };

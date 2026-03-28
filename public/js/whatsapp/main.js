@@ -334,9 +334,9 @@ if (!window.whatsAppSender) {
                 listName: audienceSelect.options[audienceSelect.selectedIndex].text,
                 recipientsCount: fullRecipients.length,
                 contactsCount: contactsCount,
-                sentCount: 0, 
-                deliveredCount: 0, 
-                readCount: 0, 
+                sentCount: 0,
+                deliveredCount: 0,
+                readCount: 0,
                 failedCount: 0,
                 excludedCount: finalExcluded.length,
                 processingCount: 0,
@@ -947,17 +947,17 @@ if (!window.whatsAppSender) {
                 for (let idx of phoneIdxs) {
                     let p = row[idx];
                     if (p) {
-                         p = p.replace(/[^\d+]/g, '');
-                         if (p.length >= 10) {
-                             if (!p.startsWith('+')) {
-                                 if (p.length === 10) p = '+91' + p;
-                                 else p = '+' + p;
-                             }
-                             phoneParts.push(p);
-                         }
+                        p = p.replace(/[^\d+]/g, '');
+                        if (p.length >= 10) {
+                            if (!p.startsWith('+')) {
+                                if (p.length === 10) p = '+91' + p;
+                                else p = '+' + p;
+                            }
+                            phoneParts.push(p);
+                        }
                     }
                 }
-                let phone = phoneParts.join(','); 
+                let phone = phoneParts.join(',');
                 if (!phone || !name) continue;
 
                 // Explicit schema mapping! Only the requested mapped fields go into memberData.

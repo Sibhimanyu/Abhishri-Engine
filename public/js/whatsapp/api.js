@@ -98,7 +98,7 @@ if (!window.whatsAppSender) {
                 const messageId = `sim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 const docId = messageId.replace(/[.#$/[\]]/g, "_");
                 const logRef = firebase.database().ref(`${rtdbLogsPath}/${docId}`);
-                
+
                 // 1. Initial State: Pending
                 const timestamp = Date.now();
                 const initialLog = {
@@ -128,7 +128,7 @@ if (!window.whatsAppSender) {
                     const statusEntry = { status: 'sent', timestamp: sentTs, serverTime: Date.now() };
                     await logRef.update({ status: 'sent', timestamp: sentTs, sentAt: sentTs });
                     await logRef.child('statusHistory').push(statusEntry);
-                    
+
                     processedMessages++;
                     await historyRef.update({
                         processedNumbersCount: processedMessages,
@@ -170,9 +170,8 @@ if (!window.whatsAppSender) {
             processedContactsCount: contactNames.length,
             processedNumbersCount: allRecipients.length
         });
-        
+
         AppDialog.toast('Simulation completed successfully.', 'success');
     };
 
 }
-

@@ -7,11 +7,11 @@
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
  */
 
-const {setGlobalOptions} = require("firebase-functions");
+const { setGlobalOptions } = require("firebase-functions");
 const admin = require("firebase-admin");
 
 // Global Config
-setGlobalOptions({maxInstances: 10});
+setGlobalOptions({ maxInstances: 10 });
 
 // Initialize Firebase Admin globally
 // Note: Submodules might also check/init, but doing it here ensures it's ready.
@@ -28,4 +28,3 @@ exports.sendWhatsAppBroadcast = whatsappSend.sendWhatsAppBroadcast;
 exports.syncWhatsAppTemplates = whatsappSend.syncWhatsAppTemplates;
 exports.checkWhatsAppWallet = whatsappSend.checkWhatsAppWallet;
 exports.whatsappWebhook = whatsappWebhook.whatsappWebhook;
-
