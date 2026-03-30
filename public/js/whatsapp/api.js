@@ -65,7 +65,6 @@ if (!window.whatsAppSender) {
      */
     window.whatsAppSender.startLocalSimulation = async function (broadcastId, allRecipients) {
         const historyRef = firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(broadcastId);
-        const rtdbLogsPath = 'modules/whatsapp_sender/broadcast_logs';
 
         // Group by contact name
         const contactGroups = {};
@@ -95,9 +94,8 @@ if (!window.whatsAppSender) {
 
             const members = contactGroups[name];
             for (const member of members) {
-                const messageId = `sim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                const docId = messageId.replace(/[.#$/[\]]/g, "_");
-                const logRef = firebase.database().ref(`${rtdbLogsPath}/${docId}`);
+                const cleanPhone = String(member.phone).replace(/\D/g, '');
+                const logRef = firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}/${cleanPhone}`);
 
                 // 1. Initial State: Pending
                 const timestamp = Date.now();
@@ -107,7 +105,6 @@ if (!window.whatsAppSender) {
                     name: member.name,
                     status: 'pending',
                     timestamp: timestamp,
-                    messageId,
                     isSimulation: true
                 };
                 await logRef.set(initialLog);

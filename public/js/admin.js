@@ -283,8 +283,12 @@ window.adminPanel = {
         const config = configSnap.data() || {};
         const isConnected = !!(config.apiKey && config.wabaId);
 
+        // Fetch templates for management
+        const templatesSnap = await firestore.collection('modules').doc('whatsapp_sender').collection('templates').get();
+        const templates = templatesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
         container.innerHTML = `
-            <div class="whatsapp-connect-container" style="max-width: 800px; margin: 0 auto; padding: 20px;">
+            <div class="whatsapp-connect-container" style="max-width: 900px; margin: 0 auto; padding: 20px;">
                 <div style="display: flex; gap: 20px; align-items: stretch; margin-bottom: 20px; flex-wrap: wrap;">
                     <div class="card glass-card status-card" style="flex: 1; min-width: 300px; padding: 20px; background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: 16px;">
                         <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">

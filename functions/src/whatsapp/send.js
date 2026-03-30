@@ -1,5 +1,6 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const axios = require("axios");
 
@@ -17,8 +18,10 @@ function deepSanitize(obj, isInsideArray = false) {
     const newObj = {};
     for (const key in obj) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        // Sanitize the key itself for Firestore (no . # $ / [ ])
+        const cleanKey = key.replace(/[.#$/[\]]/g, "_");
         const val = obj[key];
-        if (val !== undefined) newObj[key] = deepSanitize(val, false);
+        if (val !== undefined) newObj[cleanKey] = deepSanitize(val, false);
       }
     }
     return newObj;
@@ -46,32 +49,47 @@ exports.syncWhatsAppTemplates = onCall(async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
   try {
-    const url = `https://www.fast2sms.com/dev/whatsapp/v24.0/${config.wabaId}/message_templates?authorization=${config.apiKey}`;
+    // New dlt_manager endpoint for reliable message_id
+    const url = `https://www.fast2sms.com/dev/dlt_manager/whatsapp?authorization=${encodeURIComponent(config.apiKey)}&type=template`;
     const response = await axios.get(url, { headers: { "accept": "application/json" } });
-    const templates = response.data?.data?.data || response.data?.data || response.data || [];
-    if (templates.length > 0) {
-      const fs = admin.firestore();
-      const batch = fs.batch();
-      const coll = fs.collection("modules").doc("whatsapp_sender").collection("templates");
-      for (const t of templates) {
-        if (t.name) {
-          batch.set(coll.doc(t.name), {
-            ...deepSanitize(t),
-            lastSynced: admin.firestore.FieldValue.serverTimestamp()
-          });
+    
+    if (!response.data?.success || !response.data?.data) {
+      throw new Error(response.data?.message || "Failed to fetch templates from Fast2SMS");
+    }
+
+    const fs = admin.firestore();
+    const batch = fs.batch();
+    const coll = fs.collection("modules").doc("whatsapp_sender").collection("templates");
+    let count = 0;
+
+    for (const item of response.data.data) {
+      if (item.templates && Array.isArray(item.templates)) {
+        for (const t of item.templates) {
+          const name = t.template_name || t.name;
+          if (name) {
+            batch.set(coll.doc(name), {
+              ...deepSanitize(t),
+              lastSynced: admin.firestore.FieldValue.serverTimestamp()
+            });
+            count++;
+          }
         }
       }
-      await batch.commit();
     }
-    return { success: true, count: templates.length };
-  } catch (error) { throw new HttpsError("internal", error.message); }
+
+    if (count > 0) await batch.commit();
+    return { success: true, count };
+  } catch (error) { 
+    logger.error("Sync Error:", error);
+    throw new HttpsError("internal", error.message); 
+  }
 });
 
 exports.checkWhatsAppWallet = onCall(async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
   try {
-    const response = await axios.get(`https://www.fast2sms.com/dev/wallet?authorization=${config.apiKey}`);
+    const response = await axios.get(`https://www.fast2sms.com/dev/wallet?authorization=${encodeURIComponent(config.apiKey)}`);
     return response.data;
   } catch (error) { throw new HttpsError("internal", error.message); }
 });
@@ -81,6 +99,7 @@ exports.sendWhatsAppMessage = onCall(async (request) => {
   const config = await getWhatsAppConfig();
   const { to, text } = request.data;
   try {
+    // Single message still uses v24.0 API
     const response = await axios.post(`https://www.fast2sms.com/dev/whatsapp/v24.0/${config.phoneNumberId}/messages`, {
       messaging_product: "whatsapp", to: String(to).replace("+", ""), type: "text", text: { body: text }
     }, { headers: { "Authorization": config.apiKey, "Content-Type": "application/json" } });
@@ -97,14 +116,46 @@ exports.sendWhatsAppMessage = onCall(async (request) => {
 exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
-  const { templateName, recipients, variables, broadcastId, contactsCount, excludedNumbers } = request.data;
+  
+  // Debug log to see exactly what the frontend is sending
+  logger.info("sendWhatsAppBroadcast Request Data:", request.data);
+
+  const { templateName, recipients, variables, broadcastId, contactsCount, excludedNumbers, headerImageUrl } = request.data;
   const excludedSet = new Set((excludedNumbers || []).map(num => String(num).replace(/[^\d]/g, "")));
-  const url = `https://www.fast2sms.com/dev/whatsapp/v24.0/${config.phoneNumberId}/messages`;
-  const parameters = (variables || []).map((val) => ({ type: "text", text: String(val) }));
+  
+  const db = admin.database(), fs = admin.firestore();
+
+  // 1. Fetch Template Data
+  let tData = {};
+  if (templateName) {
+    // Try exact document ID match first
+    const templateSnap = await fs.collection("modules").doc("whatsapp_sender").collection("templates").doc(templateName).get();
+    if (templateSnap.exists) {
+      tData = templateSnap.data();
+    } else {
+      // Fallback: search for a template with this name in its 'name' or 'template_name' field
+      const querySnap = await fs.collection("modules").doc("whatsapp_sender").collection("templates")
+        .where("template_name", "==", templateName).limit(1).get();
+      if (!querySnap.empty) {
+        tData = querySnap.docs[0].data();
+      } else {
+        const querySnap2 = await fs.collection("modules").doc("whatsapp_sender").collection("templates")
+          .where("name", "==", templateName).limit(1).get();
+        if (!querySnap2.empty) tData = querySnap2.docs[0].data();
+      }
+    }
+  }
+  
+  // 2. Extract Numeric ID (MUST be numeric for the GET API)
+  const templateId = tData.message_id || tData.numericId || tData.id || tData.template_id;
+
+  if (!templateId || isNaN(templateId) || String(templateId).length > 15) {
+    logger.error(`Template ID for "${templateName}" is invalid or missing: ${templateId}. Data:`, tData);
+    throw new HttpsError("failed-precondition", `Numeric Template ID not found for "${templateName || "Unknown"}". Please click "Sync Templates" in the Admin panel.`);
+  }
 
   let dispatchedCount = 0, failedCount = 0, excludedCount = 0;
   let processedContactsCount = 0, excludedContactsCount = 0, lastContactName = null;
-  const db = admin.database(), fs = admin.firestore();
 
   const updateProgress = async (isFinal = false, statusOverride = null, currentName = null) => {
     if (!broadcastId) return;
@@ -121,103 +172,144 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
     await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).update(update);
   };
 
-  // 1. Instant Initialization: Bulk log EVERY recipient as 'queued' or 'excluded'
-  // This ensures the delivery report total is accurate from the very first second.
+  // 1. Instant Initialization
   const initialLogs = {};
   const activeRecipients = [];
   const ts = Date.now();
-
-  // Track contacts that are entirely excluded
-  const contactExclusionStatus = {}; // { name: { total: 0, excluded: 0 } }
+  const contactExclusionStatus = {}; 
 
   for (const recipient of recipients) {
     const rawPhone = String(recipient.phone).replace(/[^\d]/g, "");
     const last10 = rawPhone.slice(-10);
-    const logId = `log_${broadcastId}_${rawPhone}`;
+    const logId = rawPhone; // Using rawPhone as the ID within the broadcast group
     const name = recipient.name || rawPhone;
 
     if (!contactExclusionStatus[name]) contactExclusionStatus[name] = { total: 0, excluded: 0 };
     contactExclusionStatus[name].total++;
 
-    // Check if this number should be excluded (match full or last 10)
     let isExcluded = excludedSet.has(rawPhone);
     if (!isExcluded && last10.length === 10) {
-      // Fallback: check if any excluded number ends with these same 10 digits
       for (const ex of excludedSet) {
         if (ex.endsWith(last10)) { isExcluded = true; break; }
       }
     }
 
     if (isExcluded) {
-      initialLogs[logId] = {
-        broadcastId, recipientId: recipient.phone, name: name,
-        status: "excluded", timestamp: ts, sentAt: ts, message: "Skipped (Recent)"
+      initialLogs[`${broadcastId}/${logId}`] = {
+        broadcastId: broadcastId, 
+        recipientId: recipient.phone, 
+        name: name,
+        status: "excluded", 
+        timestamp: ts, 
+        sentAt: ts, 
+        message: "Skipped (Recent)"
       };
       excludedCount++;
       contactExclusionStatus[name].excluded++;
     } else {
-      initialLogs[logId] = {
-        broadcastId, recipientId: recipient.phone, name: name,
-        status: "queued", timestamp: ts
+      initialLogs[`${broadcastId}/${logId}`] = {
+        broadcastId: broadcastId, 
+        recipientId: recipient.phone, 
+        name: name,
+        status: "queued", 
+        timestamp: ts
       };
       activeRecipients.push(recipient);
     }
   }
 
-  // Calculate how many contacts are ENTIRELY excluded
   for (const name in contactExclusionStatus) {
     if (contactExclusionStatus[name].excluded === contactExclusionStatus[name].total) {
       excludedContactsCount++;
     }
   }
 
-  // High-speed batch write of ALL initial states
   if (Object.keys(initialLogs).length > 0) {
     await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(initialLogs);
     await updateProgress();
   }
 
-  // 2. Main Dispatch Loop (Only for Active Recipients)
-  for (const recipient of activeRecipients) {
-    if (recipient.name !== lastContactName) { processedContactsCount++; lastContactName = recipient.name; }
-    const number = String(recipient.phone).replace(/[^\d]/g, ""), name = recipient.name || number;
-    const currentLogId = `log_${broadcastId}_${number}`;
+  // 2. Main Dispatch Loop (BATCHED)
+  const BATCH_SIZE = 50;
+  const variablesValues = (variables || []).join("|");
 
-    await updateProgress(false, null, name);
-
+  for (let i = 0; i < activeRecipients.length; i += BATCH_SIZE) {
+    const chunk = activeRecipients.slice(i, i + BATCH_SIZE);
+    
     const stopSnap = await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).get();
     if (stopSnap.exists && stopSnap.data().stopRequested) { await updateProgress(true, "stopped"); return { success: true, stopped: true }; }
 
-    const payload = { messaging_product: "whatsapp", to: number, type: "template", template: { name: templateName, language: { code: "en" }, components: [] } };
-    if (request.data.headerImageUrl) payload.template.components.push({ type: "header", parameters: [{ type: "image", image: { link: request.data.headerImageUrl } }] });
-    if (parameters.length > 0) payload.template.components.push({ type: "body", parameters });
+    const firstInChunk = chunk[0];
+    await updateProgress(false, null, firstInChunk.name || firstInChunk.phone);
+
+    const numbersList = chunk.map(r => {
+      let num = String(r.phone).replace(/[^\d]/g, "");
+      return num.slice(-10);
+    }).join(",");
+
+    // CONSTRUCTING FINAL URL: Precise alignment with working curl
+    const baseUrl = "https://www.fast2sms.com/dev/whatsapp";
+    const auth = encodeURIComponent(config.apiKey);
+    const mId = encodeURIComponent(templateId);
+    const pId = encodeURIComponent(config.phoneNumberId);
+    const nums = encodeURIComponent(numbersList);
+    
+    let apiUrl = `${baseUrl}?authorization=${auth}&message_id=${mId}&phone_number_id=${pId}&numbers=${nums}`;
+    
+    if (variablesValues) {
+      apiUrl += `&variables_values=${encodeURIComponent(variablesValues)}`;
+    }
+    if (headerImageUrl) {
+      apiUrl += `&media_url=${encodeURIComponent(headerImageUrl)}`;
+    }
+
+    // DEBUG LOG: See the exact URL in Firebase console (masking key for safety)
+    const logUrl = apiUrl.replace(config.apiKey, "REDACTED_KEY");
+    logger.info(`WhatsApp Broadcast Request: ${logUrl}`);
 
     try {
-      // Mark as processing just before the API call
-      await db.ref(`modules/whatsapp_sender/broadcast_logs/${currentLogId}`).update({ status: "processing" });
-
-      const response = await axios.post(url, payload, { headers: { "Authorization": config.apiKey, "Content-Type": "application/json" } });
-      const messageId = response.data.request_id || response.data.messages?.[0]?.id || response.data.id;
-      if (messageId) {
-        const ts2 = Date.now();
-        await db.ref(`modules/whatsapp_sender/broadcast_logs/${currentLogId}`).update({
-          status: "sent", sentAt: ts2, messageId
-        });
-        dispatchedCount++;
-      } else {
-        const ts2 = Date.now();
-        await db.ref(`modules/whatsapp_sender/broadcast_logs/${currentLogId}`).update({
-          status: "failed", timestamp: ts2, error: response.data?.message || "API returned success but no message ID"
-        });
-        failedCount++;
-      }
-    } catch (error) {
-      const ts2 = Date.now();
-      await db.ref(`modules/whatsapp_sender/broadcast_logs/${currentLogId}`).update({
-        status: "failed", timestamp: ts2, error: error.message
+      const processingUpdates = {};
+      chunk.forEach(r => {
+        const num = String(r.phone).replace(/[^\d]/g, "");
+        processingUpdates[`${broadcastId}/${num}/status`] = "processing";
       });
-      failedCount++;
+      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(processingUpdates);
+
+      const response = await axios.get(apiUrl, { headers: { "accept": "application/json" } });
+      const messageId = response.data.request_id || response.data.id || "batch_" + Date.now();
+
+      // Store messageId -> broadcastId mapping for webhook lookup
+      if (messageId && broadcastId) {
+        await db.ref(`modules/whatsapp_sender/batch_map/${messageId}`).set(broadcastId);
+      }
+
+      const successUpdates = {};
+      chunk.forEach(r => {
+        if (r.name !== lastContactName) { processedContactsCount++; lastContactName = r.name; }
+        const num = String(r.phone).replace(/[^\d]/g, "");
+        const logPath = `${broadcastId}/${num}`;
+        successUpdates[`${logPath}/status`] = "sent";
+        successUpdates[`${logPath}/sentAt`] = Date.now();
+        successUpdates[`${logPath}/messageId`] = messageId;
+      });
+      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(successUpdates);
+      dispatchedCount += chunk.length;
+    } catch (error) {
+      const errMsg = error.response?.data?.message || error.message;
+      logger.error(`Broadcast Batch Error: ${errMsg}`, { response: error.response?.data });
+      const failureUpdates = {};
+      chunk.forEach(r => {
+        if (r.name !== lastContactName) { processedContactsCount++; lastContactName = r.name; }
+        const num = String(r.phone).replace(/[^\d]/g, "");
+        const logPath = `${broadcastId}/${num}`;
+        failureUpdates[`${logPath}/status`] = "failed";
+        failureUpdates[`${logPath}/timestamp`] = Date.now();
+        failureUpdates[`${logPath}/error`] = errMsg;
+      });
+      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(failureUpdates);
+      failedCount += chunk.length;
     }
+    await updateProgress();
   }
   await updateProgress(true);
   return { success: true, dispatchedCount };

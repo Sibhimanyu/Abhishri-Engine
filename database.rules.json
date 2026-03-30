@@ -33,7 +33,13 @@
           }
         },
         "broadcast_logs": {
-          ".indexOn": ["broadcastId", "messageId", "timestamp"]
+          "$broadcastId": {
+            ".indexOn": ["messageId", "timestamp"]
+          }
+        },
+        "batch_map": {
+          ".read": "auth != null",
+          ".write": "auth != null"
         }
       },
       "fees_accounting": {

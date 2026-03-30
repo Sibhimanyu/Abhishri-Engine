@@ -536,24 +536,23 @@ if (!window.whatsAppSender) {
                                 <i data-lucide="layout-template" style="width:14px;height:14px;"></i> Template
                             </label>
                             <select class="wa-input" id="wa-template-select" onchange="window.whatsAppSender.updatePreview()">
-                                ${templatesToRender.length > 0
-                ? `<option value="" disabled selected>-- Choose a Template --</option>` + templatesToRender.map(t => {
-                    const name = t.name;
-                    const components = t.components || [];
-                    const bodyComp = components.find(c => c.type === 'BODY') || {};
-                    const content = bodyComp.text || '';
-                    const category = t.category || t.previous_category || 'UNKNOWN';
-                    const headerComp = components.find(c => c.type === 'HEADER' && c.format === 'IMAGE');
-                    const headerImageUrl = headerComp && headerComp.example && headerComp.example.header_handle ? (headerComp.example.header_handle[0] || '') : '';
-                    const hasImageHeader = !!headerComp;
-                    const footerComp = components.find(c => c.type === 'FOOTER') || {};
-                    const footerText = footerComp.text || '';
-                    const buttonsComp = components.find(c => c.type === 'BUTTONS') || {};
-                    const buttonsJson = buttonsComp.buttons ? encodeURIComponent(JSON.stringify(buttonsComp.buttons)) : '';
-                    return `<option value="${name}" data-content="${encodeURIComponent(content)}" data-category="${category}" data-header-image="${headerImageUrl}" data-needs-image="${hasImageHeader}" data-footer="${encodeURIComponent(footerText)}" data-buttons="${buttonsJson}">${name} (${category} - ${t.language || 'en'})</option>`;
-                }).join('') : `<option value="" disabled selected>No templates found from API</option>`}
-                            </select>
-                        </div>
+                               ${templatesToRender.length > 0
+                            ? `<option value="" disabled selected>-- Choose a Template --</option>` + templatesToRender.map(t => {
+                            const name = t.template_name || t.name;
+                            const components = t.components || [];
+                            const bodyComp = components.find(c => c.type === 'BODY') || {};
+                            const content = bodyComp.text || '';
+                            const category = t.category || t.previous_category || 'UNKNOWN';
+                            const headerComp = components.find(c => c.type === 'HEADER' && c.format === 'IMAGE');
+                            const headerImageUrl = headerComp && headerComp.example && headerComp.example.header_handle ? (headerComp.example.header_handle[0] || '') : '';
+                            const hasImageHeader = !!headerComp;
+                            const footerComp = components.find(c => c.type === 'FOOTER') || {};
+                            const footerText = footerComp.text || '';
+                            const buttonsComp = components.find(c => c.type === 'BUTTONS') || {};
+                            const buttonsJson = buttonsComp.buttons ? encodeURIComponent(JSON.stringify(buttonsComp.buttons)) : '';
+                            return `<option value="${name}" data-content="${encodeURIComponent(content)}" data-category="${category}" data-header-image="${headerImageUrl}" data-needs-image="${hasImageHeader}" data-footer="${encodeURIComponent(footerText)}" data-buttons="${buttonsJson}">${name} (${category} - ${t.language || 'en'})</option>`;
+                            }).join('') : `<option value="" disabled selected>No templates found from API</option>`}
+                            </select>                        </div>
 
                         <!-- Frequency Protection -->
                         <div class="bcast-field-group" style="padding-top:0;">
@@ -699,11 +698,15 @@ if (!window.whatsAppSender) {
         // Find if template requires an image header (from the dataset we embedded)
         const needsImageHeader = select.options[select.selectedIndex].getAttribute('data-needs-image') === 'true';
         const headerImageUrl = select.options[select.selectedIndex].getAttribute('data-header-image');
-
-        if (currentInputs.length !== uniqueVars.length || !varsContainer.querySelector('.wa-media-upload-section')) {
+        
+        // Find existing numeric ID from the template data
+        const templateData = this.templates.find(t => (t.template_name || t.name) === select.value || t.id === select.value) || {};
+        
+        if (currentInputs.length !== uniqueVars.length || !varsContainer.querySelector('.wa-media-upload-section') || varsContainer.getAttribute('data-active-template') !== select.value) {
+            varsContainer.setAttribute('data-active-template', select.value);
             let html = '';
 
-            // Add Media Upload section if needed
+            // 1. Add Media Upload section if needed
             if (needsImageHeader) {
                 html += `
                     <div class="wa-media-upload-section" style="margin-bottom: 20px;">
@@ -1540,16 +1543,15 @@ if (!window.whatsAppSender) {
                 this.renderBroadcastDetails(broadcastId, logId, meta, recipients);
             });
 
-        const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
-        const query = logsRef.orderByChild('broadcastId').equalTo(broadcastId);
-        const listener = query.on('value', snap => {
+        const logsRef = firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}`);
+        const listener = logsRef.on('value', snap => {
             recipients = snap.val() || {};
             this.renderBroadcastDetails(broadcastId, logId, meta, recipients);
         }, err => {
             console.error(err);
             AppDialog.toast('Error loading recipient logs.', 'error');
         });
-        this._logsDetailsUnsubscribe = () => query.off('value', listener);
+        this._logsDetailsUnsubscribe = () => logsRef.off('value', listener);
 
         if (refreshBtn) {
             setTimeout(() => {
@@ -1570,7 +1572,7 @@ if (!window.whatsAppSender) {
         if (!confirmed) return;
 
         try {
-            await firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${logKey}`).remove();
+            await firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}/${logKey}`).remove();
 
             const update = {
                 processedNumbersCount: firebase.firestore.FieldValue.increment(-1),
@@ -1606,16 +1608,25 @@ if (!window.whatsAppSender) {
     };
 
     window.whatsAppSender._getEffectiveStatus = function (m) {
+        const STATUS_RANK = { 'queued': 1, 'processing': 2, 'sent': 3, 'delivered': 4, 'read': 5, 'failed': 6, 'error': 6 };
+        
         let status = (m.status || 'unknown').toLowerCase();
         let error = m.error || (status === 'excluded' ? m.message : null);
+        let highestRank = STATUS_RANK[status] || 0;
 
-        if (status === 'processing' && m.statusHistory) {
-            const history = Object.values(m.statusHistory);
-            const failure = history.find(h => h.status === 'failed' || h.status === 'error');
-            if (failure) {
-                status = 'failed';
-                error = failure.error || 'Unknown error in history';
-            }
+        if (m.statusHistory) {
+            Object.values(m.statusHistory).forEach(h => {
+                const hStatus = (h.status || '').toLowerCase();
+                const hRank = STATUS_RANK[hStatus] || 0;
+                
+                if (hRank > highestRank) {
+                    highestRank = hRank;
+                    status = hStatus;
+                    if (hStatus === 'failed' || hStatus === 'error') {
+                        error = h.error || h.status_description || error || 'Delivery failed';
+                    }
+                }
+            });
         }
         return { status, error };
     };
@@ -1770,7 +1781,7 @@ if (!window.whatsAppSender) {
                                 <div class="wa-history-tab active" data-filter="delivered" onclick="window.whatsAppSender._filterReportRows('delivered')">Delivered</div>
                                 <div class="wa-history-tab active" data-filter="read" onclick="window.whatsAppSender._filterReportRows('read')">Read</div>
                                 <div class="wa-history-tab active" data-filter="failed" onclick="window.whatsAppSender._filterReportRows('failed')">Failed</div>
-                                <div class="wa-history-tab" data-filter="queued" onclick="window.whatsAppSender._filterReportRows('queued')">Queued</div>
+                                <div class="wa-history-tab active" data-filter="queued" onclick="window.whatsAppSender._filterReportRows('queued')">Queued</div>
                                 <div class="wa-history-tab" data-filter="excluded" onclick="window.whatsAppSender._filterReportRows('excluded')">Excluded</div>
                             </div>
                             
@@ -1990,8 +2001,8 @@ if (!window.whatsAppSender) {
         const currentDataIds = new Set();
 
         recipients.forEach(m => {
-            const cleanPhone = String(m.phone || m.recipientId || '').replace(/\D/g, '');
-            const rowId = `wa-card-${m.messageId ? m.messageId.replace(/[.#$/[\]]/g, "_") : cleanPhone}`;
+            const cleanPhone = String(m.key || m.phone || m.recipientId || '').replace(/\D/g, '');
+            const rowId = `wa-card-${cleanPhone}`;
             currentDataIds.add(rowId);
 
             const { status, error } = this._getEffectiveStatus(m);
@@ -2192,7 +2203,7 @@ if (!window.whatsAppSender) {
             const counts = { read: 0, delivered: 0, sent: 0, processing: 0, failed: 0, excluded: 0 };
 
             keys.forEach((key, index) => {
-                updates[`modules/whatsapp_sender/broadcast_logs/${key}`] = null;
+                updates[`modules/whatsapp_sender/broadcast_logs/${broadcastId}/${key}`] = null;
                 const card = selectedChecks[index].closest('.wa-recipient-card');
                 if (card) {
                     const status = card.getAttribute('data-status');
@@ -2265,14 +2276,7 @@ if (!window.whatsAppSender) {
             await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).delete();
 
             if (broadcastId) {
-                const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
-                const snap = await logsRef.orderByChild('broadcastId').equalTo(broadcastId).once('value');
-                const logs = snap.val();
-                if (logs) {
-                    const updates = {};
-                    Object.keys(logs).forEach(key => { updates[key] = null; });
-                    await logsRef.update(updates);
-                }
+                await firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}`).remove();
             }
 
             AppDialog.toast('History instance deleted successfully.', 'success');
@@ -2377,9 +2381,8 @@ if (!window.whatsAppSender) {
 
             const alreadySentTo = new Set();
             const failuresByError = {};
-            const logsRef = firebase.database().ref('modules/whatsapp_sender/broadcast_logs');
             const broadcastIds = matchingHistoryDocs.map(doc => doc.id);
-            const snapshots = await Promise.all(broadcastIds.map(bId => logsRef.orderByChild('broadcastId').equalTo(bId).once('value')));
+            const snapshots = await Promise.all(broadcastIds.map(bId => firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${bId}`).once('value')));
 
             const normalize = (phone) => {
                 let cleaned = String(phone || '').replace(/\D/g, '');

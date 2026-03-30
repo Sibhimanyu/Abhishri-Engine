@@ -1029,6 +1029,30 @@ if (!window.whatsAppSender) {
         this.renderListsView();
     };
 
+    window.whatsAppSender.saveTemplateNumericId = async function () {
+        const select = document.getElementById('wa-template-select');
+        const idInput = document.getElementById('wa-template-numeric-id');
+        if (!select || !select.value || !idInput) return;
+
+        const templateName = select.value;
+        const numericId = idInput.value.trim();
+
+        if (!numericId) {
+            AppDialog.toast('Please enter a valid numeric Message ID.', 'warn');
+            return;
+        }
+
+        try {
+            await firestore.collection('modules').doc('whatsapp_sender').collection('templates').doc(templateName).update({
+                message_id: numericId,
+                numericId: numericId
+            });
+            AppDialog.toast('Template ID saved successfully.', 'success');
+        } catch (e) {
+            AppDialog.toast('Failed to save ID: ' + e.message, 'error');
+        }
+    };
+
     window.whatsAppSender._getCurrentlySelectedRecipients = async function () {
         const val = document.getElementById('wa-broadcast-audience').value;
         let recipients = [];
@@ -1068,7 +1092,7 @@ if (!window.whatsAppSender) {
             const dupPhones = new Set();
 
             for (const bId of bIds) {
-                const snap = await firebase.database().ref('modules/whatsapp_sender/broadcast_logs').orderByChild('broadcastId').equalTo(bId).once('value');
+                const snap = await firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${bId}`).once('value');
                 Object.values(snap.val() || {}).forEach(log => {
                     const status = (log.status || '').toLowerCase();
                     if (log.status !== 'failed' && (log.recipientId || log.phone)) {
