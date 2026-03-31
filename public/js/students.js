@@ -213,7 +213,7 @@ window.studentDirectory = {
             <div class="report-page">
                 <div class="report-hero">
                     <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Attendance Marker</h2>
-                    <p style="color:var(--text-dim); font-size:1.1rem;">Mark daily presence for ${new Date(this.selectedDate).toLocaleDateString('en-US', {month: 'long', day: 'numeric', year: 'numeric'})}</p>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Mark daily presence for ${parseInputDate(this.selectedDate)}</p>
                 </div>
                 <div class="report-body">
                     <table class="console-table">
@@ -292,7 +292,8 @@ window.studentDirectory = {
                         <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="user"></i> 1. Student Information</div>
                         <div class="data-grid" style="grid-template-columns: 1fr 1fr; gap:20px;">
                             <div class="data-item"><div class="data-label">Full Name</div><div class="data-value">${s.name}</div></div>
-                            <div class="data-item"><div class="data-label">Date of Birth</div><div class="data-value">${s.dob || 'N/A'}</div></div>
+                            <div class="data-item"><div class="data-label">Date of Enrollment</div><div class="data-value">${parseInputDate(s.enrollmentDate)}</div></div>
+                            <div class="data-item"><div class="data-label">Date of Birth</div><div class="data-value">${parseInputDate(s.dob)}</div></div>
                             <div class="data-item"><div class="data-label">Age (as on June 1)</div><div class="data-value">${s.ageAsOfJune || 'N/A'}</div></div>
                             <div class="data-item"><div class="data-label">Gender</div><div class="data-value">${s.gender || 'N/A'}</div></div>
                             <div class="data-item"><div class="data-label">Aadhaar Number</div><div class="data-value">${s.aadhaarNo || 'N/A'}</div></div>
@@ -428,10 +429,10 @@ window.studentDirectory = {
         const logs = []; snap.forEach(doc => logs.push(doc.data()));
         logs.sort((a,b) => new Date(b.date) - new Date(a.date));
 
-        let logsHtml = ''; logs.slice(0, 15).forEach(d => {
-            logsHtml += `<div class="pulse-entry"><div class="pulse-date">${d.date}</div><div class="pulse-content"><div class="pulse-category">${d.category}</div><div class="pulse-notes">${d.notes}</div></div><div class="pulse-rating">${'★'.repeat(d.rating)}</div></div>`;
+        let logsHtml = ''; 
+        logs.slice(0, 15).forEach(d => {
+            logsHtml += `<div class="pulse-entry"><div class="pulse-date">${parseInputDate(d.date)}</div><div class="pulse-content"><div class="pulse-category">${d.category}</div><div class="pulse-notes">${d.notes}</div></div><div class="pulse-rating">${'★'.repeat(d.rating)}</div></div>`;
         });
-
         container.innerHTML = `
             <div class="performance-header"><h2>Growth Pulse: ${s.name}</h2><p>Development milestones and skill progression</p></div>
             <div class="pulse-timeline">${logsHtml || '<div class="empty-state"><i data-lucide="activity"></i><p>No activity logs found.</p></div>'}</div>`;
@@ -515,9 +516,10 @@ window.studentDirectory = {
                 </div>
 
                 <div class="form-section-title"><i data-lucide="book-open"></i> 6 & 7. Official & Background</div>
-                <div class="form-grid-2">
+                <div class="form-grid-3">
                     <div class="form-group"><label>Aadhaar No</label><input type="text" id="sf-aadhaar" class="form-control" value="${s.aadhaarNo || ''}"></div>
                     <div class="form-group"><label>Admission for Class</label><input type="text" id="sf-class" class="form-control" value="${s.admissionForClass || ''}"></div>
+                    <div class="form-group"><label>Date of Enrollment</label><input type="date" id="sf-enroll-date" class="form-control" value="${s.enrollmentDate || ''}"></div>
                 </div>
                 <div class="form-grid-3">
                     <div class="form-group"><label>Nationality</label><input type="text" id="sf-nat" class="form-control" value="${s.nationality || 'Indian'}"></div>
@@ -577,6 +579,7 @@ window.studentDirectory = {
                     sibling1Detail: document.getElementById('sf-s1-det').value,
                     aadhaarNo: document.getElementById('sf-aadhaar').value,
                     admissionForClass: document.getElementById('sf-class').value,
+                    enrollmentDate: document.getElementById('sf-enroll-date').value,
                     nationality: document.getElementById('sf-nat').value,
                     religion: document.getElementById('sf-relig').value,
                     caste: document.getElementById('sf-caste').value,
@@ -632,13 +635,12 @@ window.studentDirectory = {
     renderDailyReport(container) {
         let p = 0, a = 0, l = 0;
         Object.values(this.attendance).forEach(val => { if (val.status === 'present') p++; else if (val.status === 'absent') a++; else if (val.status === 'late') l++; });
-        const dateDisplay = new Date(this.selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
+        
         container.innerHTML = `
             <div class="report-page">
                 <div class="report-hero">
-                    <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Daily Student Attendance</h2>
-                    <p style="color:var(--text-dim); font-size:1.1rem;">Presence breakdown for ${dateDisplay}</p>
+                    <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Attendance Summary</h2>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Presence breakdown for ${parseInputDate(this.selectedDate)}</p>
                 </div>
                 <div class="report-body">
                     <div class="metrics-grid">
@@ -743,6 +745,7 @@ window.studentDirectory = {
             sibling1Detail: "4y • Abhishri Academy",
             aadhaarNo: "1234-5678-9012",
             admissionForClass: "Grade 2",
+            enrollmentDate: "2025-04-01",
             nationality: "Indian",
             religion: "Hindu",
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()

@@ -348,7 +348,8 @@ if (!window.whatsAppSender) {
             });
 
             if (!isSimulation && audienceVal.startsWith('list:')) {
-                firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(audienceVal.split(':')[1]).update({ used: true });
+                // Removed logic that marks list as used to allow re-use and deletion
+                // firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(audienceVal.split(':')[1]).update({ used: true });
             }
 
             AppDialog.toast('Broadcast initiated. Opening report...', 'success');

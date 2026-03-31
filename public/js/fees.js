@@ -16,8 +16,25 @@ window.feesManager = {
     dataLoaded: false,
     currentView: 'collections', // collections, overview, transactions, office_expenses, staff_imprest, salaries, plans, student_fees, audit_logs
     searchQuery: '',
+    sortField: 'name',
+    sortOrder: 'asc',
     logModuleFilter: 'all',
     logActionFilter: 'all',
+
+    setSort(field) {
+        if (this.sortField === field) {
+            this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.sortField = field;
+            this.sortOrder = 'asc';
+        }
+        this.render();
+    },
+
+    getSortIcon(field) {
+        if (this.sortField !== field) return '<i data-lucide="chevrons-up-down" style="width:14px; opacity:0.3; margin-left:4px; vertical-align:middle;"></i>';
+        return this.sortOrder === 'asc' ? '<i data-lucide="chevron-up" style="width:14px; margin-left:4px; vertical-align:middle;"></i>' : '<i data-lucide="chevron-down" style="width:14px; margin-left:4px; vertical-align:middle;"></i>';
+    },
 
     initialize() {
         this.subscribe();
@@ -325,29 +342,61 @@ window.feesManager = {
         if (!container || !this.dataLoaded) return;
 
         let html = `<table class="console-table"><thead><tr>
-            <th>Student Name</th>
-            <th>Monthly Rate</th>
-            <th>Expected to Date</th>
-            <th>Paid</th>
+            <th onclick="window.feesManager.setSort('name')" style="cursor:pointer;">Student Name ${this.getSortIcon('name')}</th>
+            <th onclick="window.feesManager.setSort('monthlyRate')" style="cursor:pointer;">Monthly Rate ${this.getSortIcon('monthlyRate')}</th>
+            <th onclick="window.feesManager.setSort('expected')" style="cursor:pointer;">Expected to Date ${this.getSortIcon('expected')}</th>
+            <th onclick="window.feesManager.setSort('paid')" style="cursor:pointer;">Paid ${this.getSortIcon('paid')}</th>
             <th>Current Status</th>
             <th>Actions</th>
         </tr></thead><tbody>`;
 
         const q = this.searchQuery;
+        const now = new Date();
+        const currentYear = now.getFullYear();
+
         const sortedIds = Object.keys(this.students).filter(id => {
             const s = this.students[id];
             return !q || (s.name || '').toLowerCase().includes(q);
-        }).sort((a, b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
+        }).sort((a, b) => {
+            const sA = this.students[a], fA = this.fees[a] || { total: 0, paid: 0, components: [], startMonth: 5 };
+            const sB = this.students[b], fB = this.fees[b] || { total: 0, paid: 0, components: [], startMonth: 5 };
 
-        const now = new Date();
-        const currentYear = now.getFullYear();
+            let valA, valB;
+            if (this.sortField === 'name') {
+                valA = (sA.name || '').toLowerCase();
+                valB = (sB.name || '').toLowerCase();
+            } else if (this.sortField === 'monthlyRate') {
+                valA = (fA.components || []).filter(c => c.frequency === 'monthly').reduce((acc, c) => acc + c.amount, 0);
+                valB = (fB.components || []).filter(c => c.frequency === 'monthly').reduce((acc, c) => acc + c.amount, 0);
+            } else if (this.sortField === 'expected') {
+                const startMonthA = fA.startMonth !== undefined ? fA.startMonth : 5;
+                const academicStartYearA = fA.academicStartYear !== undefined ? fA.academicStartYear : ((now.getMonth() < startMonthA) ? currentYear - 1 : currentYear);
+                const installmentsExpectedA = Math.min(fA.billingCycle || 12, Math.max(0, ((now.getFullYear() - academicStartYearA) * 12 + (now.getMonth() - startMonthA)) + 1));
+                const monthlyRateA = (fA.components || []).filter(c => c.frequency === 'monthly').reduce((acc, c) => acc + c.amount, 0);
+                const oneTimeTotalA = (fA.components || []).filter(c => c.frequency !== 'monthly').reduce((acc, c) => acc + c.amount, 0);
+                valA = oneTimeTotalA + (monthlyRateA * installmentsExpectedA);
+
+                const startMonthB = fB.startMonth !== undefined ? fB.startMonth : 5;
+                const academicStartYearB = fB.academicStartYear !== undefined ? fB.academicStartYear : ((now.getMonth() < startMonthB) ? currentYear - 1 : currentYear);
+                const installmentsExpectedB = Math.min(fB.billingCycle || 12, Math.max(0, ((now.getFullYear() - academicStartYearB) * 12 + (now.getMonth() - startMonthB)) + 1));
+                const monthlyRateB = (fB.components || []).filter(c => c.frequency === 'monthly').reduce((acc, c) => acc + c.amount, 0);
+                const oneTimeTotalB = (fB.components || []).filter(c => c.frequency !== 'monthly').reduce((acc, c) => acc + c.amount, 0);
+                valB = oneTimeTotalB + (monthlyRateB * installmentsExpectedB);
+            } else if (this.sortField === 'paid') {
+                valA = fA.paid || 0;
+                valB = fB.paid || 0;
+            }
+
+            if (this.sortOrder === 'asc') return valA > valB ? 1 : -1;
+            return valA < valB ? 1 : -1;
+        });
 
         sortedIds.forEach(id => {
             const s = this.students[id], f = this.fees[id] || { total: 0, paid: 0, components: [], startMonth: 5 };
             const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
             const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? currentYear - 1 : currentYear);
             const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
-            const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(0, monthsPassed + 2));
+            const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(1, monthsPassed + 1));
 
             const monthlyRate = (f.components || []).filter(c => c.frequency === 'monthly').reduce((a, b) => a + b.amount, 0);
             const oneTimeTotal = (f.components || []).filter(c => c.frequency !== 'monthly').reduce((a, b) => a + b.amount, 0);
@@ -375,19 +424,46 @@ window.feesManager = {
                     </button>
                 </td></tr>`;
         });
-        container.innerHTML = html + (sortedIds.length === 0 ? '<tr><td colspan="7">No results.</td></tr>' : '') + '</tbody></table>';
+        container.innerHTML = html + (sortedIds.length === 0 ? '<tr><td colspan="6">No results.</td></tr>' : '') + '</tbody></table>';
     },
 
     renderTransactions() {
         const container = document.getElementById('fees-content-transactions');
         if (!container) return;
         const isAdmin = (window.currentUserData || {}).isAdmin;
-        let html = `<table class="console-table"><thead><tr><th>Date</th><th>Student</th><th>Amount</th><th>Method</th><th>Actions</th></tr></thead><tbody>`;
+        let html = `<table class="console-table"><thead><tr>
+            <th onclick="window.feesManager.setSort('date')" style="cursor:pointer;">Date ${this.getSortIcon('date')}</th>
+            <th onclick="window.feesManager.setSort('student')" style="cursor:pointer;">Student ${this.getSortIcon('student')}</th>
+            <th onclick="window.feesManager.setSort('amount')" style="cursor:pointer;">Amount ${this.getSortIcon('amount')}</th>
+            <th onclick="window.feesManager.setSort('method')" style="cursor:pointer;">Method ${this.getSortIcon('method')}</th>
+            <th>Actions</th>
+        </tr></thead><tbody>`;
         const q = this.searchQuery;
         const filtered = this.transactions.filter(t => !q || (this.students[t.studentId]?.name || '').toLowerCase().includes(q));
+        
+        filtered.sort((a, b) => {
+            let valA, valB;
+            if (this.sortField === 'date') {
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
+            } else if (this.sortField === 'student') {
+                valA = (this.students[a.studentId]?.name || '').toLowerCase();
+                valB = (this.students[b.studentId]?.name || '').toLowerCase();
+            } else if (this.sortField === 'amount') {
+                valA = a.amount || 0;
+                valB = b.amount || 0;
+            } else if (this.sortField === 'method') {
+                valA = (a.method || '').toLowerCase();
+                valB = (b.method || '').toLowerCase();
+            }
+
+            if (this.sortOrder === 'asc') return valA > valB ? 1 : -1;
+            return valA < valB ? 1 : -1;
+        });
+
         filtered.forEach(t => {
             const s = this.students[t.studentId] || { name: 'Unknown' }, d = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
-            html += `<tr><td>${d.toLocaleDateString()}</td><td><strong>${s.name}</strong></td><td><strong style="color:var(--success)">₹${t.amount.toLocaleString('en-IN')}</strong></td><td>${t.method}</td>
+            html += `<tr><td>${formatDate(d)}</td><td><strong>${s.name}</strong></td><td><strong style="color:var(--success)">₹${t.amount.toLocaleString('en-IN')}</strong></td><td>${t.method}</td>
                 <td>
                     <div class="table-actions">
                         <button class="btn-icon" onclick="window.feesManager.printTransactionReceipt('${t.id}')" title="Print Invoice"><i data-lucide="printer"></i></button>
@@ -402,14 +478,41 @@ window.feesManager = {
         const container = document.getElementById('fees-content-office_expenses');
         if (!container) return;
         const filtered = this.expenses.filter(e => e.source === 'office' && e.type !== 'funding' && (!this.searchQuery || (e.details || '').toLowerCase().includes(this.searchQuery)));
-        let html = `<table class="console-table"><thead><tr><th>Date</th><th>Category</th><th>Details</th><th>Amount</th><th>Actions</th></tr></thead><tbody>`;
+        
+        filtered.sort((a, b) => {
+            let valA, valB;
+            if (this.sortField === 'date') {
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
+            } else if (this.sortField === 'category') {
+                valA = (a.category || '').toLowerCase();
+                valB = (b.category || '').toLowerCase();
+            } else if (this.sortField === 'details') {
+                valA = (a.details || '').toLowerCase();
+                valB = (b.details || '').toLowerCase();
+            } else if (this.sortField === 'amount') {
+                valA = a.amount || 0;
+                valB = b.amount || 0;
+            }
+
+            if (this.sortOrder === 'asc') return valA > valB ? 1 : -1;
+            return valA < valB ? 1 : -1;
+        });
+
+        let html = `<table class="console-table"><thead><tr>
+            <th onclick="window.feesManager.setSort('date')" style="cursor:pointer;">Date ${this.getSortIcon('date')}</th>
+            <th onclick="window.feesManager.setSort('category')" style="cursor:pointer;">Category ${this.getSortIcon('category')}</th>
+            <th onclick="window.feesManager.setSort('details')" style="cursor:pointer;">Details ${this.getSortIcon('details')}</th>
+            <th onclick="window.feesManager.setSort('amount')" style="cursor:pointer;">Amount ${this.getSortIcon('amount')}</th>
+            <th style="text-align:right">Actions</th>
+        </tr></thead><tbody>`;
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
         const currentUserEmail = auth.currentUser?.email?.toLowerCase();
 
         filtered.forEach(e => {
             const d = e.timestamp?.toDate ? e.timestamp.toDate() : new Date(e.timestamp);
-            html += `<tr><td>${d.toLocaleDateString()}</td><td><span class="badge">${e.category}</span></td><td>${e.details}</td><td><strong>₹${e.amount.toLocaleString('en-IN')}</strong></td>
+            html += `<tr><td>${formatDate(d)}</td><td><span class="badge">${e.category}</span></td><td>${e.details}</td><td><strong>₹${e.amount.toLocaleString('en-IN')}</strong></td>
                 <td style="text-align:right">
                     <div class="table-actions" style="justify-content:flex-end">
                         ${e.attachmentUrl ? `<button class="btn-icon" onclick="window.open('${e.attachmentUrl}', '_blank')" title="View Receipt"><i data-lucide="paperclip"></i></button>` : ''}
@@ -445,11 +548,42 @@ window.feesManager = {
 
         const q = this.searchQuery;
         const filtered = this.expenses.filter(e => e.source === 'staff' && (!q || (this.staff[e.staffId]?.name || '').toLowerCase().includes(q)));
-        let logHtml = `<div class="section-title"><span>Expenditure Requests</span></div><table class="console-table"><thead><tr><th>Date</th><th>Staff</th><th>Amount</th><th>Status</th><th>Details</th><th>Actions</th></tr></thead><tbody>`;
+        
+        filtered.sort((a, b) => {
+            let valA, valB;
+            if (this.sortField === 'date') {
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
+            } else if (this.sortField === 'staff') {
+                valA = (this.staff[a.staffId]?.name || '').toLowerCase();
+                valB = (this.staff[b.staffId]?.name || '').toLowerCase();
+            } else if (this.sortField === 'amount') {
+                valA = a.amount || 0;
+                valB = b.amount || 0;
+            } else if (this.sortField === 'status') {
+                valA = (a.status || '').toLowerCase();
+                valB = (b.status || '').toLowerCase();
+            } else if (this.sortField === 'details') {
+                valA = (a.details || '').toLowerCase();
+                valB = (b.details || '').toLowerCase();
+            }
+
+            if (this.sortOrder === 'asc') return valA > valB ? 1 : -1;
+            return valA < valB ? 1 : -1;
+        });
+
+        let logHtml = `<div class="section-title"><span>Expenditure Requests</span></div><table class="console-table"><thead><tr>
+            <th onclick="window.feesManager.setSort('date')" style="cursor:pointer;">Date ${this.getSortIcon('date')}</th>
+            <th onclick="window.feesManager.setSort('staff')" style="cursor:pointer;">Staff ${this.getSortIcon('staff')}</th>
+            <th onclick="window.feesManager.setSort('amount')" style="cursor:pointer;">Amount ${this.getSortIcon('amount')}</th>
+            <th onclick="window.feesManager.setSort('status')" style="cursor:pointer;">Status ${this.getSortIcon('status')}</th>
+            <th onclick="window.feesManager.setSort('details')" style="cursor:pointer;">Details ${this.getSortIcon('details')}</th>
+            <th>Actions</th>
+        </tr></thead><tbody>`;
         filtered.forEach(e => {
             const st = this.staff[e.staffId] || { name: 'Unknown' }, d = e.timestamp?.toDate ? e.timestamp.toDate() : new Date(e.timestamp);
             const sClass = e.status === 'approved' ? 'status-success' : (e.status === 'rejected' ? 'status-danger' : 'status-warning');
-            logHtml += `<tr><td>${d.toLocaleDateString()}</td><td><strong>${st.name}</strong></td><td><strong>₹${e.amount.toLocaleString('en-IN')}</strong></td>
+            logHtml += `<tr><td>${formatDate(d)}</td><td><strong>${st.name}</strong></td><td><strong>₹${e.amount.toLocaleString('en-IN')}</strong></td>
                 <td><span class="status-pill ${sClass}">${e.status?.toUpperCase() || 'PENDING'}</span></td><td>${e.details}</td>
                 <td><div class="table-actions">
                     ${e.attachmentUrl ? `<button class="btn-icon" onclick="window.open('${e.attachmentUrl}', '_blank')" title="View Receipt"><i data-lucide="image"></i></button>` : ''}
@@ -465,7 +599,34 @@ window.feesManager = {
         if (!container) return;
         const isAdmin = (window.currentUserData || {}).isAdmin;
         const filtered = this.salaries.filter(s => !this.searchQuery || (this.staff[s.staffId]?.name || '').toLowerCase().includes(this.searchQuery));
-        let html = `<table class="console-table"><thead><tr><th>Month</th><th>Staff Member</th><th>Base</th><th>Net Payout</th><th>Actions</th></tr></thead><tbody>`;
+        
+        filtered.sort((a, b) => {
+            let valA, valB;
+            if (this.sortField === 'month') {
+                valA = (a.month || '').toLowerCase();
+                valB = (b.month || '').toLowerCase();
+            } else if (this.sortField === 'staff') {
+                valA = (this.staff[a.staffId]?.name || '').toLowerCase();
+                valB = (this.staff[b.staffId]?.name || '').toLowerCase();
+            } else if (this.sortField === 'baseSalary') {
+                valA = a.baseSalary || 0;
+                valB = b.baseSalary || 0;
+            } else if (this.sortField === 'netSalary') {
+                valA = a.netSalary || 0;
+                valB = b.netSalary || 0;
+            }
+
+            if (this.sortOrder === 'asc') return valA > valB ? 1 : -1;
+            return valA < valB ? 1 : -1;
+        });
+
+        let html = `<table class="console-table"><thead><tr>
+            <th onclick="window.feesManager.setSort('month')" style="cursor:pointer;">Month ${this.getSortIcon('month')}</th>
+            <th onclick="window.feesManager.setSort('staff')" style="cursor:pointer;">Staff Member ${this.getSortIcon('staff')}</th>
+            <th onclick="window.feesManager.setSort('baseSalary')" style="cursor:pointer;">Base ${this.getSortIcon('baseSalary')}</th>
+            <th onclick="window.feesManager.setSort('netSalary')" style="cursor:pointer;">Net Payout ${this.getSortIcon('netSalary')}</th>
+            <th>Actions</th>
+        </tr></thead><tbody>`;
         filtered.forEach(s => {
             const st = this.staff[s.staffId] || { name: 'Unknown' };
             html += `<tr><td><strong>${s.month}</strong></td><td>${st.name}</td><td>₹${s.baseSalary.toLocaleString('en-IN')}</td><td><strong style="color:var(--success)">₹${s.netSalary.toLocaleString('en-IN')}</strong></td>
@@ -551,7 +712,8 @@ window.feesManager = {
         const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
         const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
         const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
-        const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(0, monthsPassed + 2));
+        // Identify how many installments are officially due (Prepaid: always include the upcoming month)
+        const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(1, monthsPassed + 1));
 
         const monthlyTotal = (f.components || []).filter(c => c.frequency === 'monthly').reduce((a, b) => a + b.amount, 0);
         const oneTimeTotal = (f.components || []).filter(c => c.frequency !== 'monthly').reduce((a, b) => a + b.amount, 0);
@@ -562,33 +724,44 @@ window.feesManager = {
         // Allocation-based status tracking
         const compPayments = f.componentPayments || {};
 
-        // Check coverage for a specific month
-        const getMonthStatus = (monthIdx) => {
-            const mName = this.MONTHS[monthIdx];
-            const monthlyComps = (f.components || []).filter(c => c.frequency === 'monthly');
-            if (monthlyComps.length === 0) return true;
-
-            let monthTotalDue = 0;
-            let monthTotalPaid = 0;
-
-            monthlyComps.forEach(c => {
-                const key = `${c.name}-${mName}`;
-                monthTotalDue += c.amount;
-                monthTotalPaid += (compPayments[key] || 0);
+        // 1. Map all components into a chronological list of requirements
+        const allRequirements = [];
+        // Positive One-time fees
+        components.filter(c => c.frequency !== 'monthly' && c.amount > 0).forEach(c => {
+            allRequirements.push({ key: c.name, name: c.name, amount: c.amount, frequency: 'onetime' });
+        });
+        // Monthly fees
+        for (let i = 0; i < (f.billingCycle || 12); i++) {
+            const mIdx = (startMonth + i) % 12;
+            const mName = this.MONTHS[mIdx];
+            components.filter(c => c.frequency === 'monthly').forEach(c => {
+                allRequirements.push({ 
+                    key: `${c.name}-${mName}`, 
+                    name: c.name, 
+                    amount: c.amount, 
+                    frequency: 'monthly', 
+                    month: mName, 
+                    relativeIdx: i 
+                });
             });
+        }
 
-            // Fallback for legacy data (if no breakdown exists, use the old pool logic)
-            if (Object.keys(compPayments).length === 0 && paid > 0) {
-                const amountForMonths = Math.max(0, paid - oneTimeTotal);
-                const fullMonthsPaid = monthlyTotal > 0 ? Math.floor(amountForMonths / monthlyTotal) : (paid >= oneTimeTotal ? 12 : 0);
+        // 2. Distribute Credits (negative one-time fees / discounts) chronologically
+        const totalDiscount = components.filter(c => c.frequency !== 'monthly' && c.amount < 0)
+                                        .reduce((acc, c) => acc + Math.abs(c.amount), 0);
+        let remainingDiscount = totalDiscount;
+        const effectiveRequirements = allRequirements.map(req => {
+            const deduction = Math.min(req.amount, remainingDiscount);
+            remainingDiscount -= deduction;
+            return { ...req, effectiveAmount: req.amount - deduction };
+        });
 
-                // Determine which index this month has in the cycle
-                let cycleIdx = -1;
-                for (let i = 0; i < 12; i++) { if (((startMonth + i) % 12) === monthIdx) cycleIdx = i; }
-                return cycleIdx < fullMonthsPaid;
-            }
-
-            return monthTotalPaid >= monthTotalDue;
+        // 3. Status Helpers
+        const getMonthStatus = (mIdx) => {
+            const mName = this.MONTHS[mIdx];
+            const reqs = effectiveRequirements.filter(r => r.month === mName);
+            if (reqs.length === 0) return true;
+            return reqs.every(r => (compPayments[r.key] || 0) >= r.effectiveAmount);
         };
 
         const months = [];
@@ -599,28 +772,50 @@ window.feesManager = {
             monthStatuses.push(getMonthStatus(mIdx));
         }
 
+        // Identify current target month for status display
         let firstUnpaidRelativeIdx = f.billingCycle || 12;
         for (let i = 0; i < (f.billingCycle || 12); i++) {
             const mIdx = (startMonth + i) % 12;
-            if (!getMonthStatus(mIdx)) {
-                firstUnpaidRelativeIdx = i;
-                break;
-            }
+            if (!getMonthStatus(mIdx)) { firstUnpaidRelativeIdx = i; break; }
         }
-
         const maxAllowedRelativeIdx = Math.min((f.billingCycle || 12) - 1, Math.max(0, installmentsExpected - 1));
         const targetRelativeIdx = Math.min(firstUnpaidRelativeIdx, maxAllowedRelativeIdx);
-
         const targetMonthIdx = (startMonth + targetRelativeIdx) % 12;
         const isThisMonthPaid = getMonthStatus(targetMonthIdx);
         const thisMonthName = this.MONTHS[targetMonthIdx];
+
+        // 4. Financial Metrics: Expected To Date vs Realized To Date
+        const totalEffectiveExpectedToDate = effectiveRequirements
+            .filter(r => r.frequency !== 'monthly' || r.relativeIdx < installmentsExpected)
+            .reduce((acc, r) => acc + r.effectiveAmount, 0);
         
-        const currentDuesToDisplay = isThisMonthPaid ? 0 : Math.max(arrears, oneTimeTotal + (targetRelativeIdx + 1) * monthlyTotal - paid);
+        const currentDuesToDisplay = Math.max(0, totalEffectiveExpectedToDate - (f.paid || 0));
+
+        // Debug Log for UI verification (Visible on hover in console)
+        const debugDues = `Exp: ${totalEffectiveExpectedToDate}, Paid: ${f.paid || 0}, Inst: ${installmentsExpected}, Start: ${academicStartYear}`;
+
         const isConfigured = (f.components && f.components.length > 0) || f.total > 0;
         const displayStatusName = isConfigured ? `${thisMonthName} Status` : 'Setup Status';
         const displayStatusValue = isConfigured ? (isThisMonthPaid ? 'PAID' : 'PENDING') : 'MISSING';
         const displayStatusColor = isConfigured ? (isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)') : 'var(--text-dim)';
         const displayStatusBorder = isConfigured ? (isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)') : 'rgba(255,255,255,0.1)';
+
+        const netBalanceToDate = (f.paid || 0) - totalEffectiveExpectedToDate;
+        let standingStatus = 'UNCONFIGURED';
+        let standingColor = 'var(--text-main)';
+
+        if (isConfigured) {
+            if (netBalanceToDate > 0 && currentDuesToDisplay === 0) {
+                standingStatus = `AHEAD: ₹${netBalanceToDate.toLocaleString('en-IN')}`;
+                standingColor = 'var(--success)';
+            } else if (currentDuesToDisplay > 0) {
+                standingStatus = `DUE: ₹${currentDuesToDisplay.toLocaleString('en-IN')}`;
+                standingColor = 'var(--accent-primary)';
+            } else {
+                standingStatus = 'CLEAR';
+                standingColor = 'var(--success)';
+            }
+        }
 
         let html = `
             <!-- Header Banner -->
@@ -637,8 +832,8 @@ window.feesManager = {
                 <div style="display:flex; gap:16px; align-items:center;">
                     <div style="text-align:right; margin-right: 16px;">
                         <div style="font-size:0.65rem; font-weight:800; opacity:0.6; text-transform:uppercase; margin-bottom:4px;">Standing</div>
-                        <div style="font-weight:900; color:${!isConfigured ? 'var(--text-main)' : (arrears <= 0 ? 'var(--success)' : 'var(--accent-primary)')}; font-size:1.1rem;">
-                            ${!isConfigured ? 'UNCONFIGURED' : (arrears <= 0 ? 'CLEAR' : 'OVERDUE: ₹' + arrears.toLocaleString('en-IN'))}
+                        <div style="font-weight:900; color:${standingColor}; font-size:1.1rem;">
+                            ${standingStatus}
                         </div>
                     </div>
                     <button class="btn btn-primary" style="height:48px; padding:0 24px; border-radius:12px; font-weight:800; display:flex; align-items:center; gap:8px; box-shadow: 0 4px 12px rgba(241, 97, 91, 0.2);" onclick="window.feesManager.showPaymentForm('${id}')">
@@ -661,7 +856,7 @@ window.feesManager = {
                     <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Annual Remaining</div>
                     <div style="font-size:1.8rem; font-weight:900; color:var(--text-main);">₹${Math.max(0, (f.total || 0) - paid).toLocaleString('en-IN')}</div>
                 </div>
-                <div class="console-card" style="padding:24px; border-radius:16px;">
+                <div class="console-card" style="padding:24px; border-radius:16px;" title="${debugDues}">
                     <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Current Dues</div>
                     <div style="font-size:1.8rem; font-weight:900; color:${currentDuesToDisplay > 0 ? 'var(--accent-primary)' : 'var(--success)'};">₹${Math.max(0, currentDuesToDisplay).toLocaleString('en-IN')}</div>
                 </div>
@@ -804,7 +999,7 @@ window.feesManager = {
                 return `
                                         <tr>
                                             <td style="padding:16px 24px;">
-                                                <div style="font-weight:700;">${d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                                                <div style="font-weight:700;">${formatDate(d)}</div>
                                                 <div style="font-size:0.65rem; opacity:0.5; margin-top:4px;">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                                             </td>
                                             <td>
@@ -913,9 +1108,37 @@ window.feesManager = {
         const today = new Date().toISOString().split('T')[0];
         const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
 
+        // Calculate effective dues (pre-applying credits)
+        const credits = (f.components || []).filter(c => c.frequency !== 'monthly' && c.amount < 0).map(c => Math.abs(c.amount));
+        let availableCredit = credits.reduce((a, b) => a + b, 0);
+
+        const getEffectiveAmount = (baseAmount) => {
+            if (baseAmount <= 0) return baseAmount;
+            let currentAmount = baseAmount;
+            if (availableCredit > 0) {
+                const deduction = Math.min(currentAmount, availableCredit);
+                currentAmount -= deduction;
+                availableCredit -= deduction;
+            }
+            return currentAmount;
+        };
+
+        const effective = [];
+        // 1. One-time positive
+        (f.components || []).filter(c => c.frequency !== 'monthly' && c.amount > 0).forEach(c => {
+            effective.push({ ...c, amount: getEffectiveAmount(c.amount) });
+        });
+        // 2. Monthly (ordered)
+        for (let i = 0; i < (f.billingCycle || 12); i++) {
+            const mIdx = (startMonth + i) % 12;
+            const mName = this.MONTHS[mIdx];
+            (f.components || []).filter(c => c.frequency === 'monthly').forEach(c => {
+                effective.push({ ...c, amount: getEffectiveAmount(c.amount), month: mName });
+            });
+        }
+
         // Calculate remaining for each component to suggest allocations
         const paidSoFar = f.componentPayments || {};
-        const components = f.components || [];
 
         const renderAllocationRow = (name, total, paid, key, monthIdx = null) => {
             const due = Math.max(0, total - paid);
@@ -933,20 +1156,12 @@ window.feesManager = {
 
         let allocationHtml = '<div style="margin-top:20px; border-top:1px solid var(--card-border); padding-top:20px;"><label style="font-weight:800; font-size:0.7rem; color:var(--accent-secondary); text-transform:uppercase; display:block; margin-bottom:12px;">Payment Allocation</label><div id="allocation-container" style="max-height:300px; overflow-y:auto; padding-right:8px;">';
 
-        // One-time components
-        components.filter(c => c.frequency !== 'monthly').forEach(c => {
-            allocationHtml += renderAllocationRow(c.name, c.amount, paidSoFar[c.name] || 0, c.name);
+        effective.forEach(c => {
+            const key = c.frequency === 'monthly' ? `${c.name}-${c.month}` : c.name;
+            const mIdx = c.frequency === 'monthly' ? this.MONTHS.indexOf(c.month) : null;
+            allocationHtml += renderAllocationRow(c.name, c.amount, paidSoFar[key] || 0, key, mIdx);
         });
 
-        // Monthly components (ordered by month)
-        for (let i = 0; i < (f.billingCycle || 12); i++) {
-            const mIdx = (startMonth + i) % 12;
-            const mName = this.MONTHS[mIdx];
-            components.filter(c => c.frequency === 'monthly').forEach(c => {
-                const key = `${c.name}-${mName}`;
-                allocationHtml += renderAllocationRow(c.name, c.amount, paidSoFar[key] || 0, key, mIdx);
-            });
-        }
         allocationHtml += '</div><div id="alloc-remaining" style="font-size:0.75rem; margin-top:10px; text-align:right; font-weight:700;">Unallocated: <span style="color:var(--accent-primary);">₹0</span></div></div>';
 
         AppDialog.confirm({
@@ -954,7 +1169,7 @@ window.feesManager = {
             content: `
                 <div class="form-group"><label>Transaction Date</label><input type="date" id="pf-date" class="form-control" value="${today}"></div>
                 <div class="form-group" style="margin-top:15px;"><label>Amount Received (₹)</label><input type="number" id="pf-amount" class="form-control" placeholder="Total payment amount"></div>
-                <div class="form-group" style="margin-top:15px;"><label>Method</label><select id="pf-method" class="form-control"><option>Cash</option><option>GPay/UPI</option><option>Bank Transfer</option></select></div>
+                <div class="form-group" style="margin-top:15px;"><label>Method</label><select id="pf-method" class="form-control"><option>Cash</option><option>GPay/UPI</option><option>Bank Transfer</option><option>Card Payment</option></select></div>
                 <div class="form-group" style="margin-top:15px;"><label>Reference</label><input type="text" id="pf-ref" class="form-control" placeholder="TXN ID / Note"></div>
                 ${allocationHtml}`,
             onOpen: (overlay) => {
@@ -1172,7 +1387,7 @@ window.feesManager = {
         const win = window.open('', '_blank');
         win.document.write(`<html><head><title>Slip - ${st.name}</title><style>body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; } .header { border-bottom: 2px solid #F1615B; padding-bottom: 20px; } .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin: 30px 0; } .payout-table { width: 100%; border-collapse: collapse; } .payout-table td { padding: 12px; border-bottom: 1px solid #eee; } .net { font-size: 24px; font-weight: 900; color: #22c55e; }</style></head><body>
             <div class="header"><h1>ABHISHRI ACADEMY</h1><p>Salary Pay Slip - ${s.month}</p></div>
-            <div class="grid"><div><strong>Name:</strong> ${st.name}<br><strong>Role:</strong> ${st.designation || 'N/A'}</div><div><strong>Date:</strong> ${new Date(s.timestamp?.toDate ? s.timestamp.toDate() : s.timestamp).toLocaleDateString()}</div></div>
+            <div class="grid"><div><strong>Name:</strong> ${st.name}<br><strong>Role:</strong> ${st.designation || 'N/A'}</div><div><strong>Date:</strong> ${formatDate(s.timestamp)}</div></div>
             <table class="payout-table"><tr><td>Base Salary</td><td style="text-align:right">₹${s.baseSalary.toLocaleString('en-IN')}</td></tr><tr><td>Bonus/Reimb</td><td style="text-align:right">₹${s.bonus.toLocaleString('en-IN')}</td></tr><tr><td>Deductions</td><td style="text-align:right">-₹${s.deductions.toLocaleString('en-IN')}</td></tr><tr style="border-top: 2px solid #333;"><td style="font-weight:700;">NET DISBURSED</td><td style="text-align:right" class="net">₹${s.netSalary.toLocaleString('en-IN')}</td></tr></table><script>window.onload=()=>{window.print(); setTimeout(()=>window.close(),500);};</script></body></html>`);
         win.document.close();
     },
@@ -1180,20 +1395,23 @@ window.feesManager = {
     printTransactionReceipt(id) {
         const t = this.transactions.find(x => x.id === id); if (!t) return;
         const s = this.students[t.studentId] || { name: 'Student' };
-        
+
         // Audit Logging
-        window.AppLogger.log('DOWNLOAD_RECEIPT', 'fees_accounting', { 
-            studentName: s.name, 
+        window.AppLogger.log('DOWNLOAD_RECEIPT', 'fees_accounting', {
+            studentName: s.name,
             transactionId: id,
-            amount: t.amount 
+            amount: t.amount
         }, t.studentId);
 
         const f = this.fees[t.studentId] || { total: 0, paid: 0 };
+        const startYear = f.academicStartYear || (new Date().getMonth() < (f.startMonth || 5) ? new Date().getFullYear() - 1 : new Date().getFullYear());
+        const academicYear = `${startYear}-${(startYear + 1).toString().slice(-2)}`;
+        const planName = f.planId && this.plans[f.planId] ? this.plans[f.planId].name : 'General / Custom Plan';
         const win = window.open('', '_blank');
-        
-        const date = new Date(t.timestamp?.toDate ? t.timestamp.toDate() : t.timestamp).toLocaleDateString('en-IN', {
-            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-        });
+
+        const ts = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
+        const date = formatDate(ts);
+        const time = ts.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
         const breakdownHtml = t.breakdown ? Object.entries(t.breakdown).map(([key, amount]) => {
             const [name, month] = key.split('-');
@@ -1252,10 +1470,10 @@ window.feesManager = {
                 <div class="header">
                     <div>
                         <h1 class="inst-name">ABHISHRI ACADEMY</h1>
-                        <div class="receipt-title">Official Fee Receipt</div>
+                        <div class="receipt-title">Fee Receipt</div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-weight: 800; font-size: 1.1rem;">Academic Year 2025-26</div>
+                        <div style="font-weight: 800; font-size: 1.1rem;">Academic Year ${academicYear}</div>
                         <div style="color: #000; font-size: 0.85rem; margin-top: 4px;">Receipt No: ${id.slice(-8).toUpperCase()}</div>
                     </div>
                 </div>
@@ -1266,16 +1484,14 @@ window.feesManager = {
                         <div class="info-content">
                             <strong style="font-size: 1.2rem;">${s.name}</strong><br>
                             <div style="margin-top: 6px; color: #333; font-size: 0.85rem;">
-                                ${s.fatherName ? `<strong>Father:</strong> ${s.fatherName} (${s.fatherPhone || 'N/A'})<br>` : ''}
-                                ${s.motherName ? `<strong>Mother:</strong> ${s.motherName} (${s.motherPhone || 'N/A'})` : ''}
-                                ${!s.fatherName && !s.motherName ? '<strong>Parent:</strong> N/A' : ''}
+                                <strong>Fee Structure:</strong> ${planName}<br>
                             </div>
                         </div>
                     </div>
                     <div class="info-box" style="text-align: right;">
                         <h3>Transaction Details</h3>
                         <div class="info-content">
-                            <span style="color: #000;">Date & Time:</span> ${date}<br>
+                            <span style="color: #000;">Date:</span> ${date}<br>
                             <span style="color: #000;">Payment Mode:</span> <strong>${(t.method || 'CASH').toUpperCase()}</strong><br>
                             ${t.reference ? `<span style="color: #000;">Reference:</span> ${t.reference}` : ''}
                         </div>
@@ -1305,7 +1521,7 @@ window.feesManager = {
                         </div>
                         <div class="signature-box">
                             <div style="border: 1px dashed #000; width: 150px; height: 80px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.6rem; text-transform: uppercase; color: #888; border-radius: 8px;">
-                                School Stamp & Seal
+                                School Seal
                             </div>
                         </div>
                     </div>
@@ -1341,9 +1557,12 @@ window.feesManager = {
 
     printStudentInvoice(id) {
         const s = this.students[id] || { name: 'Student' }, f = this.fees[id] || { total: 0, paid: 0, components: [], billingCycle: 12 };
+        const startYear = f.academicStartYear || (new Date().getMonth() < (f.startMonth || 5) ? new Date().getFullYear() - 1 : new Date().getFullYear());
+        const academicYear = `${startYear}-${(startYear + 1).toString().slice(-2)}`;
+        const planName = f.planId && this.plans[f.planId] ? this.plans[f.planId].name : 'General / Custom Plan';
 
         // Audit Logging
-        window.AppLogger.log('DOWNLOAD_INVOICE', 'fees_accounting', { 
+        window.AppLogger.log('DOWNLOAD_INVOICE', 'fees_accounting', {
             studentName: s.name,
             totalDue: (f.total || 0) - (f.paid || 0)
         }, id);
@@ -1403,8 +1622,8 @@ window.feesManager = {
                         <div class="statement-title">Fee Statement / Invoice</div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-weight: bold;">Academic Year 2025 - 2026</div>
-                        <div>Date: ${new Date().toLocaleDateString('en-IN')}</div>
+                        <div style="font-weight: bold;">Academic Year ${academicYear}</div>
+                        <div>Date: ${formatDate(new Date())}</div>
                         <div style="font-size: 0.7rem;">INV-F-${id.slice(-6).toUpperCase()}</div>
                     </div>
                 </div>
@@ -1415,9 +1634,8 @@ window.feesManager = {
                         <div class="info-content">
                             <strong style="font-size: 1.1rem;">${s.name}</strong><br>
                             <div style="font-size: 0.85rem; color: #333; margin-top: 6px;">
-                                ${s.fatherName ? `Father: ${s.fatherName} (${s.fatherPhone || 'N/A'})<br>` : ''}
-                                ${s.motherName ? `Mother: ${s.motherName} (${s.motherPhone || 'N/A'})` : ''}
-                                ${!s.fatherName && !s.motherName ? 'Parent: N/A' : ''}
+                                <strong>Fee Structure:</strong> ${planName}<br>
+                                <strong>Admission for Class:</strong> ${s.admissionForClass || 'N/A'}
                             </div>
                         </div>
                     </div>
@@ -1514,6 +1732,30 @@ window.feesManager = {
             return searchStr.includes(q);
         });
 
+        filtered.sort((a, b) => {
+            let valA, valB;
+            if (this.sortField === 'timestamp') {
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
+            } else if (this.sortField === 'action') {
+                valA = (a.action || '').toLowerCase();
+                valB = (b.action || '').toLowerCase();
+            } else if (this.sortField === 'module') {
+                valA = (a.module || '').toLowerCase();
+                valB = (b.module || '').toLowerCase();
+            } else if (this.sortField === 'performedBy') {
+                valA = (a.performedBy || '').toLowerCase();
+                valB = (b.performedBy || '').toLowerCase();
+            } else {
+                // Default fallback to timestamp if not specified
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
+            }
+
+            if (this.sortOrder === 'asc') return valA > valB ? 1 : -1;
+            return valA < valB ? 1 : -1;
+        });
+
         let html = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:0 8px;">
                 <div style="font-size:0.9rem; color:var(--text-dim); font-weight:600;">
@@ -1525,10 +1767,10 @@ window.feesManager = {
                 <table class="console-table">
                     <thead>
                         <tr>
-                            <th>Time</th>
-                            <th>Action</th>
-                            <th>Module</th>
-                            <th>Performed By</th>
+                            <th onclick="window.feesManager.setSort('timestamp')" style="cursor:pointer;">Time ${this.getSortIcon('timestamp')}</th>
+                            <th onclick="window.feesManager.setSort('action')" style="cursor:pointer;">Action ${this.getSortIcon('action')}</th>
+                            <th onclick="window.feesManager.setSort('module')" style="cursor:pointer;">Module ${this.getSortIcon('module')}</th>
+                            <th onclick="window.feesManager.setSort('performedBy')" style="cursor:pointer;">Performed By ${this.getSortIcon('performedBy')}</th>
                             <th>Details</th>
                         </tr>
                     </thead>
@@ -1537,7 +1779,7 @@ window.feesManager = {
         filtered.forEach(log => {
             const date = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
             const timeStr = date.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-            
+
             // Format details for readability
             let detailsHtml = '';
             if (log.details) {
@@ -1547,8 +1789,8 @@ window.feesManager = {
                 }).join('');
             }
 
-            const actionClass = log.action.includes('DELETE') || log.action.includes('REVERSE') ? 'badge-danger' : 
-                              log.action.includes('ADD') || log.action.includes('COLLECT') || log.action.includes('APPROVE') ? 'badge-success' : 'badge-outline';
+            const actionClass = log.action.includes('DELETE') || log.action.includes('REVERSE') ? 'badge-danger' :
+                log.action.includes('ADD') || log.action.includes('COLLECT') || log.action.includes('APPROVE') ? 'badge-success' : 'badge-outline';
 
             html += `
                 <tr>

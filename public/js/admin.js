@@ -189,8 +189,7 @@ window.adminPanel = {
                     <div style="display:flex; justify-content:space-between; width:100%; align-items:center; margin-bottom:8px;">
                         <div>
                             <div style="font-weight: 600; font-size: 1rem;">${email}</div>
-                            <div style="font-size: 0.85rem; color: var(--text-dim);">Added ${data.addedAt?.toDate ? data.addedAt.toDate().toLocaleDateString() : 'N/A'}</div>
-                        </div>
+                            <div style="font-size: 0.85rem; color: var(--text-dim);">Added ${formatDate(data.addedAt)}</div>                        </div>
                         <div style="display:flex; gap:8px;">
                             <button class="btn-icon" onclick="window.adminPanel.showEditUserModal('${email}')"><i data-lucide="edit-3"></i></button>
                             ${email !== 'sibhi.gv@gmail.com' ? `<button class="btn-icon text-danger" onclick="window.adminPanel.removeAllowedUser('${email}')"><i data-lucide="trash-2"></i></button>` : ''}

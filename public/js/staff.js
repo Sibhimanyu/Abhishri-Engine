@@ -329,7 +329,7 @@ window.staffDirectory = {
             <div class="report-page">
                 <div class="report-hero">
                     <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Staff Attendance Marker</h2>
-                    <p style="color:var(--text-dim); font-size:1.1rem;">Mark daily presence for ${new Date().toLocaleDateString('en-US', {month: 'long', day: 'numeric', year: 'numeric'})}</p>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Mark daily presence for ${parseInputDate(new Date().toISOString().split('T')[0])}</p>
                 </div>
                 <div class="report-body">
                     <table class="console-table">
@@ -383,13 +383,12 @@ window.staffDirectory = {
     renderDailyReport(container) {
         let p = 0, a = 0, l = 0;
         Object.values(this.attendance).forEach(val => { if (val.status === 'present') p++; else if (val.status === 'absent') a++; else if (val.status === 'late') l++; });
-        const dateDisplay = new Date(this.selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
+        
         container.innerHTML = `
             <div class="report-page">
                 <div class="report-hero">
                     <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Daily Staff Attendance</h2>
-                    <p style="color:var(--text-dim); font-size:1.1rem;">Detailed breakdown for ${dateDisplay}</p>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Detailed breakdown for ${parseInputDate(this.selectedDate)}</p>
                 </div>
                 <div class="report-body">
                     <div class="metrics-grid">
@@ -460,7 +459,7 @@ window.staffDirectory = {
         const snap = await db.ref('modules/staff_directory/attendance').orderByKey().startAt(monthKey).endAt(`${monthKey}-\uf8ff`).once('value');
         const monthData = snap.val() || {};
 
-        const monthDisplay = new Date(this.selectedDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const monthDisplay = new Date(this.selectedDate).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
         container.innerHTML = `
             <div class="report-page">
                 <div class="report-hero">
