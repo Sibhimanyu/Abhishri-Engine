@@ -280,7 +280,8 @@ window.studentDirectory = {
                             <h1 style="font-size: 3rem; margin-bottom: 12px; font-weight:900; letter-spacing:-1px;">${s.name}</h1>
                             <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
                                 <span style="background:rgba(255,255,255,0.05); padding:8px 20px; border-radius:12px; font-size:0.9rem; font-family:monospace; color:var(--text-dim);">UID: ${id.slice(-8).toUpperCase()}</span>
-                                <span style="color:var(--success); font-weight:700; font-size:0.9rem;"><i data-lucide="shield-check" style="width:16px; height:16px; vertical-align:middle; margin-right:6px;"></i> VERIFIED ADMISSION</span>
+                                <span style="background:rgba(255,255,255,0.05); padding:8px 20px; border-radius:12px; font-size:0.9rem; font-family:monospace; color:var(--text-dim);">APP NO: ${s.appNumber || 'N/A'}</span>
+                                <span style="color:var(--success); font-weight:700; font-size:0.9rem;"><i data-lucide="shield-check" style="width:16px; height:16px; vertical-align:middle; margin-right:6px;"></i> VERIFIED BY: ${s.verifiedBy || 'System'}</span>
                             </div>
                         </div>
                     </div>
@@ -298,6 +299,7 @@ window.studentDirectory = {
                             <div class="data-item"><div class="data-label">Gender</div><div class="data-value">${s.gender || 'N/A'}</div></div>
                             <div class="data-item"><div class="data-label">Aadhaar Number</div><div class="data-value">${s.aadhaarNo || 'N/A'}</div></div>
                             <div class="data-item"><div class="data-label">Nationality</div><div class="data-value">${s.nationality || 'N/A'}</div></div>
+                            <div class="data-item"><div class="data-label">Admission Class</div><div class="data-value" style="color:var(--accent-secondary); font-weight:800;">${s.admissionForClass || 'N/A'}</div></div>
                         </div>
                         <div class="data-item" style="margin-top:20px;"><div class="data-label">Residential Address</div><div class="data-value" style="font-size:0.9rem; line-height:1.5;">${s.address || ''}<br>${s.city || ''}, ${s.state || ''} - ${s.pinCode || ''}</div></div>
                     </div>
@@ -310,7 +312,8 @@ window.studentDirectory = {
                                 <div class="data-item"><div class="data-label">Name</div><div class="data-value">${s.motherName || 'N/A'}</div></div>
                                 <div class="data-item"><div class="data-label">Phone</div><div class="data-value">${s.motherPhone || 'N/A'}</div></div>
                                 <div class="data-item"><div class="data-label">Occupation</div><div class="data-value">${s.motherOccupation || 'N/A'}</div></div>
-                                <div class="data-item"><div class="data-label">Email</div><div class="data-value" style="font-size:0.75rem;">${s.motherEmail || 'N/A'}</div></div>
+                                <div class="data-item"><div class="data-label">Qualification</div><div class="data-value">${s.motherQualification || 'N/A'}</div></div>
+                                <div class="data-item" style="grid-column: span 2;"><div class="data-label">Email</div><div class="data-value" style="font-size:0.75rem;">${s.motherEmail || 'N/A'}</div></div>
                             </div>
                         </div>
                         <div style="border-top:1px solid rgba(255,255,255,0.05); padding-top:20px;">
@@ -319,13 +322,45 @@ window.studentDirectory = {
                                 <div class="data-item"><div class="data-label">Name</div><div class="data-value">${s.fatherName || 'N/A'}</div></div>
                                 <div class="data-item"><div class="data-label">Phone</div><div class="data-value">${s.fatherPhone || 'N/A'}</div></div>
                                 <div class="data-item"><div class="data-label">Occupation</div><div class="data-value">${s.fatherOccupation || 'N/A'}</div></div>
-                                <div class="data-item"><div class="data-label">Email</div><div class="data-value" style="font-size:0.75rem;">${s.fatherEmail || 'N/A'}</div></div>
+                                <div class="data-item"><div class="data-label">Qualification</div><div class="data-value">${s.fatherQualification || 'N/A'}</div></div>
+                                <div class="data-item" style="grid-column: span 2;"><div class="data-label">Email</div><div class="data-value" style="font-size:0.75rem;">${s.fatherEmail || 'N/A'}</div></div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Section 3 & 4: Emergency & Health -->
+                <!-- Section 3, 4 & 5: Emergency, Siblings & Background -->
+                <div class="profile-info-grid" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:32px; margin-top:32px;">
+                    <div class="profile-info-card" style="background:var(--surface); border:1px solid var(--card-border); padding:32px; border-radius:24px;">
+                        <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="phone-call"></i> 4. Emergency Contact</div>
+                        <div class="data-grid" style="grid-template-columns: 1fr; gap:15px;">
+                            <div class="data-item"><div class="data-label">Name</div><div class="data-value" style="font-size:1.1rem;">${s.emergencyContactName || 'N/A'}</div></div>
+                            <div class="data-item"><div class="data-label">Relationship</div><div class="data-value">${s.emergencyRelationship || 'N/A'}</div></div>
+                            <div class="data-item"><div class="data-label">Phone</div><div class="data-value" style="font-size:1.3rem; color:var(--accent-primary); font-weight:800;">${s.emergencyPhone || 'N/A'}</div></div>
+                        </div>
+                    </div>
+
+                    <div class="profile-info-card" style="background:var(--surface); border:1px solid var(--card-border); padding:32px; border-radius:24px;">
+                        <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="users"></i> 5. Sibling Details</div>
+                        <div class="data-grid" style="grid-template-columns: 1fr; gap:15px;">
+                            <div class="data-item"><div class="data-label">Has Siblings?</div><div class="data-value">${s.hasSiblings ? 'Yes' : 'No'}</div></div>
+                            ${s.hasSiblings ? `
+                                <div class="data-item"><div class="data-label">Sibling 1 Name</div><div class="data-value">${s.sibling1Name || 'N/A'}</div></div>
+                                <div class="data-item"><div class="data-label">Sibling 1 Age/School</div><div class="data-value">${s.sibling1Detail || 'N/A'}</div></div>
+                            ` : ''}
+                        </div>
+                    </div>
+
+                    <div class="profile-info-card" style="background:var(--surface); border:1px solid var(--card-border); padding:32px; border-radius:24px;">
+                        <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="book-open"></i> 7. Background</div>
+                        <div class="data-grid" style="grid-template-columns: 1fr; gap:15px;">
+                            <div class="data-item"><div class="data-label">Religion</div><div class="data-value">${s.religion || 'N/A'}</div></div>
+                            <div class="data-item"><div class="data-label">Caste</div><div class="data-value">${s.caste || 'N/A'}</div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 8 & 9: Medical & Pickups -->
                 <div class="profile-info-grid" style="display:grid; grid-template-columns: 1.2fr 1fr; gap:32px; margin-top:32px;">
                     <div class="profile-info-card" style="background:var(--surface); border:1px solid var(--card-border); padding:32px; border-radius:24px;">
                         <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="heart-pulse"></i> 8. Medical Information</div>
@@ -338,11 +373,10 @@ window.studentDirectory = {
                     </div>
                     
                     <div class="profile-info-card" style="background:var(--surface); border:1px solid var(--card-border); padding:32px; border-radius:24px;">
-                        <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="phone-call"></i> 4. Emergency Contact</div>
+                        <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="shield-check"></i> 9. Authorized Pickups</div>
                         <div class="data-grid" style="grid-template-columns: 1fr; gap:15px;">
-                            <div class="data-item"><div class="data-label">Primary Contact Name</div><div class="data-value" style="font-size:1.2rem;">${s.emergencyContactName || 'N/A'}</div></div>
-                            <div class="data-item"><div class="data-label">Relationship</div><div class="data-value">${s.emergencyRelationship || 'N/A'}</div></div>
-                            <div class="data-item"><div class="data-label">Emergency Phone</div><div class="data-value" style="font-size:1.3rem; color:var(--accent-primary); font-weight:800;">${s.emergencyPhone || 'N/A'}</div></div>
+                            <div class="data-item"><div class="data-label">Pickup 1 Name</div><div class="data-value" style="font-size:1.1rem;">${s.pickup1Name || 'N/A'}</div></div>
+                            <div class="data-item"><div class="data-label">Relationship</div><div class="data-value">${s.pickup1Rel || 'N/A'}</div></div>
                         </div>
                     </div>
                 </div>
@@ -370,6 +404,9 @@ window.studentDirectory = {
                     </div>
                 </div>
             </div>`;
+        container.innerHTML = html;
+        if (window.lucide) lucide.createIcons();
+    },
         container.innerHTML = html;
         if (window.lucide) lucide.createIcons();
     },
