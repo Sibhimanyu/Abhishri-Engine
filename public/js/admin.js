@@ -115,12 +115,14 @@ window.adminPanel = {
     updateVisibility(hide) {
         if (this.selectedItems.size === 0) return;
         const updates = {};
+        const deviceNames = [];
         this.selectedItems.forEach(uniqueId => {
             Object.keys(window.smartCampus.areas).forEach(areaId => {
                 if (window.smartCampus.areas[areaId].devices) {
                     Object.keys(window.smartCampus.areas[areaId].devices).forEach(devKey => {
                         if ((areaId + '_' + devKey) === uniqueId) {
                             updates[`modules/smart_campus/areas/${areaId}/devices/${devKey}/hidden`] = hide ? true : null;
+                            deviceNames.push(window.smartCampus.areas[areaId].devices[devKey].name || devKey);
                         }
                     });
                 }
@@ -128,6 +130,7 @@ window.adminPanel = {
         });
 
         db.ref().update(updates).then(() => {
+            window.AppLogger.log(hide ? 'HIDE_ENTITIES' : 'SHOW_ENTITIES', 'admin_panel', { devices: deviceNames });
             this.selectedItems.clear();
             this.render();
         }).catch(err => console.error(err));
@@ -192,7 +195,7 @@ window.adminPanel = {
                             <div style="font-size: 0.85rem; color: var(--text-dim);">Added ${formatDate(data.addedAt)}</div>                        </div>
                         <div style="display:flex; gap:8px;">
                             <button class="btn-icon" onclick="window.adminPanel.showEditUserModal('${email}')"><i data-lucide="edit-3"></i></button>
-                            ${email !== 'sibhi.gv@gmail.com' ? `<button class="btn-icon text-danger" onclick="window.adminPanel.removeAllowedUser('${email}')"><i data-lucide="trash-2"></i></button>` : ''}
+                            ${email !== 'admin@example.com' ? `<button class="btn-icon text-danger" onclick="window.adminPanel.removeAllowedUser('${email}')"><i data-lucide="trash-2"></i></button>` : ''}
                         </div>
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">${badges.join('')}</div>`;
@@ -371,6 +374,7 @@ window.adminPanel = {
             await firestore.collection('modules').doc('whatsapp_sender').collection('config').doc('main').set({
                 apiKey, wabaId, phoneNumberId, phoneNumber, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
+            window.AppLogger.log('UPDATE_WHATSAPP_CONFIG', 'admin_panel', { phoneNumber });
             AppDialog.toast('Configuration saved successfully', 'success');
             this.renderWhatsAppConfig();
         } catch (error) {
@@ -402,7 +406,7 @@ window.adminPanel = {
     showAddUserModal() {
         AppDialog.confirm({
             title: 'Authorize New User',
-            content: `<div class="form-group"><label>Email Address</label><input type="email" id="new-user-email" class="form-control" placeholder="user@abhishriacademy.in"></div>
+            content: `<div class="form-group"><label>Email Address</label><input type="email" id="new-user-email" class="form-control" placeholder="user@example.com"></div>
                       <div class="form-group" style="margin-top:15px;"><label><input type="checkbox" id="new-user-admin"> Global Administrator</label></div>`,
             onConfirm: async () => {
                 const email = document.getElementById('new-user-email').value.toLowerCase().trim();
@@ -434,7 +438,7 @@ window.adminPanel = {
                     student_directory: { view: true, manage: true, attendance: true, reports: true },
                     student_performance: { view: true, log: true },
                     staff_directory: { view: true, manage: true, attendance: true, reports: true, pulse: true },
-                    fees_accounting: { view: true, ledger: true, transactions: true, config: false, expenses: true, expenses_all: true, fund_staff: true },
+                    fees_accounting: { view: true, ledger: true, transactions: true, config: false, expenses_all: true },
                     whatsapp_sender: { access: true, broadcast: true, manage: true }
                 }
             },
@@ -445,7 +449,7 @@ window.adminPanel = {
                     student_directory: { view: true, manage: false, attendance: true, reports: false },
                     student_performance: { view: true, log: true },
                     staff_directory: { view: true, manage: false, attendance: true, reports: false, pulse: false },
-                    fees_accounting: { view: false, ledger: false, transactions: false, config: false, expenses: true, expenses_all: false, fund_staff: false },
+                    fees_accounting: { view: false, ledger: false, transactions: false, config: false, expenses_all: false },
                     whatsapp_sender: { access: true, broadcast: false, manage: false }
                 }
             },
@@ -512,9 +516,7 @@ window.adminPanel = {
                         <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="ledger" ${getPerm('fees_accounting', 'ledger')}> View Student Ledgers</label>
                         <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="transactions" ${getPerm('fees_accounting', 'transactions')}> Log & Reverse Payments</label>
                         <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="config" ${getPerm('fees_accounting', 'config')}> Configure Fee Templates & Waivers</label>
-                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="expenses" ${getPerm('fees_accounting', 'expenses')}> Access Expense Module</label>
-                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="expenses_all" ${getPerm('fees_accounting', 'expenses_all')}> View ALL Staff Expenses</label>
-                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="fund_staff" ${getPerm('fees_accounting', 'fund_staff')}> Authorize Staff Funding</label>
+                        <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="expenses_all" ${getPerm('fees_accounting', 'expenses_all')}> View & Manage ALL Office Expenses</label>
                     </div>
 
                     <!-- WhatsApp Sender -->
@@ -763,8 +765,11 @@ window.openCreateSceneModal = (sceneId = null) => {
             const sceneData = { name, icon, devices };
             if (isEdit) {
                 await db.ref('modules/smart_campus/scenes').child(sceneId).update(sceneData);
+                window.AppLogger.log('EDIT_SCENE', 'smart_campus', { name }, sceneId);
             } else {
-                await db.ref('modules/smart_campus/scenes').push(sceneData);
+                const newRef = db.ref('modules/smart_campus/scenes').push();
+                await newRef.set(sceneData);
+                window.AppLogger.log('ADD_SCENE', 'smart_campus', { name }, newRef.key);
             }
             return true;
         }

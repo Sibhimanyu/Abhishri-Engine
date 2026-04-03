@@ -14,7 +14,7 @@ window.feesManager = {
     auditLogs: [],
     isSubscribed: false,
     dataLoaded: false,
-    currentView: 'collections', // collections, overview, transactions, office_expenses, staff_imprest, salaries, plans, student_fees, audit_logs
+    currentView: 'collections', // collections, overview, transactions, office_expenses, salaries, plans, student_fees, audit_logs
     searchQuery: '',
     sortField: 'name',
     sortOrder: 'asc',
@@ -175,7 +175,6 @@ window.feesManager = {
                 overview: 'Student Fee Ledger',
                 transactions: 'Recent Fee Collections',
                 office_expenses: 'Direct Office Expenditure',
-                staff_imprest: 'Staff Wallets & Reimbursements',
                 salaries: 'Payroll & Salary Management',
                 plans: 'Package Template Configuration',
                 audit_logs: 'System Audit History & Activity Log'
@@ -196,7 +195,7 @@ window.feesManager = {
 
         if (toolbar) {
             toolbar.innerHTML = '';
-            if (['overview', 'office_expenses', 'staff_imprest', 'salaries', 'transactions', 'plans', 'audit_logs'].includes(this.currentView)) {
+            if (['overview', 'office_expenses', 'salaries', 'transactions', 'plans', 'audit_logs'].includes(this.currentView)) {
                 const search = document.createElement('div');
                 search.className = 'search-box';
                 search.style.maxWidth = '300px';
@@ -232,11 +231,6 @@ window.feesManager = {
 
             if (this.currentView === 'office_expenses' && (isAdmin || feesPerms.expenses_all)) {
                 const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Log Office Expense'; btn.onclick = () => this.showOfficeExpenseForm(); toolbar.appendChild(btn);
-            } else if (this.currentView === 'staff_imprest') {
-                if (isAdmin || feesPerms.fund_staff) {
-                    const btn = document.createElement('button'); btn.className = 'btn btn-secondary'; btn.innerHTML = '<i data-lucide="coins"></i> Fund Staff'; btn.onclick = () => this.showFundingForm(); toolbar.appendChild(btn);
-                }
-                const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="file-plus"></i> Request Reimbursement'; btn.onclick = () => this.showSpendForm(); toolbar.appendChild(btn);
             } else if (this.currentView === 'salaries' && (isAdmin || feesPerms.salaries_all)) {
                 const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Process Payroll'; btn.onclick = () => this.showPayrollForm(); toolbar.appendChild(btn);
             } else if (this.currentView === 'plans' && (isAdmin || feesPerms.config)) {
@@ -248,7 +242,6 @@ window.feesManager = {
         else if (this.currentView === 'overview') this.renderOverview();
         else if (this.currentView === 'transactions') this.renderTransactions();
         else if (this.currentView === 'office_expenses') this.renderOfficeExpenses();
-        else if (this.currentView === 'staff_imprest') this.renderStaffImprest();
         else if (this.currentView === 'salaries') this.renderSalaries();
         else if (this.currentView === 'student_fees') this.renderStudentFees();
         else if (this.currentView === 'plans') this.renderPlans();
@@ -279,9 +272,9 @@ window.feesManager = {
             totalTargetToDate += (oneTimeTotal + (monthlyRate * studentInstallmentsExpected));
         });
 
-        // 2. Calculate Expenses (Office + Reimbursements)
+        // 2. Calculate Expenses (Office Only)
         this.expenses.forEach(e => {
-            if (e.status === 'approved' || e.source === 'office') {
+            if (e.source === 'office') {
                 totalExp += (e.amount || 0);
                 const cat = e.category || 'Other';
                 expByCat[cat] = (expByCat[cat] || 0) + (e.amount || 0);
@@ -477,7 +470,7 @@ window.feesManager = {
     renderOfficeExpenses() {
         const container = document.getElementById('fees-content-office_expenses');
         if (!container) return;
-        const filtered = this.expenses.filter(e => e.source === 'office' && e.type !== 'funding' && (!this.searchQuery || (e.details || '').toLowerCase().includes(this.searchQuery)));
+        const filtered = this.expenses.filter(e => e.source === 'office' && (!this.searchQuery || (e.details || '').toLowerCase().includes(this.searchQuery)));
         
         filtered.sort((a, b) => {
             let valA, valB;
@@ -521,77 +514,6 @@ window.feesManager = {
                 </td></tr>`;
         });
         container.innerHTML = html + (filtered.length === 0 ? '<tr><td colspan="5">No records.</td></tr>' : '') + '</tbody></table>';
-    },
-
-    renderStaffImprest() {
-        const container = document.getElementById('fees-content-staff_imprest');
-        if (!container) return;
-        const userData = window.currentUserData || {};
-        const isAdmin = userData.isAdmin;
-        const feesPerms = userData.permissions?.fees_accounting || {};
-        const canApprove = isAdmin || feesPerms.fund_staff;
-        const currentUserEmail = auth.currentUser?.email?.toLowerCase();
-
-        let relStaff = Object.keys(this.staff);
-        if (!canApprove) relStaff = relStaff.filter(sid => this.staff[sid].email?.toLowerCase() === currentUserEmail);
-
-        let walHtml = `<div class="dashboard-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 40px;">`;
-        relStaff.forEach(sid => {
-            const f = this.expenses.filter(e => e.staffId === sid && e.type === 'funding').reduce((a, b) => a + b.amount, 0),
-                s = this.expenses.filter(e => e.staffId === sid && e.source === 'staff' && e.status === 'approved').reduce((a, b) => a + b.amount, 0);
-            const b = f - s;
-            walHtml += `<div class="console-card" style="padding: 20px; border-top: 3px solid ${b >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">
-                <div style="font-weight:700;">${this.staff[sid].name}</div>
-                <div style="font-size:1.5rem; font-weight:900; color: ${b >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">₹${b.toLocaleString('en-IN')}</div>
-            </div>`;
-        });
-
-        const q = this.searchQuery;
-        const filtered = this.expenses.filter(e => e.source === 'staff' && (!q || (this.staff[e.staffId]?.name || '').toLowerCase().includes(q)));
-        
-        filtered.sort((a, b) => {
-            let valA, valB;
-            if (this.sortField === 'date') {
-                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
-                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
-            } else if (this.sortField === 'staff') {
-                valA = (this.staff[a.staffId]?.name || '').toLowerCase();
-                valB = (this.staff[b.staffId]?.name || '').toLowerCase();
-            } else if (this.sortField === 'amount') {
-                valA = a.amount || 0;
-                valB = b.amount || 0;
-            } else if (this.sortField === 'status') {
-                valA = (a.status || '').toLowerCase();
-                valB = (b.status || '').toLowerCase();
-            } else if (this.sortField === 'details') {
-                valA = (a.details || '').toLowerCase();
-                valB = (b.details || '').toLowerCase();
-            }
-
-            if (this.sortOrder === 'asc') return valA > valB ? 1 : -1;
-            return valA < valB ? 1 : -1;
-        });
-
-        let logHtml = `<div class="section-title"><span>Expenditure Requests</span></div><table class="console-table"><thead><tr>
-            <th onclick="window.feesManager.setSort('date')" style="cursor:pointer;">Date ${this.getSortIcon('date')}</th>
-            <th onclick="window.feesManager.setSort('staff')" style="cursor:pointer;">Staff ${this.getSortIcon('staff')}</th>
-            <th onclick="window.feesManager.setSort('amount')" style="cursor:pointer;">Amount ${this.getSortIcon('amount')}</th>
-            <th onclick="window.feesManager.setSort('status')" style="cursor:pointer;">Status ${this.getSortIcon('status')}</th>
-            <th onclick="window.feesManager.setSort('details')" style="cursor:pointer;">Details ${this.getSortIcon('details')}</th>
-            <th>Actions</th>
-        </tr></thead><tbody>`;
-        filtered.forEach(e => {
-            const st = this.staff[e.staffId] || { name: 'Unknown' }, d = e.timestamp?.toDate ? e.timestamp.toDate() : new Date(e.timestamp);
-            const sClass = e.status === 'approved' ? 'status-success' : (e.status === 'rejected' ? 'status-danger' : 'status-warning');
-            logHtml += `<tr><td>${formatDate(d)}</td><td><strong>${st.name}</strong></td><td><strong>₹${e.amount.toLocaleString('en-IN')}</strong></td>
-                <td><span class="status-pill ${sClass}">${e.status?.toUpperCase() || 'PENDING'}</span></td><td>${e.details}</td>
-                <td><div class="table-actions">
-                    ${e.attachmentUrl ? `<button class="btn-icon" onclick="window.open('${e.attachmentUrl}', '_blank')" title="View Receipt"><i data-lucide="image"></i></button>` : ''}
-                    ${(canApprove && e.status === 'pending') ? `<button class="btn-icon text-success" onclick="window.feesManager.updateExpenseStatus('${e.id}', 'approved')"><i data-lucide="check-circle"></i></button><button class="btn-icon text-danger" onclick="window.feesManager.updateExpenseStatus('${e.id}', 'rejected')"><i data-lucide="x-circle"></i></button>` : ''}
-                    ${(isAdmin || e.createdBy === currentUserEmail) ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')" title="Delete request"><i data-lucide="trash-2"></i></button>` : ''}
-                </div></td></tr>`;
-        });
-        container.innerHTML = walHtml + `</div>` + logHtml + (filtered.length === 0 ? '<tr><td colspan="6">No requests.</td></tr>' : '') + '</tbody></table>';
     },
 
     renderSalaries() {
@@ -643,19 +565,12 @@ window.feesManager = {
     deleteSalary(id) {
         AppDialog.confirm({
             title: 'Delete Payroll Record',
-            content: 'Permanently remove this salary record? Any linked reimbursements will be marked as unpaid again.',
+            content: 'Permanently remove this salary record?',
             confirmClass: 'btn-danger',
             onConfirm: async () => {
-                const linkedReimbs = this.expenses.filter(e => e.salaryId === id);
-                const batch = firestore.batch();
-                linkedReimbs.forEach(e => {
-                    batch.update(firestore.collection('modules').doc('fees_accounting').collection('expenses').doc(e.id), {
-                        paidInSalary: firebase.firestore.FieldValue.delete(),
-                        salaryId: firebase.firestore.FieldValue.delete()
-                    });
-                });
-                batch.delete(firestore.collection('modules').doc('fees_accounting').collection('salaries').doc(id));
-                await batch.commit();
+                const s = this.salaries.find(sl => sl.id === id);
+                await firestore.collection('modules').doc('fees_accounting').collection('salaries').doc(id).delete();
+                window.AppLogger.log('DELETE_PAYROLL', 'fees_accounting', { staffName: s?.staffName, month: s?.month, net: s?.net }, id);
                 AppDialog.toast('Salary record removed', 'info');
                 return true;
             }
@@ -1054,7 +969,14 @@ window.feesManager = {
                 const data = { name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12, startMonth: parseInt(document.getElementById('plan-start').value), updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: auth.currentUser.email };
                 if (!id) data.createdAt = data.updatedAt;
                 const ref = firestore.collection('modules').doc('fees_accounting').collection('plans');
-                if (id) await ref.doc(id).update(data); else await ref.add(data); return true;
+                if (id) {
+                    await ref.doc(id).update(data);
+                    window.AppLogger.log('EDIT_FEE_PLAN', 'fees_accounting', { name: data.name }, id);
+                } else {
+                    const res = await ref.add(data);
+                    window.AppLogger.log('ADD_FEE_PLAN', 'fees_accounting', { name: data.name }, res.id);
+                }
+                return true;
             }
         });
     },
@@ -1099,6 +1021,7 @@ window.feesManager = {
                 const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0, o = parseFloat(row.querySelector('.c-orig').value) || a, t = row.getAttribute('data-type') || 'other'; if (n) components.push({ name: n, amount: a, originalAmount: o, frequency: row.querySelector('.c-freq').value, type: t }); });
                 const total = this.recalcSetupTotal();
                 firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, startMonth: parseInt(document.getElementById('sf-start').value), academicStartYear: parseInt(document.getElementById('sf-start-year').value), components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                window.AppLogger.log('SETUP_FEES', 'fees_accounting', { studentName: s.name, total }, studentId);
                 AppDialog.toast('Fee structure updated', 'success'); return true;
             }
         });
@@ -1296,44 +1219,12 @@ window.feesManager = {
                 const amount = parseFloat(document.getElementById('oe-amount').value), file = document.getElementById('oe-file').files[0];
                 if (!amount) return false;
                 let url = ''; if (file) { const snap = await firebase.storage().ref(`expenses/office_${Date.now()}`).put(file); url = await snap.ref.getDownloadURL(); }
-                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'office', type: 'spend', amount, category: document.getElementById('oe-cat').value, details: document.getElementById('oe-details').value, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                const cat = document.getElementById('oe-cat').value, details = document.getElementById('oe-details').value;
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'office', type: 'spend', amount, category: cat, details, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                window.AppLogger.log('LOG_EXPENSE', 'fees_accounting', { category: cat, amount, details });
                 return true;
             }
         });
-    },
-
-    showFundingForm() {
-        let opts = ''; Object.values(this.staff).forEach(s => opts += `<option value="${s.id}">${s.name}</option>`);
-        AppDialog.confirm({
-            title: 'Fund Staff Wallet',
-            content: `<div class="form-group"><label>Staff Member</label><select id="ff-staff" class="form-control">${opts}</select></div><div class="form-group" style="margin-top:15px;"><label>Amount (₹)</label><input type="number" id="ff-amount" class="form-control"></div>`,
-            onConfirm: async () => {
-                const amount = parseFloat(document.getElementById('ff-amount').value); if (!amount) return false;
-                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'office', type: 'funding', staffId: document.getElementById('ff-staff').value, amount, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-                return true;
-            }
-        });
-    },
-
-    showSpendForm() {
-        const my = Object.values(this.staff).find(s => s.email?.toLowerCase() === auth.currentUser.email.toLowerCase());
-        if (!my) { AppDialog.toast('No linked staff record found.', 'error'); return; }
-        AppDialog.confirm({
-            title: 'Reimbursement Request',
-            content: `<div class="form-group"><label>Amount (₹)</label><input type="number" id="sf-amount" class="form-control"></div><div class="form-group" style="margin-top:15px;"><label>Reason</label><input type="text" id="sf-details" class="form-control"></div><div class="form-group" style="margin-top:15px;"><label>Receipt Image</label><input type="file" id="sf-file" class="form-control" accept="image/*"></div>`,
-            onConfirm: async () => {
-                const amount = parseFloat(document.getElementById('sf-amount').value), file = document.getElementById('sf-file').files[0];
-                if (!amount) return false;
-                let url = ''; if (file) { const snap = await firebase.storage().ref(`expenses/staff_${Date.now()}`).put(file); url = await snap.ref.getDownloadURL(); }
-                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'staff', type: 'spend', staffId: my.id, amount, status: 'pending', category: 'General', details: document.getElementById('sf-details').value, attachmentUrl: url, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-                return true;
-            }
-        });
-    },
-
-    async updateExpenseStatus(id, status) {
-        await firestore.collection('modules').doc('fees_accounting').collection('expenses').doc(id).update({ status, updatedBy: auth.currentUser.email });
-        AppDialog.toast(`Request ${status}`, 'info');
     },
 
     showPayrollForm() {
@@ -1343,7 +1234,7 @@ window.feesManager = {
         const now = new Date(), curM = months[now.getMonth()], curY = now.getFullYear();
         AppDialog.confirm({
             title: 'Process Monthly Payroll', width: '700px',
-            content: `<div class="form-grid-2"><div class="form-group"><label>Staff Member</label><select id="p-staff" class="form-control">${opts}</select></div><div class="form-group"><label>Payroll Month</label><select id="p-month" class="form-control">${months.map(m => `<option ${m === curM ? 'selected' : ''}>${m} ${curY}</option>`).join('')}</select></div></div><div id="payroll-calc-area" style="margin-top:20px; display:none;"><div class="form-grid-2"><div class="form-group"><label>Base Salary (₹)</label><input type="number" id="p-base" class="form-control"></div><div class="form-group"><label>Bonus / Additions (₹)</label><input type="number" id="p-bonus" class="form-control" value="0"></div></div><div id="reimb-info" style="margin-top:10px; color:var(--success); font-size:0.8rem; display:none;">Approved Reimbursements: <strong id="reimb-amt">₹0</strong></div><div class="form-group" style="margin-top:15px;"><label>Deductions (₹)</label><input type="number" id="p-ded" class="form-control" value="0"></div><div style="margin-top:20px; font-size:1.2rem; font-weight:900;">Net Payout: <span id="p-net" style="color:var(--success)">₹0</span></div></div>`,
+            content: `<div class="form-grid-2"><div class="form-group"><label>Staff Member</label><select id="p-staff" class="form-control">${opts}</select></div><div class="form-group"><label>Payroll Month</label><select id="p-month" class="form-control">${months.map(m => `<option ${m === curM ? 'selected' : ''}>${m} ${curY}</option>`).join('')}</select></div></div><div id="payroll-calc-area" style="margin-top:20px; display:none;"><div class="form-grid-2"><div class="form-group"><label>Base Salary (₹)</label><input type="number" id="p-base" class="form-control"></div><div class="form-group"><label>Bonus / Additions (₹)</label><input type="number" id="p-bonus" class="form-control" value="0"></div></div><div class="form-group" style="margin-top:15px;"><label>Deductions (₹)</label><input type="number" id="p-ded" class="form-control" value="0"></div><div style="margin-top:20px; font-size:1.2rem; font-weight:900;">Net Payout: <span id="p-net" style="color:var(--success)">₹0</span></div></div>`,
             onOpen: (overlay) => {
                 const sel = overlay.querySelector('#p-staff'), area = overlay.querySelector('#payroll-calc-area');
                 const baseI = overlay.querySelector('#p-base'), bonI = overlay.querySelector('#p-bonus'), dedI = overlay.querySelector('#p-ded'), netD = overlay.querySelector('#p-net');
@@ -1351,9 +1242,7 @@ window.feesManager = {
                 sel.onchange = () => {
                     const s = this.staff[sel.value]; if (!s) { area.style.display = 'none'; return; }
                     area.style.display = 'block'; baseI.value = s.baseSalary || 0;
-                    const r = this.expenses.filter(e => e.staffId === s.id && e.source === 'staff' && e.status === 'approved' && !e.paidInSalary);
-                    const t = r.reduce((a, b) => a + b.amount, 0);
-                    if (t > 0) { overlay.querySelector('#reimb-info').style.display = 'block'; overlay.querySelector('#reimb-amt').innerText = `₹${t.toLocaleString('en-IN')}`; bonI.value = t; } else { overlay.querySelector('#reimb-info').style.display = 'none'; bonI.value = 0; }
+                    bonI.value = 0;
                     recalc();
                 };
                 [baseI, bonI, dedI].forEach(i => i.oninput = recalc);
@@ -1361,10 +1250,10 @@ window.feesManager = {
             onConfirm: async () => {
                 const sid = document.getElementById('p-staff').value, s = this.staff[sid]; if (!s) return false;
                 const base = parseFloat(document.getElementById('p-base').value) || 0, bonus = parseFloat(document.getElementById('p-bonus').value) || 0, ded = parseFloat(document.getElementById('p-ded').value) || 0;
-                const salRef = await firestore.collection('modules').doc('fees_accounting').collection('salaries').add({ staffId: sid, month: document.getElementById('p-month').value, baseSalary: base, bonus, deductions: ded, netSalary: base + bonus - ded, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-                const batch = firestore.batch();
-                this.expenses.filter(e => e.staffId === sid && e.source === 'staff' && e.status === 'approved' && !e.paidInSalary).forEach(e => { batch.update(firestore.collection('modules').doc('fees_accounting').collection('expenses').doc(e.id), { paidInSalary: true, salaryId: salRef.id }); });
-                await batch.commit(); return true;
+                const month = document.getElementById('p-month').value, net = base + bonus - ded;
+                const salRef = await firestore.collection('modules').doc('fees_accounting').collection('salaries').add({ staffId: sid, month, baseSalary: base, bonus, deductions: ded, netSalary: net, createdBy: auth.currentUser.email, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                window.AppLogger.log('PROCESS_PAYROLL', 'fees_accounting', { staffName: s.name, month, net }, salRef.id);
+                return true;
             }
         });
     },
@@ -1388,7 +1277,7 @@ window.feesManager = {
         win.document.write(`<html><head><title>Slip - ${st.name}</title><style>body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; } .header { border-bottom: 2px solid #F1615B; padding-bottom: 20px; } .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin: 30px 0; } .payout-table { width: 100%; border-collapse: collapse; } .payout-table td { padding: 12px; border-bottom: 1px solid #eee; } .net { font-size: 24px; font-weight: 900; color: #22c55e; }</style></head><body>
             <div class="header"><h1>ABHISHRI ACADEMY</h1><p>Salary Pay Slip - ${s.month}</p></div>
             <div class="grid"><div><strong>Name:</strong> ${st.name}<br><strong>Role:</strong> ${st.designation || 'N/A'}</div><div><strong>Date:</strong> ${formatDate(s.timestamp)}</div></div>
-            <table class="payout-table"><tr><td>Base Salary</td><td style="text-align:right">₹${s.baseSalary.toLocaleString('en-IN')}</td></tr><tr><td>Bonus/Reimb</td><td style="text-align:right">₹${s.bonus.toLocaleString('en-IN')}</td></tr><tr><td>Deductions</td><td style="text-align:right">-₹${s.deductions.toLocaleString('en-IN')}</td></tr><tr style="border-top: 2px solid #333;"><td style="font-weight:700;">NET DISBURSED</td><td style="text-align:right" class="net">₹${s.netSalary.toLocaleString('en-IN')}</td></tr></table><script>window.onload=()=>{window.print(); setTimeout(()=>window.close(),500);};</script></body></html>`);
+            <table class="payout-table"><tr><td>Base Salary</td><td style="text-align:right">₹${s.baseSalary.toLocaleString('en-IN')}</td></tr><tr><td>Bonus / Additions</td><td style="text-align:right">₹${s.bonus.toLocaleString('en-IN')}</td></tr><tr><td>Deductions</td><td style="text-align:right">-₹${s.deductions.toLocaleString('en-IN')}</td></tr><tr style="border-top: 2px solid #333;"><td style="font-weight:700;">NET DISBURSED</td><td style="text-align:right" class="net">₹${s.netSalary.toLocaleString('en-IN')}</td></tr></table><script>window.onload=()=>{window.print(); setTimeout(()=>window.close(),500);};</script></body></html>`);
         win.document.close();
     },
 

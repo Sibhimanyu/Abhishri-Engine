@@ -1,17 +1,15 @@
-// Firebase Configuration and Initialization
-// NOTE: The Firebase web config below (apiKey, appId, etc.) is intentionally public.
-// Per Firebase's design, the web API key is NOT a secret — it identifies the Firebase
-// project to the SDK. All access control is enforced by Firebase Auth and RTDB Security Rules.
-// See: https://firebase.google.com/docs/projects/api-keys
+// Firebase Configuration and Initialization - EXAMPLE FILE
+// Copy this to config.js and fill in your real Firebase values.
+// Per Firebase's design, the web API key identifies the project to the SDK.
 const firebaseConfig = {
-    apiKey: "AIzaSyCkhTwa6sG7mCx-RW1E2FWhKqB--yDRUmk",
-    authDomain: "abhishri-academy.firebaseapp.com",
-    databaseURL: "https://abhishri-academy-default-rtdb.firebaseio.com",
-    projectId: "abhishri-academy",
-    storageBucket: "abhishri-academy.firebasestorage.app",
-    messagingSenderId: "932495146860",
-    appId: "1:932495146860:web:d29df524eeff27e874fd49",
-    measurementId: "G-Z9NS127TPZ"
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID",
+    measurementId: "YOUR_MEASUREMENT_ID"
 };
 
 firebase.initializeApp(firebaseConfig);

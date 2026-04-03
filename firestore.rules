@@ -116,13 +116,8 @@ service cloud.firestore {
         allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
       }
       match /expenses/{id} {
-        allow read: if isAuthenticated() && (
-          isAdmin() || 
-          getPerm('fees_accounting', 'expenses_all') || 
-          (getPerm('fees_accounting', 'expenses') && resource.data.createdBy == request.auth.token.email.lower())
-        );
-        allow create: if isAuthenticated() && (getPerm('fees_accounting', 'expenses') || getPerm('fees_accounting', 'fund_staff'));
-        allow delete: if isAuthenticated() && (isAdmin() || resource.data.createdBy == request.auth.token.email.lower());
+        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'expenses_all'));
+        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'expenses_all'));
       }
 
       match /{allPaths=**} {
@@ -141,10 +136,8 @@ service cloud.firestore {
       // 2. An existing admin is manually authorizing a new email
       allow create: if request.auth != null && (
         (request.auth.token.email.lower() == email.lower() && (
-          email.lower().endsWith('@abhishriacademy.in') || 
-          email.lower().endsWith('@zoho.com') || 
-          email.lower().endsWith('@zoho.in') ||
-          email.lower() == 'sibhi.gv@gmail.com'
+          email.lower().endsWith('@example.com') || 
+          email.lower() == 'admin@example.com'
         )) || isAdmin()
       );
 

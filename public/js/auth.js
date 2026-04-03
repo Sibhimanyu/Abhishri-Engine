@@ -114,8 +114,8 @@ function handleAuthError(error) {
 // ─── Access Control Engine (Firestore) ──────────────────────────────────────
 async function checkUserAccess(user, modal, pendingModal) {
     const email = user.email.toLowerCase();
-    const isAllowedDomain = email.endsWith('@abhishriacademy.in') || email.endsWith('@zoho.com') || email.endsWith('@zoho.in');
-    const isMasterEmail = email === 'sibhi.gv@gmail.com';
+    const isAllowedDomain = email.endsWith('@example.com');
+    const isMasterEmail = email === 'admin@example.com';
 
     try {
         const userDoc = await firestore.collection('allowedUsers').doc(email).get();

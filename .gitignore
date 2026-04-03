@@ -70,6 +70,9 @@ node_modules/
 .env.local
 .env.*.local
 
+# App Config
+public/js/config.js
+
 # dataconnect generated files
 .dataconnect
 

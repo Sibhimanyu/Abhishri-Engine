@@ -155,7 +155,7 @@ window.staffDirectory = {
             designation: "Senior Academic Coordinator",
             department: "Primary Education",
             phone: "919822001122",
-            email: "aditi.v@abhishriacademy.in",
+            email: "aditi.v@example.com",
             joiningDate: "2024-06-01",
             bloodGroup: "B+",
             address: "Villa 12, Pine Residency, Pune, Maharashtra",
@@ -789,18 +789,31 @@ window.staffDirectory = {
                 };
                 if (!data.name) return false;
                 const ref = firestore.collection('modules').doc('staff_directory').collection('staff');
-                (id ? ref.doc(id).update(data) : ref.add(data)).then(() => AppDialog.toast('Staff record saved', 'success'));
+                (id ? ref.doc(id).update(data) : ref.add(data)).then((res) => {
+                    AppDialog.toast('Staff record saved', 'success');
+                    window.AppLogger.log(id ? 'EDIT_STAFF' : 'ADD_STAFF', 'staff_directory', { name: data.name }, id || res.id);
+                });
                 return true;
             }
         });
     },
 
     deleteStaff(id) {
-        AppDialog.confirm({ title: 'Remove Staff', msg: 'This will permanently delete this staff record. Proceed?', danger: true, confirmClass: 'btn-danger', onConfirm: () => { firestore.collection('modules').doc('staff_directory').collection('staff').doc(id).delete().then(() => { this.switchView('directory'); }); return true; }});
+        const s = this.staff[id];
+        AppDialog.confirm({ title: 'Remove Staff', msg: 'This will permanently delete this staff record. Proceed?', danger: true, confirmClass: 'btn-danger', onConfirm: () => { 
+            firestore.collection('modules').doc('staff_directory').collection('staff').doc(id).delete().then(() => { 
+                window.AppLogger.log('DELETE_STAFF', 'staff_directory', { name: s?.name }, id);
+                this.switchView('directory'); 
+            }); 
+            return true; 
+        }});
     },
 
     markAttendance(staffId, status) {
         const dateKey = new Date().toISOString().split('T')[0];
-        db.ref(`modules/staff_directory/attendance/${dateKey}/${staffId}`).set({ status, timestamp: firebase.database.ServerValue.TIMESTAMP });
+        const s = this.staff[staffId];
+        db.ref(`modules/staff_directory/attendance/${dateKey}/${staffId}`).set({ status, timestamp: firebase.database.ServerValue.TIMESTAMP }).then(() => {
+            window.AppLogger.log('MARK_STAFF_ATTENDANCE', 'staff_directory', { name: s?.name, status, date: dateKey }, staffId);
+        });
     }
 };

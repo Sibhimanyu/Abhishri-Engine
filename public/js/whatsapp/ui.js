@@ -1107,23 +1107,25 @@ if (!window.whatsAppSender) {
         const mount = document.getElementById('wa-history-metrics');
         if (!mount) return;
 
-        let totalSent = 0, totalDelivered = 0, totalRead = 0, totalFailed = 0;
+        let totalSentOnly = 0, totalDeliveredOnly = 0, totalRead = 0, totalFailed = 0;
         logs.forEach(log => {
-            totalSent += (log.sentCount || 0);
-            totalDelivered += (log.deliveredCount || 0);
+            totalSentOnly += (log.sentCount || 0);
+            totalDeliveredOnly += (log.deliveredCount || 0);
             totalRead += (log.readCount || 0);
             totalFailed += (log.failedCount || 0);
         });
 
-        const deliveryRate = totalSent > 0 ? Math.round(((totalDelivered + totalRead) / totalSent) * 100) : 0;
-        const openRate = (totalDelivered + totalRead) > 0 ? Math.round((totalRead / (totalDelivered + totalRead)) * 100) : 0;
+        const totalDispatched = totalSentOnly + totalDeliveredOnly + totalRead;
+        const totalDelivered = totalDeliveredOnly + totalRead;
+        const deliveryRate = totalDispatched > 0 ? Math.round((totalDelivered / totalDispatched) * 100) : 0;
+        const openRate = totalDelivered > 0 ? Math.round((totalRead / totalDelivered) * 100) : 0;
 
         mount.innerHTML = `
             <div class="wa-metric-card" style="background:linear-gradient(135deg, rgba(59, 130, 246, 0.1), transparent); border:1px solid rgba(59, 130, 246, 0.15); border-radius:24px; padding:24px; position:relative; overflow:hidden;">
                 <div style="color:#3b82f6; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
                     <i data-lucide="send" style="width:14px;height:14px;"></i> Total Dispatched
                 </div>
-                <div style="font-size:2rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${totalSent.toLocaleString()}</div>
+                <div style="font-size:2rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${totalDispatched.toLocaleString()}</div>
                 <div style="font-size:0.8rem; color:var(--text-dim); font-weight:500;">Across ${logs.length} campaigns</div>
             </div>
             <div class="wa-metric-card" style="background:linear-gradient(135deg, rgba(34, 197, 94, 0.1), transparent); border:1px solid rgba(34, 197, 94, 0.15); border-radius:24px; padding:24px; position:relative; overflow:hidden;">
@@ -1131,7 +1133,7 @@ if (!window.whatsAppSender) {
                     <i data-lucide="check-check" style="width:14px;height:14px;"></i> Delivery Health
                 </div>
                 <div style="font-size:2rem; font-weight:900; color:var(--text-main); line-height:1; margin-bottom:4px;">${deliveryRate}%</div>
-                <div style="font-size:0.8rem; color:var(--text-dim); font-weight:500;">${totalDelivered + totalRead} successful drops</div>
+                <div style="font-size:0.8rem; color:var(--text-dim); font-weight:500;">${totalDelivered} successful drops</div>
             </div>
             <div class="wa-metric-card" style="background:linear-gradient(135deg, rgba(168, 85, 247, 0.1), transparent); border:1px solid rgba(168, 85, 247, 0.15); border-radius:24px; padding:24px; position:relative; overflow:hidden;">
                 <div style="color:#a855f7; font-size:0.75rem; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
@@ -2252,12 +2254,23 @@ if (!window.whatsAppSender) {
 
     window.whatsAppSender.stopBroadcast = async function (logId) {
         if (!logId) return;
-        const confirmStop = await AppDialog.confirm('Stop this broadcast? This will prevent any further messages from being sent.');
-        if (!confirmStop) return;
+        const confirmed = await AppDialog.confirm('Are you sure you want to stop this broadcast? Messages already in queue will still be sent.', {
+            title: 'Stop Broadcast',
+            confirmText: 'Stop Now',
+            danger: true
+        });
+        if (!confirmed) return;
+
         try {
-            await firebase.database().ref(`modules/whatsapp_sender/broadcast_history/${logId}`).update({ stopRequested: true });
-            AppDialog.toast('Stop signal sent.', 'info');
-        } catch (e) { AppDialog.toast('Failed to stop: ' + e.message, 'error'); }
+            await firestore.collection('modules').doc('whatsapp_sender').collection('history').doc(logId).update({
+                stopRequested: true,
+                status: 'stopped'
+            });
+            window.AppLogger.log('STOP_BROADCAST', 'whatsapp_sender', { logId }, logId);
+            AppDialog.toast('Stop request sent.', 'info');
+        } catch (e) {
+            AppDialog.toast('Failed to stop: ' + e.message, 'error');
+        }
     };
 
     window.whatsAppSender.deleteBroadcastHistory = async function (logId, broadcastId) {
@@ -2279,6 +2292,7 @@ if (!window.whatsAppSender) {
                 await firebase.database().ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}`).remove();
             }
 
+            window.AppLogger.log('DELETE_BROADCAST_HISTORY', 'whatsapp_sender', { logId, broadcastId }, logId);
             AppDialog.toast('History instance deleted successfully.', 'success');
             const container = document.getElementById('whatsapp-content-history');
             if (container && container.getAttribute('data-active-report') === logId) {

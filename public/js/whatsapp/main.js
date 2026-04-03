@@ -347,6 +347,13 @@ if (!window.whatsAppSender) {
                 isSimulation: isSimulation
             });
 
+            window.AppLogger.log('LAUNCH_BROADCAST', 'whatsapp_sender', { 
+                campaignName: campaignNameValue, 
+                template: templateName, 
+                recipientCount: fullRecipients.length,
+                isSimulation 
+            }, broadcastId);
+
             if (!isSimulation && audienceVal.startsWith('list:')) {
                 // Removed logic that marks list as used to allow re-use and deletion
                 // firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(audienceVal.split(':')[1]).update({ used: true });
@@ -392,6 +399,7 @@ if (!window.whatsAppSender) {
                 stopRequested: true,
                 status: 'stopped'
             });
+            window.AppLogger.log('STOP_BROADCAST', 'whatsapp_sender', { logId }, logId);
             AppDialog.toast('Stop request sent.', 'info');
         } catch (e) {
             AppDialog.toast('Failed to stop: ' + e.message, 'error');
@@ -1010,6 +1018,7 @@ if (!window.whatsAppSender) {
 
         try {
             await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).collection('members').doc(memberKey).delete();
+            window.AppLogger.log('REMOVE_LIST_MEMBER', 'whatsapp_sender', { listId, memberKey });
             this.recalculateListCounts(listId);
             AppDialog.toast('Contact removed.', 'success');
         } catch (e) {
@@ -1019,6 +1028,7 @@ if (!window.whatsAppSender) {
 
     window.whatsAppSender.deleteList = async function (listId) {
         const listSnap = await firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).get();
+        const listName = listSnap.data()?.name || listId;
         if (listSnap.data()?.used === true) {
             AppDialog.toast('This list has been used in a broadcast and cannot be deleted.', 'error');
             return;
@@ -1026,7 +1036,9 @@ if (!window.whatsAppSender) {
 
         const confirmed = await AppDialog.confirm('Delete this entire list? This action cannot be undone.', { danger: true, confirmText: 'Delete List', title: 'Delete List' });
         if (!confirmed) return;
-        firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).delete();
+        firestore.collection('modules').doc('whatsapp_sender').collection('lists').doc(listId).delete().then(() => {
+            window.AppLogger.log('DELETE_LIST', 'whatsapp_sender', { listName }, listId);
+        });
         this.renderListsView();
     };
 
@@ -1048,6 +1060,7 @@ if (!window.whatsAppSender) {
                 message_id: numericId,
                 numericId: numericId
             });
+            window.AppLogger.log('UPDATE_WHATSAPP_TEMPLATE_ID', 'whatsapp_sender', { templateName, numericId });
             AppDialog.toast('Template ID saved successfully.', 'success');
         } catch (e) {
             AppDialog.toast('Failed to save ID: ' + e.message, 'error');

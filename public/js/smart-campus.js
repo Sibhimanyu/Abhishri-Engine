@@ -149,12 +149,14 @@ window.smartCampus = {
     },
 
     deleteScene(id) {
+        const s = this.scenes[id];
         AppDialog.confirm({
             title: 'Delete Scene',
             msg: 'Are you sure you want to permanently delete this scene?',
             danger: true,
             onConfirm: async () => {
                 await db.ref('modules/smart_campus/scenes').child(id).remove();
+                window.AppLogger.log('DELETE_SCENE', 'smart_campus', { name: s?.name }, id);
                 return true;
             }
         });
@@ -305,6 +307,7 @@ window.smartCampus = {
         if (!scene || !scene.devices) return;
 
         AppDialog.toast(`Activating scene: ${scene.name}`, 'info');
+        window.AppLogger.log('TRIGGER_SCENE', 'smart_campus', { name: scene.name }, sceneId);
 
         Object.keys(scene.devices).forEach(escapedEntityId => {
             const target = scene.devices[escapedEntityId];
@@ -461,6 +464,8 @@ window.toggleDevice = (underscoredId, dotEntityId, domain, currentState) => {
 
     cmdRef.set({ entity_id: dotEntityId, domain, service });
 
+    window.AppLogger.log('DEVICE_CONTROL', 'smart_campus', { entityId: dotEntityId, service });
+
     window.smartCampus.pendingStates[dotEntityId] = {
         state: targetState,
         cmdKey: cmdKey,
@@ -507,6 +512,8 @@ window.setFanSpeed = (underscoredId, dotEntityId, level) => {
     const cmdRef = db.ref('modules/smart_campus/commands').push();
     const cmdKey = cmdRef.key;
     cmdRef.set(payload);
+
+    window.AppLogger.log('FAN_CONTROL', 'smart_campus', { entityId: dotEntityId, level, percentage });
 
     window.smartCampus.pendingStates[dotEntityId] = {
         state: level == 0 ? 'off' : 'on',
