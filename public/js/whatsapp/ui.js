@@ -537,21 +537,21 @@ if (!window.whatsAppSender) {
                             </label>
                             <select class="wa-input" id="wa-template-select" onchange="window.whatsAppSender.updatePreview()">
                                ${templatesToRender.length > 0
-                            ? `<option value="" disabled selected>-- Choose a Template --</option>` + templatesToRender.map(t => {
-                            const name = t.template_name || t.name;
-                            const components = t.components || [];
-                            const bodyComp = components.find(c => c.type === 'BODY') || {};
-                            const content = bodyComp.text || '';
-                            const category = t.category || t.previous_category || 'UNKNOWN';
-                            const headerComp = components.find(c => c.type === 'HEADER' && c.format === 'IMAGE');
-                            const headerImageUrl = headerComp && headerComp.example && headerComp.example.header_handle ? (headerComp.example.header_handle[0] || '') : '';
-                            const hasImageHeader = !!headerComp;
-                            const footerComp = components.find(c => c.type === 'FOOTER') || {};
-                            const footerText = footerComp.text || '';
-                            const buttonsComp = components.find(c => c.type === 'BUTTONS') || {};
-                            const buttonsJson = buttonsComp.buttons ? encodeURIComponent(JSON.stringify(buttonsComp.buttons)) : '';
-                            return `<option value="${name}" data-content="${encodeURIComponent(content)}" data-category="${category}" data-header-image="${headerImageUrl}" data-needs-image="${hasImageHeader}" data-footer="${encodeURIComponent(footerText)}" data-buttons="${buttonsJson}">${name} (${category} - ${t.language || 'en'})</option>`;
-                            }).join('') : `<option value="" disabled selected>No templates found from API</option>`}
+                ? `<option value="" disabled selected>-- Choose a Template --</option>` + templatesToRender.map(t => {
+                    const name = t.template_name || t.name;
+                    const components = t.components || [];
+                    const bodyComp = components.find(c => c.type === 'BODY') || {};
+                    const content = bodyComp.text || '';
+                    const category = t.category || t.previous_category || 'UNKNOWN';
+                    const headerComp = components.find(c => c.type === 'HEADER' && c.format === 'IMAGE');
+                    const headerImageUrl = headerComp && headerComp.example && headerComp.example.header_handle ? (headerComp.example.header_handle[0] || '') : '';
+                    const hasImageHeader = !!headerComp;
+                    const footerComp = components.find(c => c.type === 'FOOTER') || {};
+                    const footerText = footerComp.text || '';
+                    const buttonsComp = components.find(c => c.type === 'BUTTONS') || {};
+                    const buttonsJson = buttonsComp.buttons ? encodeURIComponent(JSON.stringify(buttonsComp.buttons)) : '';
+                    return `<option value="${name}" data-content="${encodeURIComponent(content)}" data-category="${category}" data-header-image="${headerImageUrl}" data-needs-image="${hasImageHeader}" data-footer="${encodeURIComponent(footerText)}" data-buttons="${buttonsJson}">${name} (${category} - ${t.language || 'en'})</option>`;
+                }).join('') : `<option value="" disabled selected>No templates found from API</option>`}
                             </select>                        </div>
 
                         <!-- Frequency Protection -->
@@ -698,10 +698,10 @@ if (!window.whatsAppSender) {
         // Find if template requires an image header (from the dataset we embedded)
         const needsImageHeader = select.options[select.selectedIndex].getAttribute('data-needs-image') === 'true';
         const headerImageUrl = select.options[select.selectedIndex].getAttribute('data-header-image');
-        
+
         // Find existing numeric ID from the template data
         const templateData = this.templates.find(t => (t.template_name || t.name) === select.value || t.id === select.value) || {};
-        
+
         if (currentInputs.length !== uniqueVars.length || !varsContainer.querySelector('.wa-media-upload-section') || varsContainer.getAttribute('data-active-template') !== select.value) {
             varsContainer.setAttribute('data-active-template', select.value);
             let html = '';
@@ -1611,7 +1611,7 @@ if (!window.whatsAppSender) {
 
     window.whatsAppSender._getEffectiveStatus = function (m) {
         const STATUS_RANK = { 'queued': 1, 'processing': 2, 'sent': 3, 'delivered': 4, 'read': 5, 'failed': 6, 'error': 6 };
-        
+
         let status = (m.status || 'unknown').toLowerCase();
         let error = m.error || (status === 'excluded' ? m.message : null);
         let highestRank = STATUS_RANK[status] || 0;
@@ -1620,7 +1620,7 @@ if (!window.whatsAppSender) {
             Object.values(m.statusHistory).forEach(h => {
                 const hStatus = (h.status || '').toLowerCase();
                 const hRank = STATUS_RANK[hStatus] || 0;
-                
+
                 if (hRank > highestRank) {
                     highestRank = hRank;
                     status = hStatus;

@@ -214,14 +214,14 @@ window.AppDialog = (() => {
             if (window.lucide) window.lucide.createIcons({ root: overlay });
 
             if (typeof onOpen === 'function') setTimeout(() => onOpen(overlay), 10);
-            
+
             const confirmed = async () => {
                 const btn = overlay.querySelector('#app-dialog-confirm');
                 const originalHtml = btn.innerHTML;
-                
+
                 btn.disabled = true;
                 btn.innerHTML = '<span class="loading-spinner" style="width:14px; height:14px; border-width:2px; margin-right:8px; display:inline-block;"></span>Processing...';
-                
+
                 try {
                     if (typeof onConfirm === 'function') {
                         const result = await onConfirm();
@@ -231,7 +231,7 @@ window.AppDialog = (() => {
                             return;
                         }
                     }
-                    overlay.remove(); 
+                    overlay.remove();
                     resolve(true);
                 } catch (err) {
                     console.error("Confirm error:", err);
@@ -271,10 +271,10 @@ window.studentDataManager = {
             const currentUser = firebase.auth().currentUser;
             if (!currentUser) {
                 console.warn("Student Sync: No user signed in yet, waiting...");
-                this.isSubscribed = false; 
+                this.isSubscribed = false;
                 return;
             }
-            
+
             firestore.collection('modules').doc('student_directory').collection('students')
                 .onSnapshot((snapshot) => {
                     const data = {};
@@ -316,10 +316,10 @@ window.staffDataManager = {
             const currentUser = firebase.auth().currentUser;
             if (!currentUser) {
                 console.warn("Staff Sync: No user signed in yet, waiting...");
-                this.isSubscribed = false; 
+                this.isSubscribed = false;
                 return;
             }
-            
+
             firestore.collection('modules').doc('staff_directory').collection('staff')
                 .onSnapshot((snapshot) => {
                     const data = {};
@@ -398,18 +398,18 @@ function switchAppSubView(viewId, entityId = null) {
     navigateTo(`${hash}/${viewId}${entityId ? '/' + entityId : ''}`);
 }
 
-window.closeSidebar = function() {
+window.closeSidebar = function () {
     document.querySelector('.app-wrapper.active .console-sidebar')?.classList.remove('open');
     document.querySelector('.app-wrapper.active .sidebar-overlay')?.classList.remove('active');
 }
 
-window.toggleSidebar = function() {
+window.toggleSidebar = function () {
     document.querySelector('.app-wrapper.active .console-sidebar')?.classList.toggle('open');
     document.querySelector('.app-wrapper.active .sidebar-overlay')?.classList.toggle('active');
 }
 
 // ─── User Dropdown Logic ──────────────────────────────────────────────────
-window.toggleUserDropdown = function(event) {
+window.toggleUserDropdown = function (event) {
     if (event) event.stopPropagation();
     const dropdown = document.getElementById('user-dropdown');
     dropdown?.classList.toggle('show');
@@ -419,15 +419,15 @@ window.toggleUserDropdown = function(event) {
 window.addEventListener('click', (e) => {
     const dropdown = document.getElementById('user-dropdown');
     const userPill = document.querySelector('.user-pill');
-    
-    if (dropdown?.classList.contains('show') && 
-        !dropdown.contains(e.target) && 
+
+    if (dropdown?.classList.contains('show') &&
+        !dropdown.contains(e.target) &&
         !userPill?.contains(e.target)) {
         dropdown.classList.remove('show');
     }
 });
 
-window.navigateTo = function(route, updateHash = true) {
+window.navigateTo = function (route, updateHash = true) {
     if (updateHash) window.location.hash = route;
 
     const parts = route.split('/');
@@ -449,7 +449,7 @@ window.navigateTo = function(route, updateHash = true) {
         if (isAdmin || perms.smart_campus?.view || perms.smart_campus === true) {
             document.getElementById('smart-campus-app').classList.add('active');
             window.smartCampus.subscribe();
-            if (subRoute) window.smartCampus.switchView(subRoute, parts[2]); 
+            if (subRoute) window.smartCampus.switchView(subRoute, parts[2]);
             else window.smartCampus.switchView('overview');
         } else {
             AppDialog.toast('Access Denied', 'error');
@@ -509,7 +509,7 @@ window.navigateTo = function(route, updateHash = true) {
                     window.whatsAppSender.initialize();
                 }
             }
-            
+
             if (subRoute && window.whatsAppSender && window.whatsAppSender.switchView) {
                 window.whatsAppSender.switchView(subRoute);
             } else if (window.whatsAppSender) {

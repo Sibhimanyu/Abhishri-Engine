@@ -52,7 +52,7 @@ exports.syncWhatsAppTemplates = onCall(async (request) => {
     // New dlt_manager endpoint for reliable message_id
     const url = `https://www.fast2sms.com/dev/dlt_manager/whatsapp?authorization=${encodeURIComponent(config.apiKey)}&type=template`;
     const response = await axios.get(url, { headers: { "accept": "application/json" } });
-    
+
     if (!response.data?.success || !response.data?.data) {
       throw new Error(response.data?.message || "Failed to fetch templates from Fast2SMS");
     }
@@ -79,9 +79,9 @@ exports.syncWhatsAppTemplates = onCall(async (request) => {
 
     if (count > 0) await batch.commit();
     return { success: true, count };
-  } catch (error) { 
+  } catch (error) {
     logger.error("Sync Error:", error);
-    throw new HttpsError("internal", error.message); 
+    throw new HttpsError("internal", error.message);
   }
 });
 
@@ -116,13 +116,13 @@ exports.sendWhatsAppMessage = onCall(async (request) => {
 exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
-  
+
   // Debug log to see exactly what the frontend is sending
   logger.info("sendWhatsAppBroadcast Request Data:", request.data);
 
   const { templateName, recipients, variables, broadcastId, contactsCount, excludedNumbers, headerImageUrl } = request.data;
   const excludedSet = new Set((excludedNumbers || []).map(num => String(num).replace(/[^\d]/g, "")));
-  
+
   const db = admin.database(), fs = admin.firestore();
 
   // 1. Fetch Template Data
@@ -145,7 +145,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
       }
     }
   }
-  
+
   // 2. Extract Numeric ID (MUST be numeric for the GET API)
   const templateId = tData.message_id || tData.numericId || tData.id || tData.template_id;
 
@@ -176,7 +176,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
   const initialLogs = {};
   const activeRecipients = [];
   const ts = Date.now();
-  const contactExclusionStatus = {}; 
+  const contactExclusionStatus = {};
 
   for (const recipient of recipients) {
     const rawPhone = String(recipient.phone).replace(/[^\d]/g, "");
@@ -196,22 +196,22 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
 
     if (isExcluded) {
       initialLogs[`${broadcastId}/${logId}`] = {
-        broadcastId: broadcastId, 
-        recipientId: recipient.phone, 
+        broadcastId: broadcastId,
+        recipientId: recipient.phone,
         name: name,
-        status: "excluded", 
-        timestamp: ts, 
-        sentAt: ts, 
+        status: "excluded",
+        timestamp: ts,
+        sentAt: ts,
         message: "Skipped (Recent)"
       };
       excludedCount++;
       contactExclusionStatus[name].excluded++;
     } else {
       initialLogs[`${broadcastId}/${logId}`] = {
-        broadcastId: broadcastId, 
-        recipientId: recipient.phone, 
+        broadcastId: broadcastId,
+        recipientId: recipient.phone,
         name: name,
-        status: "queued", 
+        status: "queued",
         timestamp: ts
       };
       activeRecipients.push(recipient);
@@ -235,7 +235,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
 
   for (let i = 0; i < activeRecipients.length; i += BATCH_SIZE) {
     const chunk = activeRecipients.slice(i, i + BATCH_SIZE);
-    
+
     const stopSnap = await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).get();
     if (stopSnap.exists && stopSnap.data().stopRequested) { await updateProgress(true, "stopped"); return { success: true, stopped: true }; }
 
@@ -253,9 +253,9 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
     const mId = encodeURIComponent(templateId);
     const pId = encodeURIComponent(config.phoneNumberId);
     const nums = encodeURIComponent(numbersList);
-    
+
     let apiUrl = `${baseUrl}?authorization=${auth}&message_id=${mId}&phone_number_id=${pId}&numbers=${nums}`;
-    
+
     if (variablesValues) {
       apiUrl += `&variables_values=${encodeURIComponent(variablesValues)}`;
     }

@@ -407,9 +407,6 @@ window.studentDirectory = {
         container.innerHTML = html;
         if (window.lucide) lucide.createIcons();
     },
-        container.innerHTML = html;
-        if (window.lucide) lucide.createIcons();
-    },
 
     renderPerformance() {
         const container = document.getElementById('student-content-performance');
