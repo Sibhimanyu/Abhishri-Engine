@@ -104,18 +104,25 @@ if (!window.whatsAppSender) {
         const listsNav = document.getElementById('nav-whatsapp-lists');
         const historyNav = document.getElementById('nav-whatsapp-history');
         if (broadcastNav) broadcastNav.style.display = (isMaster || waPerms.broadcast) ? 'flex' : 'none';
-        if (listsNav) listsNav.style.display = (isMaster || waPerms.lists) ? 'flex' : 'none';
-        if (historyNav) historyNav.style.display = (isMaster || waPerms.history) ? 'flex' : 'none';
+        if (listsNav) listsNav.style.display = (isMaster || waPerms.manage) ? 'flex' : 'none';
+        if (historyNav) historyNav.style.display = (isMaster || waPerms.manage) ? 'flex' : 'none';
 
         // Fallback if trying to access a restricted view
         if (this.currentView === 'broadcast' && !(isMaster || waPerms.broadcast)) {
             this.currentView = 'chats';
         }
-        if (this.currentView === 'lists' && !(isMaster || waPerms.lists)) {
+        if (this.currentView === 'lists' && !(isMaster || waPerms.manage)) {
             this.currentView = 'chats';
         }
-        if (this.currentView === 'history' && !(isMaster || waPerms.history)) {
+        if (this.currentView === 'history' && !(isMaster || waPerms.manage)) {
             this.currentView = 'chats';
+        }
+
+        // Final check for module access
+        if (this.currentView === 'chats' && !(isMaster || waPerms.access)) {
+            const container = document.getElementById('whatsapp-view-chats');
+            if (container) container.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-dim);">You do not have permission to access WhatsApp messages.</div>';
+            return;
         }
 
         // Router for sub-views
@@ -1656,6 +1663,16 @@ if (!window.whatsAppSender) {
             if (listEl.innerText !== listName) listEl.innerText = listName;
         }
 
+        // Update Debug Batches if they become available or update
+        const debugMount = document.getElementById('wa-api-debug-mount');
+        if (debugMount && meta.debugBatches && meta.debugBatches.length > 0) {
+            const currentCount = debugMount.querySelectorAll('.wa-debug-batch-row').length;
+            if (currentCount !== meta.debugBatches.length) {
+                debugMount.innerHTML = this._getDebugBatchesHtml(meta.debugBatches);
+                if (window.lucide) window.lucide.createIcons({ root: debugMount });
+            }
+        }
+
         const sortVal = document.getElementById('wa-report-sort')?.value || 'oldest';
         const recipientsArray = Object.entries(recipients).map(([key, val]) => ({ key, ...val }));
 
@@ -1773,7 +1790,12 @@ if (!window.whatsAppSender) {
                 </div>
 
                 <div style="padding:0 32px 40px;">
-                    <div id="wa-live-progress-mount" style="margin-bottom:32px;"></div>
+                    <div id="wa-live-progress-mount" style="margin-bottom:24px;"></div>
+                    
+                    <div id="wa-api-debug-mount">
+                        ${meta.debugBatches && meta.debugBatches.length > 0 ? this._getDebugBatchesHtml(meta.debugBatches) : ''}
+                    </div>
+
                     <div id="wa-report-dashboard-mount" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:20px; margin-bottom:40px;"></div>
 
                     <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:24px; overflow:hidden;">
@@ -2914,6 +2936,37 @@ if (!window.whatsAppSender) {
             });
         });
         return recipients;
-    };
+        };
 
-}
+        window.whatsAppSender._getDebugBatchesHtml = function (batches) {
+        if (!batches || batches.length === 0) return '';
+        return `
+            <div class="wa-debug-batches-container" style="margin-bottom:32px; border:1px solid var(--accent); border-radius:16px; overflow:hidden; background:rgba(0,0,0,0.2);">
+                <button onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.querySelector('.chevron').style.transform = this.nextElementSibling.style.display === 'none' ? 'rotate(0deg)' : 'rotate(180deg)';" 
+                    style="width:100%; padding:16px 24px; background:rgba(239, 94, 73, 0.1); border:none; display:flex; justify-content:space-between; align-items:center; cursor:pointer; outline:none; color:var(--text-main);">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <span style="background:var(--accent); color:white; padding:4px 10px; border-radius:8px; font-size:0.65rem; font-weight:900; text-transform:uppercase; letter-spacing:0.05em;">Debug</span>
+                        <span style="font-weight:700; font-size:0.9rem;">API Request Batches (${batches.length})</span>
+                    </div>
+                    <i data-lucide="chevron-down" class="chevron" style="width:18px; height:18px; transition:transform 0.3s ease;"></i>
+                </button>
+                <div class="wa-debug-batches-list" style="display:none; padding:12px; max-height:400px; overflow-y:auto; border-top:1px solid rgba(239, 94, 73, 0.1);">
+                    ${batches.map(batch => `
+                        <div class="wa-debug-batch-row" style="padding:12px; margin-bottom:8px; background:rgba(0,0,0,0.2); border-radius:10px; border:1px solid rgba(255,255,255,0.03);">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <span style="font-size:0.7rem; font-weight:800; color:var(--accent); text-transform:uppercase;">Batch ${batch.batchIndex}</span>
+                                <span style="font-size:0.7rem; color:var(--text-dim); font-family:monospace;">Range: ${batch.recipientRange}</span>
+                                <button class="btn btn-icon" onclick="navigator.clipboard.writeText('${batch.url}'); AppDialog.toast('Batch ${batch.batchIndex} URL copied!', 'success');" 
+                                    style="width:24px; height:24px; border-radius:6px; background:rgba(255,255,255,0.05);">
+                                    <i data-lucide="copy" style="width:12px;height:12px;"></i>
+                                </button>
+                            </div>
+                            <code style="display:block; font-family:monospace; font-size:0.75rem; color:var(--text-main); word-break:break-all; background:rgba(0,0,0,0.3); padding:8px; border-radius:6px;">${batch.url}</code>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        };
+
+        }

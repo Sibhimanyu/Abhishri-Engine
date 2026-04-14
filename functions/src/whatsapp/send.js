@@ -230,7 +230,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
   }
 
   // 2. Main Dispatch Loop (BATCHED)
-  const BATCH_SIZE = 50;
+  const BATCH_SIZE = 100;
   const variablesValues = (variables || []).join("|");
 
   for (let i = 0; i < activeRecipients.length; i += BATCH_SIZE) {
@@ -263,9 +263,22 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
       apiUrl += `&media_url=${encodeURIComponent(headerImageUrl)}`;
     }
 
-    // DEBUG LOG: See the exact URL in Firebase console (masking key for safety)
-    const logUrl = apiUrl.replace(config.apiKey, "REDACTED_KEY");
-    logger.info(`WhatsApp Broadcast Request: ${logUrl}`);
+    // DEBUG LOG: See the exact URL in Firebase console
+    const logUrl = apiUrl; // No longer redacting for debugging purposes as requested
+    logger.info(`WhatsApp Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${logUrl}`);
+
+    // Save batch info for debugging
+    if (broadcastId) {
+      const batchInfo = {
+        batchIndex: Math.floor(i / BATCH_SIZE) + 1,
+        recipientRange: `${chunk[0].phone} ... ${chunk[chunk.length - 1].phone}`,
+        url: logUrl,
+        timestamp: Date.now()
+      };
+      await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).update({
+        debugBatches: admin.firestore.FieldValue.arrayUnion(batchInfo)
+      }).catch(e => logger.error("Failed to save debugBatch:", e));
+    }
 
     try {
       const processingUpdates = {};

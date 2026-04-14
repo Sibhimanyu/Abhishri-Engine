@@ -20,47 +20,65 @@ if (!window.whatsAppSender) {
     // --- Subscriptions ---
 
     window.whatsAppSender.subscribe = function () {
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const perms = userData.permissions?.whatsapp_sender || {};
+        const isMaster = isAdmin || perms === true;
+
+        if (!isMaster && !perms.access && !perms.broadcast && !perms.manage && !perms.config) return;
+
         // 1. Subscribe to Configuration in Firestore
         if (this._configUnsubscribe) this._configUnsubscribe();
 
-        this._configUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('config').doc('main')
-            .onSnapshot((doc) => {
-                this.config = doc.data();
-                this.render();
-            });
+        if (isMaster || perms.access || perms.config) {
+            this._configUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('config').doc('main')
+                .onSnapshot((doc) => {
+                    this.config = doc.data();
+                    this.render();
+                }, err => console.warn("WhatsApp Config Sync blocked or failed"));
+        }
 
         // 2. Subscribe to Templates in Firestore
         if (this._templatesUnsubscribe) this._templatesUnsubscribe();
-        this._templatesUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('templates')
-            .onSnapshot((snapshot) => {
-                this.templates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (this.currentView === 'broadcast' && typeof this.renderBroadcastView === 'function') {
-                    this.renderBroadcastView();
-                }
-            });
+        if (isMaster || perms.broadcast || perms.manage) {
+            this._templatesUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('templates')
+                .onSnapshot((snapshot) => {
+                    this.templates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    if (this.currentView === 'broadcast' && typeof this.renderBroadcastView === 'function') {
+                        this.renderBroadcastView();
+                    }
+                }, err => console.warn("WhatsApp Templates Sync blocked or failed"));
+        }
 
         // 3. Subscribe to Conversations (Metadata from RTDB)
         if (this._convosUnsubscribe) this._convosUnsubscribe();
 
-        const convosRef = firebase.database().ref('modules/whatsapp_sender/conversations');
-        const listener = convosRef.on('value', (snapshot) => {
-            const data = snapshot.val() || {};
-            this.conversations = {};
-            Object.entries(data).forEach(([key, val]) => {
-                if (val.metadata) {
-                    this.conversations[val.metadata.phoneNumber || key] = val.metadata;
-                }
-            });
+        if (isMaster || perms.access) {
+            const convosRef = firebase.database().ref('modules/whatsapp_sender/conversations');
+            const listener = convosRef.on('value', (snapshot) => {
+                const data = snapshot.val() || {};
+                this.conversations = {};
+                Object.entries(data).forEach(([key, val]) => {
+                    if (val.metadata) {
+                        this.conversations[val.metadata.phoneNumber || key] = val.metadata;
+                    }
+                });
 
-            if (this.currentView === 'chats') {
-                this.renderConversationList();
-            }
-        });
-        this._convosUnsubscribe = () => convosRef.off('value', listener);
+                if (this.currentView === 'chats') {
+                    this.renderConversationList();
+                }
+            }, err => console.warn("WhatsApp Conversations Sync blocked"));
+            this._convosUnsubscribe = () => convosRef.off('value', listener);
+        }
     };
 
     window.whatsAppSender.subscribeToMessages = function (phoneNumber) {
         if (this._messagesUnsubscribe) this._messagesUnsubscribe();
+
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const perms = userData.permissions?.whatsapp_sender || {};
+        if (!isAdmin && perms !== true && !perms.access) return;
 
         const safeKey = phoneNumber.replace(/[.#$/[\]]/g, '_');
         const messagesRef = firebase.database().ref(`modules/whatsapp_sender/conversations/${safeKey}/messages`);
@@ -82,6 +100,12 @@ if (!window.whatsAppSender) {
 
     window.whatsAppSender.loadLists = function () {
         if (this._listsUnsubscribe) this._listsUnsubscribe();
+
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const perms = userData.permissions?.whatsapp_sender || {};
+        if (!isAdmin && perms !== true && !perms.manage && !perms.broadcast) return;
+
         this._listsUnsubscribe = firestore.collection('modules').doc('whatsapp_sender').collection('lists').onSnapshot((querySnapshot) => {
             const data = {};
             querySnapshot.forEach((doc) => {
@@ -113,7 +137,7 @@ if (!window.whatsAppSender) {
                     }
                 }
             }
-        });
+        }, err => console.warn("WhatsApp Lists Sync blocked or failed"));
     };
 
 

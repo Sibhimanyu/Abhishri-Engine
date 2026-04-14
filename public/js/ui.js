@@ -442,11 +442,19 @@ window.navigateTo = function (route, updateHash = true) {
     const perms = userData.permissions || {};
     const isAdmin = userData.isAdmin;
 
+    const hasModPerm = (mod) => {
+        if (isAdmin) return true;
+        const p = perms[mod];
+        if (!p) return false;
+        if (p === true) return true;
+        return Object.values(p).some(v => v === true);
+    };
+
     if (mainRoute === 'portal') {
         document.getElementById('landing-view').classList.add('active');
         renderPortalCards(userData);
     } else if (mainRoute === 'smart-campus') {
-        if (isAdmin || perms.smart_campus?.view || perms.smart_campus === true) {
+        if (hasModPerm('smart_campus')) {
             document.getElementById('smart-campus-app').classList.add('active');
             window.smartCampus.subscribe();
             if (subRoute) window.smartCampus.switchView(subRoute, parts[2]);
@@ -467,7 +475,7 @@ window.navigateTo = function (route, updateHash = true) {
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'students') {
-        if (isAdmin || perms.student_directory?.view || perms.student_directory === true) {
+        if (hasModPerm('student_directory')) {
             document.getElementById('student-app').classList.add('active');
             window.studentDirectory.subscribe();
             if (subRoute && window.studentDirectory.switchView) window.studentDirectory.switchView(subRoute, parts[2]);
@@ -477,7 +485,7 @@ window.navigateTo = function (route, updateHash = true) {
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'staff') {
-        if (isAdmin || perms.staff_directory?.view || perms.staff_directory === true) {
+        if (hasModPerm('staff_directory')) {
             document.getElementById('staff-app').classList.add('active');
             window.staffDirectory.subscribe();
             if (subRoute && window.staffDirectory.switchView) window.staffDirectory.switchView(subRoute);
@@ -487,21 +495,30 @@ window.navigateTo = function (route, updateHash = true) {
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'fees') {
-        if (isAdmin || perms.fees_accounting?.view || perms.fees_accounting === true) {
+        if (hasModPerm('fees_accounting')) {
             document.getElementById('fees-app').classList.add('active');
             if (window.feesManager && window.feesManager.resubscribe) {
                 window.feesManager.resubscribe();
             } else if (window.feesManager) {
                 window.feesManager.subscribe();
             }
-            if (subRoute && window.feesManager.switchView) window.feesManager.switchView(subRoute, parts[2]);
-            else window.feesManager.switchView('collections');
+            if (subRoute && window.feesManager.switchView) {
+                window.feesManager.switchView(subRoute, parts[2]);
+            } else if (window.feesManager) {
+                const fp = perms.fees_accounting || {};
+                if (isAdmin || fp === true || fp.view) window.feesManager.switchView('collections');
+                else if (fp.ledger) window.feesManager.switchView('overview');
+                else if (fp.exp_all || fp.exp_own) window.feesManager.switchView('office_expenses');
+                else if (fp.salaries_view) window.feesManager.switchView('salaries');
+                else if (fp.config) window.feesManager.switchView('plans');
+                else window.feesManager.switchView('collections');
+            }
         } else {
             AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
     } else if (mainRoute === 'whatsapp') {
-        if (isAdmin || perms.whatsapp_sender?.access || perms.whatsapp_sender === true) {
+        if (hasModPerm('whatsapp_sender')) {
             const waApp = document.getElementById('whatsapp-app');
             if (waApp) {
                 waApp.classList.add('active');
@@ -529,13 +546,21 @@ function renderPortalCards(userData) {
     const perms = userData.permissions || {};
     const isAdmin = userData.isAdmin;
 
+    const hasModPerm = (mod) => {
+        if (isAdmin) return true;
+        const p = perms[mod];
+        if (!p) return false;
+        if (p === true) return true;
+        return Object.values(p).some(v => v === true);
+    };
+
     const cards = [
-        { id: 'card-smart-campus', access: isAdmin || perms.smart_campus?.view || perms.smart_campus === true },
-        { id: 'card-students', access: isAdmin || perms.student_directory?.view || perms.student_directory === true },
-        { id: 'card-staff', access: isAdmin || perms.staff_directory?.view || perms.staff_directory === true },
-        { id: 'card-fees', access: isAdmin || perms.fees_accounting?.view || perms.fees_accounting === true },
+        { id: 'card-smart-campus', access: hasModPerm('smart_campus') },
+        { id: 'card-students', access: hasModPerm('student_directory') },
+        { id: 'card-staff', access: hasModPerm('staff_directory') },
+        { id: 'card-fees', access: hasModPerm('fees_accounting') },
         { id: 'card-admin', access: isAdmin },
-        { id: 'card-whatsapp', access: isAdmin || perms.whatsapp_sender?.access || perms.whatsapp_sender === true }
+        { id: 'card-whatsapp', access: hasModPerm('whatsapp_sender') }
     ];
 
     cards.forEach(card => {

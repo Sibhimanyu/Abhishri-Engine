@@ -10,6 +10,22 @@ window.smartCampus = {
     scenesListener: null,
 
     switchView(view, areaId = null) {
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const scPerms = userData.permissions?.smart_campus || {};
+
+        // Granular Permission Access Check
+        if (!isAdmin) {
+            if (view === 'scenes' && !scPerms.scenes && scPerms !== true) {
+                AppDialog.toast('Access Denied: You do not have permission to access Scenes.', 'error');
+                return;
+            }
+            if ((view === 'overview' || view === 'room') && !scPerms.view && scPerms !== true) {
+                AppDialog.toast('Access Denied: You do not have permission to view Campus telemetry.', 'error');
+                return;
+            }
+        }
+
         this.currentView = view;
         this.activeAreaId = areaId;
 
@@ -54,7 +70,12 @@ window.smartCampus = {
     },
 
     subscribe() {
-        if (!this.areasListener) {
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const perms = userData.permissions?.smart_campus || {};
+        const isMaster = isAdmin || perms === true;
+
+        if (!this.areasListener && (isMaster || perms.view || perms.control)) {
             this.areasListener = db.ref('modules/smart_campus/areas').on('value', snap => {
                 const newAreas = snap.val() || {};
 
@@ -96,7 +117,7 @@ window.smartCampus = {
             });
         }
 
-        if (!this.scenesListener) {
+        if (!this.scenesListener && (isMaster || perms.scenes)) {
             this.scenesListener = db.ref('modules/smart_campus/scenes').on('value', snap => {
                 this.scenes = snap.val() || {};
                 if (this.currentView === 'scenes') this.renderScenes();
@@ -111,6 +132,11 @@ window.smartCampus = {
         const container = document.getElementById('admin-scenes-list');
         if (!container) return;
         container.innerHTML = '';
+
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const scPerms = userData.permissions?.smart_campus || {};
+        const canManageScenes = isAdmin || scPerms === true || scPerms.scenes;
 
         const sceneIds = Object.keys(this.scenes).sort((a, b) => (this.scenes[a].name || '').localeCompare(this.scenes[b].name || ''));
 
@@ -137,8 +163,10 @@ window.smartCampus = {
                     <td><i data-lucide="${scene.icon || 'zap'}"></i></td>
                     <td>
                         <div class="table-actions">
+                            ${canManageScenes ? `
                             <button class="btn-icon" onclick="window.openCreateSceneModal('${id}')"><i data-lucide="edit-3"></i></button>
                             <button class="btn-icon text-danger" onclick="window.smartCampus.deleteScene('${id}')"><i data-lucide="trash-2"></i></button>
+                            ` : '<span style="font-size:0.7rem; color:var(--text-dim);">No Write Access</span>'}
                         </div>
                     </td>
                 </tr>`;
@@ -149,6 +177,14 @@ window.smartCampus = {
     },
 
     deleteScene(id) {
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const scPerms = userData.permissions?.smart_campus || {};
+        if (!isAdmin && !scPerms.scenes && scPerms !== true) {
+            AppDialog.toast('Unauthorized', 'error');
+            return;
+        }
+
         const s = this.scenes[id];
         AppDialog.confirm({
             title: 'Delete Scene',
@@ -166,6 +202,11 @@ window.smartCampus = {
         const nav = document.getElementById('sidebar-nav');
         const roomsGrid = document.getElementById('rooms-grid');
 
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const scPerms = userData.permissions?.smart_campus || {};
+        const isMaster = isAdmin === true;
+
         const validAreaIds = Object.keys(this.areas).filter(id => id !== 'no_area' && this.areas[id].devices);
         const sortedAreaIds = validAreaIds.sort((a, b) => (this.areas[a].name || a).localeCompare(this.areas[b].name || b));
 
@@ -177,33 +218,42 @@ window.smartCampus = {
         
         nav.innerHTML = '';
         if (backToPortalItem) nav.appendChild(backToPortalItem);
+        
+        // Overview Visibility
         if (overviewItem) {
             overviewItem.className = `nav-item ${this.currentView === 'overview' ? 'active' : ''}`;
-            nav.appendChild(overviewItem);
+            if (isMaster || scPerms.view || scPerms === true) nav.appendChild(overviewItem);
         }
+        
+        // Scenes Visibility
         if (scenesItem) {
             scenesItem.className = `nav-item ${this.currentView === 'scenes' ? 'active' : ''}`;
-            nav.appendChild(scenesItem);
+            if (isMaster || scPerms.scenes || scPerms === true) nav.appendChild(scenesItem);
         }
+        
         if (adminSideItem) {
-            nav.appendChild(adminSideItem);
-            const userData = window.currentUserData || {};
-            if (userData.isAdmin) adminSideItem.style.display = 'flex';
+            if (userData.isAdmin) {
+                adminSideItem.style.display = 'flex';
+                nav.appendChild(adminSideItem);
+            }
         }
 
-        sortedAreaIds.forEach(id => {
-            const area = this.areas[id];
-            const areaName = formatName(area.name || id);
-            const item = document.createElement('div');
-            item.className = `nav-item ${this.activeAreaId === id ? 'active' : ''}`;
-            item.dataset.areaId = id;
-            item.onclick = () => window.smartCampus.switchView('room', id);
-            item.innerHTML = `
-        <i data-lucide="${getAreaIcon(area.name || id)}"></i>
-        <span>${areaName}</span>
-      `;
-            nav.appendChild(item);
-        });
+        // Rooms Visibility
+        if (isMaster || scPerms.view || scPerms === true) {
+            sortedAreaIds.forEach(id => {
+                const area = this.areas[id];
+                const areaName = formatName(area.name || id);
+                const item = document.createElement('div');
+                item.className = `nav-item ${this.activeAreaId === id ? 'active' : ''}`;
+                item.dataset.areaId = id;
+                item.onclick = () => window.smartCampus.switchView('room', id);
+                item.innerHTML = `
+            <i data-lucide="${getAreaIcon(area.name || id)}"></i>
+            <span>${areaName}</span>
+          `;
+                nav.appendChild(item);
+            });
+        }
 
         // 2. Overview Stats
         let totalDevices = 0;
@@ -223,29 +273,31 @@ window.smartCampus = {
 
         // 3. Overview Grid
         roomsGrid.innerHTML = '';
-        sortedAreaIds.forEach(id => {
-            const area = this.areas[id];
-            const areaName = formatName(area.name || id);
-            const visibleDevices = Object.values(area.devices || {}).filter(d => !d.hidden);
-            const deviceCount = visibleDevices.length;
+        if (isMaster || scPerms.view || scPerms === true) {
+            sortedAreaIds.forEach(id => {
+                const area = this.areas[id];
+                const areaName = formatName(area.name || id);
+                const visibleDevices = Object.values(area.devices || {}).filter(d => !d.hidden);
+                const deviceCount = visibleDevices.length;
 
-            const card = document.createElement('div');
-            card.className = 'card';
-            card.onclick = () => window.smartCampus.switchView('room', id);
-            card.innerHTML = `
-        <div class="card-header">
-          <div class="card-icon">
-            <i data-lucide="${getAreaIcon(area.name || id)}"></i>
-          </div>
-          <i data-lucide="chevron-right" style="color: var(--text-dim); width: 20px;"></i>
-        </div>
-        <div class="card-info">
-          <h2>${areaName}</h2>
-          <div class="card-stats">${deviceCount} Devices</div>
-        </div>
-      `;
-            roomsGrid.appendChild(card);
-        });
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.onclick = () => window.smartCampus.switchView('room', id);
+                card.innerHTML = `
+            <div class="card-header">
+              <div class="card-icon">
+                <i data-lucide="${getAreaIcon(area.name || id)}"></i>
+              </div>
+              <i data-lucide="chevron-right" style="color: var(--text-dim); width: 20px;"></i>
+            </div>
+            <div class="card-info">
+              <h2>${areaName}</h2>
+              <div class="card-stats">${deviceCount} Devices</div>
+            </div>
+          `;
+                roomsGrid.appendChild(card);
+            });
+        }
 
         // 4. Update Detail View if active
         if (this.currentView === 'room' && this.activeAreaId) {
@@ -303,6 +355,17 @@ window.smartCampus = {
     },
 
     triggerScene(sceneId) {
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const scPerms = userData.permissions?.smart_campus || {};
+        
+        // Scenes entry point already checked, but trigger needs scenes perm or control
+        const canTrigger = isAdmin || scPerms === true || scPerms.control || scPerms.scenes;
+        if (!canTrigger) {
+            AppDialog.toast('Unauthorized: No control permission.', 'error');
+            return;
+        }
+
         const scene = this.scenes[sceneId];
         if (!scene || !scene.devices) return;
 

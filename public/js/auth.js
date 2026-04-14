@@ -114,8 +114,8 @@ function handleAuthError(error) {
 // ─── Access Control Engine (Firestore) ──────────────────────────────────────
 async function checkUserAccess(user, modal, pendingModal) {
     const email = user.email.toLowerCase();
-    const isAllowedDomain = email.endsWith('@example.com');
-    const isMasterEmail = email === 'admin@example.com';
+    const isAllowedDomain = email.endsWith('@abhishri.edu.in');
+    const isMasterEmail = email === 'admin@abhishri.edu.in';
 
     try {
         const userDoc = await firestore.collection('allowedUsers').doc(email).get();
@@ -131,9 +131,10 @@ async function checkUserAccess(user, modal, pendingModal) {
                 isAdmin: isMasterEmail ? true : false,
                 permissions: {
                     smart_campus: { view: true, control: isMasterEmail },
-                    staff_directory: { view: true, add: isMasterEmail, manage: isMasterEmail, delete: isMasterEmail, attendance: true },
+                    staff_directory: { view: true, add: isMasterEmail, manage: isMasterEmail, delete: isMasterEmail, attendance: true, pulse: isMasterEmail },
                     student_directory: { view: true, manage: isMasterEmail },
-                    whatsapp_sender: { access: isMasterEmail, broadcast: isMasterEmail, connect: isMasterEmail },
+                    student_performance: { view: true, log: isMasterEmail },
+                    whatsapp_sender: { access: isMasterEmail, broadcast: isMasterEmail, manage: isMasterEmail, connect: isMasterEmail },
                     fees_accounting: { view: true, manage: isMasterEmail }
                 },
                 addedAt: firebase.firestore.FieldValue.serverTimestamp(),
