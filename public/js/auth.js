@@ -67,7 +67,9 @@ let isSignUp = false;
 if (googleLoginBtn) {
     googleLoginBtn.addEventListener('click', () => {
         const provider = new firebase.auth.GoogleAuthProvider();
-        auth.signInWithPopup(provider).catch(handleAuthError);
+        auth.signInWithPopup(provider).then(res => {
+            window.AppLogger.log('LOGIN_GOOGLE', 'auth', { email: res.user.email });
+        }).catch(handleAuthError);
     });
 }
 
@@ -81,10 +83,13 @@ if (emailAuthForm) {
             auth.createUserWithEmailAndPassword(email, password)
                 .then(cred => {
                     cred.user.sendEmailVerification();
+                    window.AppLogger.log('SIGNUP_EMAIL', 'auth', { email });
                     AppDialog.toast('Account created! Please verify your email.', 'success');
                 }).catch(handleAuthError);
         } else {
-            auth.signInWithEmailAndPassword(email, password).catch(handleAuthError);
+            auth.signInWithEmailAndPassword(email, password).then(res => {
+                window.AppLogger.log('LOGIN_EMAIL', 'auth', { email: res.user.email });
+            }).catch(handleAuthError);
         }
     });
 }
@@ -123,25 +128,51 @@ async function checkUserAccess(user, modal, pendingModal) {
         if (userDoc.exists) {
             // User exists in whitelist
             if (pendingModal) pendingModal.classList.add('hidden');
-            grantAccess(user, modal, userDoc.data());
-        } else if (isAllowedDomain || isMasterEmail) {
-            // Auto-provision user
+            const data = userDoc.data();
+            
+            // Trigger RTDB sync for the current UID immediately
+            // Wrap in try-catch so failure doesn't block login
+            try {
+                await db.ref(`authorized_users/${user.uid}`).update({
+                    email: email,
+                    isAdmin: !!data.isAdmin,
+                    permissions: data.permissions || {},
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+            } catch (e) {
+                console.warn("RTDB Permission Sync delayed (rules may not be active yet)", e);
+            }
+
+            grantAccess(user, modal, data);
+        } else if (isAllowedDomain) {
+            // Auto-provision user with BASELINE permissions (No Admin, No Control)
             const newUserData = {
                 email: email,
-                isAdmin: isMasterEmail ? true : false,
+                isAdmin: false, // Security: Never auto-provision as admin
                 permissions: {
-                    smart_campus: { view: true, control: isMasterEmail },
-                    staff_directory: { view: true, add: isMasterEmail, manage: isMasterEmail, delete: isMasterEmail, attendance: true, pulse: isMasterEmail },
-                    student_directory: { view: true, manage: isMasterEmail },
-                    student_performance: { view: true, log: isMasterEmail },
-                    whatsapp_sender: { access: isMasterEmail, broadcast: isMasterEmail, manage: isMasterEmail, connect: isMasterEmail },
-                    fees_accounting: { view: true, manage: isMasterEmail }
+                    smart_campus: { view: true, control: false },
+                    staff_directory: { view: true, add: false, manage: false, delete: false, attendance: true, pulse: false },
+                    student_directory: { view: true, manage: false },
+                    student_performance: { view: true, log: false },
+                    whatsapp_sender: { access: true, broadcast: false, manage: false, connect: false },
+                    fees_accounting: { view: true, manage: false }
                 },
                 addedAt: firebase.firestore.FieldValue.serverTimestamp(),
                 addedBy: 'system_auto_provision'
             };
 
             await firestore.collection('allowedUsers').doc(email).set(newUserData);
+            
+            // Sync to RTDB for auto-provisioned user
+            try {
+                await db.ref(`authorized_users/${user.uid}`).update({
+                    email: email,
+                    isAdmin: false,
+                    permissions: newUserData.permissions,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+            } catch (e) { console.warn("Auto-provision RTDB sync delayed", e); }
+
             if (pendingModal) pendingModal.classList.add('hidden');
             grantAccess(user, modal, newUserData);
         } else {
@@ -165,6 +196,32 @@ function grantAccess(user, modal, userData) {
     if (modal) modal.classList.add('hidden');
     window.currentUserData = userData;
 
+    // Reset Central Data Managers
+    if (window.studentDataManager) {
+        window.studentDataManager.isSubscribed = false;
+        window.studentDataManager.subscribe();
+    }
+
+    // Force re-init of modules to pick up new permissions
+    if (window.smartCampus && typeof window.smartCampus.initialize === 'function') { 
+        window.smartCampus.isSubscribed = false; // Note: SC uses areasListener/scenesListener instead of isSubscribed
+        window.smartCampus.areasListener = null;
+        window.smartCampus.scenesListener = null;
+        window.smartCampus.initialize(); 
+    }
+    if (window.studentDirectory && typeof window.studentDirectory.initialize === 'function') { 
+        window.studentDirectory.isSubscribed = false; 
+        window.studentDirectory.initialize(); 
+    }
+    if (window.staffDirectory && typeof window.staffDirectory.initialize === 'function') { 
+        window.staffDirectory.isSubscribed = false; 
+        window.staffDirectory.initialize(); 
+    }
+    if (window.feesManager && typeof window.feesManager.initialize === 'function') { 
+        window.feesManager.isSubscribed = false; 
+        window.feesManager.initialize(); 
+    }
+
     updateUserWidget(user, userData);
     handleRouting();
 
@@ -182,6 +239,8 @@ function handleRouting() {
 }
 
 window.logout = () => {
+    const email = auth.currentUser?.email;
+    window.AppLogger.log('LOGOUT', 'auth', { email });
     auth.signOut().then(() => {
         window.location.hash = '';
         window.location.reload();

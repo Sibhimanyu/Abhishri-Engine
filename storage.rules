@@ -1,0 +1,58 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    // Get user data from Firestore
+    function getUserData() {
+      return firestore.get(/databases/(default)/documents/allowedUsers/$(request.auth.token.email.lower())).data;
+    }
+
+    // Check for admin
+    function isAdmin() {
+      return getUserData() != null && getUserData().isAdmin == true;
+    }
+
+    // Check for specific module permission
+    function hasPerm(module, action) {
+      return getUserData() != null && (
+        getUserData().isAdmin == true || 
+        getUserData().permissions[module] == true || 
+        (getUserData().permissions[module] != null && getUserData().permissions[module][action] == true)
+      );
+    }
+
+    // WhatsApp Headers
+    match /whatsapp_headers/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (hasPerm('whatsapp_sender', 'manage') || hasPerm('whatsapp_sender', 'broadcast'));
+    }
+
+    // Expense Receipts
+    match /expenses/{allPaths=**} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        hasPerm('fees_accounting', 'view') || 
+        hasPerm('fees_accounting', 'ledger') ||
+        hasPerm('fees_accounting', 'wallet_view_own')
+      );
+      allow write: if isAuthenticated() && (
+        isAdmin() || 
+        hasPerm('fees_accounting', 'trans_add') || 
+        hasPerm('fees_accounting', 'exp_own') || 
+        hasPerm('fees_accounting', 'exp_all') ||
+        hasPerm('fees_accounting', 'wallet_view_own')
+      );
+    }
+
+    // Default: Admins only for everything else
+    match /{allPaths=**} {
+      allow read, write: if isAuthenticated() && isAdmin();
+    }
+  }
+}

@@ -253,9 +253,27 @@ window.AppDialog = (() => {
         });
     }
 
-    return { toast, alert, confirm };
-})();
+    function showImage(url, title = 'Attachment View') {
+        confirm({
+            title: title,
+            content: `
+            <div style="text-align:center; padding:10px;">
+                <img src="${url}" style="max-width:100%; max-height:65vh; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1);" onerror="this.src='https://placehold.co/600x400?text=Image+Load+Error'">
+                <div style="margin-top:20px;">
+                    <a href="${url}" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:8px;">
+                        <i data-lucide="external-link" style="width:14px;"></i> Open Original
+                    </a>
+                </div>
+            </div>`,
+            isHtml: true,
+            width: '600px',
+            confirmText: 'Close',
+            onConfirm: () => true
+        });
+    }
 
+    return { toast, alert, confirm, showImage };
+})();
 // ─── Student Data Manager (Centralized) ────────────────────────────────────
 window.studentDataManager = {
     students: {},
@@ -320,7 +338,10 @@ window.staffDataManager = {
                 return;
             }
 
-            firestore.collection('modules').doc('staff_directory').collection('staff')
+            const email = currentUser.email.toLowerCase();
+            
+            // Try full sync first
+            this._unsubscribe = firestore.collection('modules').doc('staff_directory').collection('staff')
                 .onSnapshot((snapshot) => {
                     const data = {};
                     snapshot.forEach(doc => {
@@ -330,8 +351,25 @@ window.staffDataManager = {
                     this.dataLoaded = true;
                     this.notify();
                 }, (error) => {
-                    console.error("Staff Sync Error:", error);
-                    this.isSubscribed = false;
+                    if (error.code === 'permission-denied') {
+                        console.info("Staff Sync: Full access denied, trying email-based fallback...");
+                        // Fallback: Query only for own record by email
+                        firestore.collection('modules').doc('staff_directory').collection('staff')
+                            .where('email', '==', email)
+                            .onSnapshot((snap) => {
+                                const data = {};
+                                snap.forEach(doc => { data[doc.id] = { id: doc.id, ...doc.data() }; });
+                                this.staff = data;
+                                this.dataLoaded = true;
+                                this.notify();
+                            }, (err2) => {
+                                console.error("Staff Sync Fallback Error:", err2);
+                                this.isSubscribed = false;
+                            });
+                    } else {
+                        console.error("Staff Sync Error:", error);
+                        this.isSubscribed = false;
+                    }
                 });
         }, 1000);
     },
@@ -510,6 +548,7 @@ window.navigateTo = function (route, updateHash = true) {
                 else if (fp.ledger) window.feesManager.switchView('overview');
                 else if (fp.exp_all || fp.exp_own) window.feesManager.switchView('office_expenses');
                 else if (fp.salaries_view) window.feesManager.switchView('salaries');
+                else if (fp.wallet_view_own) window.feesManager.switchView('staff_wallets');
                 else if (fp.config) window.feesManager.switchView('plans');
                 else window.feesManager.switchView('collections');
             }

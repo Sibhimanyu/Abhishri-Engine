@@ -1,5 +1,15 @@
 {
   "rules": {
+    "authorized_users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "authorized_emails": {
+      ".read": "auth != null",
+      ".write": false
+    },
     "users": {
       ".read": "auth != null",
       "$uid": {
@@ -8,20 +18,24 @@
     },
     "modules": {
       "smart_campus": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/smart_campus/view').val() === true)",
+        ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/smart_campus/control').val() === true)"
       },
       "student_directory": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/student_directory/view').val() === true)",
+        ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/student_directory/manage').val() === true)"
       },
       "staff_directory": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/staff_directory/view').val() === true)",
+        ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/staff_directory/manage').val() === true)"
       },
       "whatsapp_sender": {
-        ".read": "auth != null",
-        ".write": "auth != null",
+        ".read": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/whatsapp_sender/access').val() === true)",
+        ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/whatsapp_sender/manage').val() === true)",
+        "debug_logs": {
+          ".read": "auth != null && root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true",
+          ".write": "auth != null && root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true"
+        },
         "conversations": {
           "$recipientId": {
             "metadata": {
@@ -38,13 +52,13 @@
           }
         },
         "batch_map": {
-          ".read": "auth != null",
-          ".write": "auth != null"
+          ".read": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/whatsapp_sender/access').val() === true)",
+          ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/whatsapp_sender/manage').val() === true)"
         }
       },
       "fees_accounting": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/fees_accounting/view').val() === true)",
+        ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/fees_accounting/manage').val() === true)"
       }
     }
   }

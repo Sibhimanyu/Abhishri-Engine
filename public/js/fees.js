@@ -58,16 +58,14 @@ window.feesManager = {
             });
         }
 
-        // 2. Staff (Required for Payroll and Expenses)
-        if (isMaster || perms.salaries_view || perms.salaries_process || perms.exp_all || perms.exp_own) {
-            firestore.collection('modules').doc('staff_directory').collection('staff')
-                .onSnapshot((snapshot) => {
-                    const staffData = {};
-                    snapshot.forEach(doc => staffData[doc.id] = { id: doc.id, ...doc.data() });
-                    this.staff = staffData;
-                    this.dataLoaded = true;
-                    this.render();
-                }, err => console.warn("Fees - Staff Sync error:", err));
+        // 2. Staff (Required for Payroll, Expenses and Wallets)
+        if (isMaster || perms.salaries_view || perms.salaries_process || perms.exp_all || perms.exp_own || perms.wallet_view_own) {
+            window.staffDataManager.subscribe();
+            window.staffDataManager.onUpdate((data) => {
+                this.staff = data;
+                this.dataLoaded = true;
+                this.render();
+            });
         }
 
         // 3. Fee Summaries
@@ -128,26 +126,77 @@ window.feesManager = {
         const feesPerms = userData.permissions?.fees_accounting || {};
         const canViewAll = isAdmin || feesPerms === true || feesPerms.exp_all === true;
         const canViewOwn = feesPerms.exp_own === true;
+        const canViewWallet = feesPerms.wallet_view_own === true;
         const currentUserEmail = auth.currentUser?.email?.toLowerCase();
 
-        let query = firestore.collection('modules').doc('fees_accounting').collection('expenses');
-        if (!canViewAll && canViewOwn) {
-            query = query.where('createdBy', '==', currentUserEmail);
-        } else {
-            query = query.orderBy('timestamp', 'desc');
+        // 1. If Admin/Manager with full access, subscribe to everything
+        if (canViewAll) {
+            this._expensesUnsubscribe = firestore.collection('modules').doc('fees_accounting').collection('expenses')
+                .orderBy('timestamp', 'desc')
+                .onSnapshot(snap => {
+                    const exp = [];
+                    snap.forEach(doc => exp.push({ id: doc.id, ...doc.data() }));
+                    this.expenses = exp;
+                    this.render();
+                }, err => console.error("Fees - Admin Expenses sync failed:", err));
+            return;
         }
 
-        this._expensesUnsubscribe = query.onSnapshot((snapshot) => {
-                const exp = [];
-                snapshot.forEach(doc => {
-                    const data = doc.data();
-                    if (canViewAll || data.createdBy === currentUserEmail || (data.staffId && this.staff[data.staffId]?.email?.toLowerCase() === currentUserEmail)) {
-                        exp.push({ id: doc.id, ...data });
-                    }
+        // 2. For Staff/Users with limited access
+        // We need to use specific queries that match our Firestore rules to avoid "permission-denied"
+        // Rules allow: 
+        //   a) createdBy == currentUserEmail (if exp_own or wallet_view_own)
+        //   b) staffId matches them (if wallet_view_own)
+        
+        // We'll perform two filtered subscriptions to cover both "Own Creations" and "Wallet Credits/Debits targeting them"
+        const updateExpenses = () => {
+            const expMap = new Map();
+            const processSnap = (snap) => {
+                snap.forEach(doc => expMap.set(doc.id, { id: doc.id, ...doc.data() }));
+                this.expenses = Array.from(expMap.values()).sort((a, b) => {
+                    const da = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+                    const db = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+                    return db - da;
                 });
-                this.expenses = exp;
                 this.render();
-            }, err => console.warn("Fees - Expenses sync blocked:", err));
+            };
+
+            // Listener A: Everything I created
+            const unsubA = firestore.collection('modules').doc('fees_accounting').collection('expenses')
+                .where('createdBy', '==', currentUserEmail)
+                .onSnapshot(processSnap, err => console.warn("Fees - Own Expenses sync failed:", err));
+
+            // Listener B: Everything targeting my staffId (if wallet_view_own)
+            let unsubB = null;
+            if (canViewWallet) {
+                // We need to find the staffId first. We can get it from this.staff if it was synced
+                const myStaffEntry = Object.values(this.staff).find(s => (s.email || '').toLowerCase() === currentUserEmail);
+                if (myStaffEntry) {
+                    unsubB = firestore.collection('modules').doc('fees_accounting').collection('expenses')
+                        .where('staffId', '==', myStaffEntry.id)
+                        .onSnapshot(processSnap, err => console.warn("Fees - Targeted Wallet Expenses sync failed:", err));
+                } else {
+                    // If staff record not yet loaded, wait and retry B once staff is ready
+                    this.staffDataWaitInterval = setInterval(() => {
+                        const sEntry = Object.values(this.staff).find(s => (s.email || '').toLowerCase() === currentUserEmail);
+                        if (sEntry) {
+                            clearInterval(this.staffDataWaitInterval);
+                            unsubB = firestore.collection('modules').doc('fees_accounting').collection('expenses')
+                                .where('staffId', '==', sEntry.id)
+                                .onSnapshot(processSnap, err => console.warn("Fees - Targeted Wallet Expenses retry failed:", err));
+                        }
+                    }, 2000);
+                }
+            }
+
+            this._expensesUnsubscribe = () => {
+                unsubA();
+                if (unsubB) unsubB();
+                if (this.staffDataWaitInterval) clearInterval(this.staffDataWaitInterval);
+            };
+        };
+
+        updateExpenses();
     },
 
     subscribeSalaries() {
@@ -190,9 +239,13 @@ window.feesManager = {
             'overview': 'ledger',
             'transactions': 'view',
             'plans': 'config',
-            'office_expenses': 'exp_own', // Combined check
+            'office_expenses': 'exp_own',
+            'staff_wallets': 'wallet_view_own', // Changed from view to wallet_view_own
             'salaries': 'salaries_view'
         };
+
+        let hasRevenue = false;
+        let hasExpenditure = false;
 
         Object.keys(mapping).forEach(view => {
             const el = document.getElementById(`nav-fees-${view}`);
@@ -200,10 +253,23 @@ window.feesManager = {
                 let hasPerm = isAdmin || feesPerms[mapping[view]];
                 if (view === 'office_expenses') {
                     hasPerm = isAdmin || feesPerms.exp_all || feesPerms.exp_own;
+                } else if (view === 'staff_wallets') {
+                    hasPerm = isAdmin || feesPerms.exp_all || feesPerms.wallet_view_own;
                 }
                 el.style.display = hasPerm ? 'flex' : 'none';
+
+                // Check group visibility
+                if (hasPerm) {
+                    if (['collections', 'overview', 'transactions', 'plans'].includes(view)) hasRevenue = true;
+                    if (['office_expenses', 'salaries', 'staff_wallets'].includes(view)) hasExpenditure = true;
+                }
             }
         });
+
+        const revLabel = document.getElementById('label-fees-revenue');
+        const expLabel = document.getElementById('label-fees-expenditure');
+        if (revLabel) revLabel.style.display = hasRevenue ? 'block' : 'none';
+        if (expLabel) expLabel.style.display = hasExpenditure ? 'block' : 'none';
     },
 
     switchView(viewName, studentId = null) {
@@ -226,9 +292,10 @@ window.feesManager = {
                 overview: 'Student Fee Ledger',
                 transactions: 'Recent Fee Collections',
                 office_expenses: 'Direct Office Expenditure',
+                staff_wallets: 'Staff Expense Wallets & Credits',
                 salaries: 'Payroll & Salary Management',
                 plans: 'Package Template Configuration',
-                audit_logs: 'System Audit History & Activity Log'
+                audit_logs: 'System Activity Log'
             };
             subtitle.innerText = labels[viewName] || 'Financial Management';
         }
@@ -238,6 +305,11 @@ window.feesManager = {
     },
 
     render() {
+        // Refresh staff profile if it's currently open (wallet balance sync)
+        if (window.staffDirectory && window.staffDirectory.currentView === 'report') {
+            window.staffDirectory.render();
+        }
+
         if (!window.location.hash.startsWith('#fees') && !window.location.hash.startsWith('#admin/audit_logs')) return;
 
         const userData = window.currentUserData || {};
@@ -252,6 +324,7 @@ window.feesManager = {
                 'student_fees': 'ledger',
                 'transactions': 'view',
                 'office_expenses': 'exp_own', 
+                'staff_wallets': 'wallet_view_own',
                 'salaries': 'salaries_view',
                 'plans': 'config',
                 'audit_logs': 'view'
@@ -259,6 +332,8 @@ window.feesManager = {
             const requiredPerm = viewMapping[this.currentView];
             if (requiredPerm && !feesPerms[requiredPerm]) {
                 if (this.currentView === 'office_expenses' && (feesPerms.exp_all || feesPerms.exp_own)) {
+                    // Allow access
+                } else if (this.currentView === 'staff_wallets' && (feesPerms.exp_all || feesPerms.wallet_view_own)) {
                     // Allow access
                 } else {
                     const container = document.getElementById(`fees-view-${this.currentView}`);
@@ -308,6 +383,8 @@ window.feesManager = {
 
             if (this.currentView === 'office_expenses' && (isAdmin || feesPerms.exp_all || feesPerms.exp_own)) {
                 const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Log Office Expense'; btn.onclick = () => this.showOfficeExpenseForm(); toolbar.appendChild(btn);
+            } else if (this.currentView === 'staff_wallets' && (isAdmin || feesPerms.exp_all)) {
+                const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Credit Wallet'; btn.onclick = () => this.showStaffWalletCreditForm(); toolbar.appendChild(btn);
             } else if (this.currentView === 'salaries' && (isAdmin || feesPerms.salaries_process)) {
                 const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Process Payroll'; btn.onclick = () => this.showPayrollForm(); toolbar.appendChild(btn);
             } else if (this.currentView === 'plans' && (isAdmin || feesPerms.config)) {
@@ -319,6 +396,7 @@ window.feesManager = {
         else if (this.currentView === 'overview') this.renderOverview();
         else if (this.currentView === 'transactions') this.renderTransactions();
         else if (this.currentView === 'office_expenses') this.renderOfficeExpenses();
+        else if (this.currentView === 'staff_wallets') this.renderStaffWallets();
         else if (this.currentView === 'salaries') this.renderSalaries();
         else if (this.currentView === 'student_fees') this.renderStudentFees();
         else if (this.currentView === 'plans') this.renderPlans();
@@ -604,12 +682,232 @@ window.feesManager = {
                 <td><strong>₹${e.amount.toLocaleString('en-IN')}</strong></td>
                 <td style="text-align:right">
                     <div class="table-actions" style="justify-content:flex-end">
-                        ${e.attachmentUrl ? `<button class="btn-icon" onclick="window.open('${e.attachmentUrl}', '_blank')" title="View Receipt"><i data-lucide="paperclip"></i></button>` : ''}
-                        ${(isAdmin || feesPerms.exp_all) ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')" title="Delete record"><i data-lucide="trash-2"></i></button>` : ''}
+                        ${e.attachmentUrl ? `<button class="btn-icon" onclick="AppDialog.showImage('${e.attachmentUrl}', 'Receipt: ${e.category}')" title="View Receipt"><i data-lucide="paperclip"></i></button>` : ''}
+                        ${(isAdmin || feesPerms.exp_all || (feesPerms.wallet_edit_own && e.createdBy === currentUserEmail && e.source === 'staff_wallet')) ? `<button class="btn-icon text-danger" onclick="window.feesManager.deleteExpense('${e.id}')" title="Delete record"><i data-lucide="trash-2"></i></button>` : ''}
                     </div>
                 </td></tr>`;
         });
         container.innerHTML = html + (filtered.length === 0 ? '<tr><td colspan="6">No records.</td></tr>' : '') + '</tbody></table>';
+    },
+
+    renderStaffWallets() {
+        const container = document.getElementById('fees-content-staff_wallets');
+        if (!container) return;
+
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feesPerms = userData.permissions?.fees_accounting || {};
+        const canViewAll = isAdmin || feesPerms.exp_all;
+        const currentUserEmail = auth.currentUser?.email?.toLowerCase();
+
+        const staffIds = Object.keys(this.staff);
+        const q = this.searchQuery;
+        
+        const filteredStaffIds = staffIds.filter(id => {
+            const s = this.staff[id];
+            const isOwn = s.email && s.email.toLowerCase() === currentUserEmail;
+            if (!canViewAll && !isOwn) return false;
+            return !q || (s.name || '').toLowerCase().includes(q) || (s.designation || '').toLowerCase().includes(q);
+        }).sort((a, b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));
+
+        let html = `
+            <div class="metrics-grid" style="margin-bottom: 32px;">
+                <div class="metric-card"><div class="metric-icon" style="background: rgba(115, 199, 200, 0.1); color: var(--accent-secondary);"><i data-lucide="users"></i></div><div class="metric-info"><h3>${canViewAll ? 'Managed Staff' : 'My Wallet'}</h3><div class="metric-value">${filteredStaffIds.length}</div></div></div>
+            </div>
+            <table class="console-table">
+                <thead>
+                    <tr>
+                        <th>Staff Member</th>
+                        <th>Role</th>
+                        <th>Total Credits</th>
+                        <th>Total Expenses</th>
+                        <th>Current Balance</th>
+                        <th style="text-align:right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        filteredStaffIds.forEach(id => {
+            const s = this.staff[id];
+            const email = (s.email || '').toLowerCase();
+            const credits = this.expenses.filter(e => (e.staffId === id || (email && e.createdBy === email)) && e.type === 'funding').reduce((a, b) => a + (b.amount || 0), 0);
+            const debits = this.expenses.filter(e => (e.staffId === id || (email && e.createdBy === email)) && e.type === 'spend').reduce((a, b) => a + (b.amount || 0), 0);
+            const balance = credits - debits;
+
+            html += `
+                <tr>
+                    <td><strong>${s.name}</strong></td>
+                    <td>${s.designation || 'N/A'}</td>
+                    <td style="color:var(--success)">₹${credits.toLocaleString('en-IN')}</td>
+                    <td style="color:var(--accent-primary)">₹${debits.toLocaleString('en-IN')}</td>
+                    <td><strong style="color: ${balance >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">₹${balance.toLocaleString('en-IN')}</strong></td>
+                    <td style="text-align:right">
+                        <div class="table-actions" style="justify-content:flex-end">
+                            ${canViewAll ? `
+                                <button class="btn btn-ghost btn-sm" style="color:var(--accent-secondary)" onclick="window.feesManager.showStaffWalletCreditForm('${id}')"><i data-lucide="arrow-up-circle"></i> CREDIT</button>
+                                <button class="btn btn-ghost btn-sm" style="color:var(--accent-primary)" onclick="window.feesManager.showStaffWalletDebitForm('${id}')"><i data-lucide="arrow-down-circle"></i> DEBIT</button>
+                            ` : ''}
+                            <button class="btn-icon" onclick="window.feesManager.showStaffWalletStatement('${id}')" title="View Statement"><i data-lucide="file-text"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
+        });
+
+        if (filteredStaffIds.length === 0) {
+            html += `<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">No staff records found matching your search.</td></tr>`;
+        }
+
+        container.innerHTML = html + '</tbody></table>';
+    },
+
+    showStaffWalletCreditForm(staffId = null) {
+        let opts = '<option value="">-- Select Staff Member --</option>';
+        Object.values(this.staff).sort((a, b) => a.name.localeCompare(b.name)).forEach(s => opts += `<option value="${s.id}" ${s.id === staffId ? 'selected' : ''}>${s.name}</option>`);
+        
+        const today = new Date().toISOString().split('T')[0];
+        
+        AppDialog.confirm({
+            title: 'Add Credit to Staff Wallet',
+            content: `
+                <div class="form-group"><label>Staff Member</label><select id="wc-staff" class="form-control" ${staffId ? 'disabled' : ''}>${opts}</select></div>
+                <div class="form-group" style="margin-top:15px;"><label>Credit Date</label><input type="date" id="wc-date" class="form-control" value="${today}"></div>
+                <div class="form-group" style="margin-top:15px;"><label>Amount (₹)</label><input type="number" id="wc-amount" class="form-control" placeholder="0.00"></div>
+                <div class="form-group" style="margin-top:15px;"><label>Reference / Note</label><input type="text" id="wc-details" class="form-control" placeholder="Reason for credit..."></div>`,
+            onConfirm: async () => {
+                const sid = staffId || document.getElementById('wc-staff').value;
+                const amount = parseFloat(document.getElementById('wc-amount').value);
+                const details = document.getElementById('wc-details').value;
+                const dateVal = document.getElementById('wc-date').value;
+
+                if (!sid || !amount) {
+                    AppDialog.toast('Staff and Amount are required', 'error');
+                    return false;
+                }
+
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({
+                    source: 'staff_wallet',
+                    type: 'funding',
+                    staffId: sid,
+                    amount,
+                    details: details || 'Wallet Credit',
+                    category: 'Wallet Funding',
+                    createdBy: auth.currentUser.email.toLowerCase(),
+                    timestamp: dateVal === today ? firebase.firestore.FieldValue.serverTimestamp() : new Date(dateVal)
+                });
+
+                window.AppLogger.log('WALLET_CREDIT', 'fees_accounting', { staffName: this.staff[sid]?.name, amount, details });
+                AppDialog.toast('Credit added successfully', 'success');
+                return true;
+            }
+        });
+    },
+
+    showStaffWalletDebitForm(staffId = null) {
+        let opts = '<option value="">-- Select Staff Member --</option>';
+        Object.values(this.staff).sort((a, b) => a.name.localeCompare(b.name)).forEach(s => opts += `<option value="${s.id}" ${s.id === staffId ? 'selected' : ''}>${s.name}</option>`);
+        
+        const today = new Date().toISOString().split('T')[0];
+        
+        AppDialog.confirm({
+            title: 'Log Staff Expense (Debit)',
+            content: `
+                <div class="form-group"><label>Staff Member</label><select id="wd-staff" class="form-control" ${staffId ? 'disabled' : ''}>${opts}</select></div>
+                <div class="form-group" style="margin-top:15px;"><label>Expense Date</label><input type="date" id="wd-date" class="form-control" value="${today}"></div>
+                <div class="form-group" style="margin-top:15px;"><label>Amount (₹)</label><input type="number" id="wd-amount" class="form-control" placeholder="0.00"></div>
+                <div class="form-group" style="margin-top:15px;"><label>Details</label><input type="text" id="wd-details" class="form-control" placeholder="What was this spent on?"></div>
+                <div class="form-group" style="margin-top:15px;"><label>Category</label><select id="wd-cat" class="form-control"><option>Stationery</option><option>Travel</option><option>Food/Beverages</option><option>Maintenance</option><option>Other</option></select></div>
+                <div class="form-group" style="margin-top:15px;"><label>Receipt Image</label><input type="file" id="wd-file" class="form-control" accept="image/*"></div>`,
+            onConfirm: async () => {
+                const sid = staffId || document.getElementById('wd-staff').value;
+                const amount = parseFloat(document.getElementById('wd-amount').value);
+                const details = document.getElementById('wd-details').value;
+                const cat = document.getElementById('wd-cat').value;
+                const file = document.getElementById('wd-file').files[0];
+                const dateVal = document.getElementById('wd-date').value;
+
+                if (!sid || !amount) {
+                    AppDialog.toast('Staff and Amount are required', 'error');
+                    return false;
+                }
+
+                let url = '';
+                if (file) {
+                    const snap = await firebase.storage().ref(`expenses/staff_${sid}_${Date.now()}`).put(file);
+                    url = await snap.ref.getDownloadURL();
+                }
+
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({
+                    source: 'staff_wallet',
+                    type: 'spend',
+                    staffId: sid,
+                    amount,
+                    details: details || 'Wallet Debit',
+                    category: cat,
+                    attachmentUrl: url,
+                    createdBy: auth.currentUser.email.toLowerCase(),
+                    timestamp: dateVal === today ? firebase.firestore.FieldValue.serverTimestamp() : new Date(dateVal)
+                });
+
+                window.AppLogger.log('WALLET_DEBIT', 'fees_accounting', { staffName: this.staff[sid]?.name, amount, details });
+                AppDialog.toast('Expense logged successfully', 'success');
+                return true;
+            }
+        });
+    },
+
+    showStaffWalletStatement(staffId) {
+        const s = this.staff[staffId];
+        if (!s) return;
+
+        const email = (s.email || '').toLowerCase();
+        const filteredExpenses = this.expenses.filter(e => e.staffId === staffId || (email && e.createdBy === email)).sort((a, b) => {
+            const da = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+            const db = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+            return db - da;
+        });
+
+        let rowsHtml = '';
+        filteredExpenses.forEach(e => {
+            const date = e.timestamp?.toDate ? e.timestamp.toDate() : new Date(e.timestamp);
+            const isCredit = e.type === 'funding';
+            rowsHtml += `
+                <tr>
+                    <td>${formatDate(date)}</td>
+                    <td>
+                        <div style="font-weight:600;">${e.details}</div>
+                        <div style="font-size:0.7rem; opacity:0.6;">${e.category}</div>
+                    </td>
+                    <td style="color: ${isCredit ? 'var(--success)' : 'var(--accent-primary)'}; font-weight:700;">
+                        ${isCredit ? '+' : '-'}₹${e.amount.toLocaleString('en-IN')}
+                    </td>
+                    <td>
+                        ${e.attachmentUrl ? `<button class="btn-icon btn-sm" onclick="AppDialog.showImage('${e.attachmentUrl}', 'Receipt')"><i data-lucide="paperclip" style="width:14px;"></i></button>` : ''}
+                        ${(isAdmin || feesPerms.exp_all || (feesPerms.wallet_edit_own && e.createdBy === currentUserEmail && e.source === 'staff_wallet')) ? `<button class="btn-icon btn-sm text-danger" onclick="window.feesManager.deleteExpense('${e.id}')"><i data-lucide="trash-2" style="width:14px;"></i></button>` : ''}
+                    </td>
+                </tr>`;
+        });
+
+        AppDialog.confirm({
+            title: `Wallet Statement: ${s.name}`,
+            width: '800px',
+            content: `
+                <div style="max-height: 500px; overflow-y: auto;">
+                    <table class="console-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Amount</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rowsHtml || '<tr><td colspan="4" style="text-align:center; padding:40px; color:var(--text-dim);">No transaction history found.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>`,
+            onOpen: (overlay) => { if (window.lucide) window.lucide.createIcons({ root: overlay }); }
+        });
     },
 
     renderSalaries() {
@@ -1132,15 +1430,44 @@ window.feesManager = {
         });
     },
     showOfficeExpenseForm() {
+        const today = new Date().toISOString().split('T')[0];
         AppDialog.confirm({
             title: 'Log Office Expense',
-            content: `<div class="form-group"><label>Category</label><select id="oe-cat" class="form-control"><option>Rent</option><option>Utilities</option><option>Supplies</option><option>Stationery</option><option>Maintenance</option><option>Marketing</option><option>Transport</option><option>Refreshments</option><option>Subscription/Software</option><option>Events</option><option>Other</option></select></div><div class="form-group" style="margin-top:15px;"><label>Amount (₹)</label><input type="number" id="oe-amount" class="form-control"></div><div class="form-group" style="margin-top:15px;"><label>Details</label><input type="text" id="oe-details" class="form-control"></div><div class="form-group" style="margin-top:15px;"><label>Receipt Image</label><input type="file" id="oe-file" class="form-control" accept="image/*"></div>`,
+            content: `
+                <div class="form-group"><label>Expense Date</label><input type="date" id="oe-date" class="form-control" value="${today}"></div>
+                <div class="form-group" style="margin-top:15px;"><label>Category</label><select id="oe-cat" class="form-control"><option>Stationery</option><option>Events</option><option>Utilities</option><option>Maintenance</option><option>Groceries</option><option>Marketing</option><option>Owner/Personal</option><option>Pooja Items</option><option>Courier</option><option>Other</option></select></div>
+                <div class="form-group" style="margin-top:15px;"><label>Amount (₹)</label><input type="number" id="oe-amount" class="form-control"></div>
+                <div class="form-group" style="margin-top:15px;"><label>Details</label><input type="text" id="oe-details" class="form-control"></div>
+                <div class="form-group" style="margin-top:15px;"><label>Receipt Image</label><input type="file" id="oe-file" class="form-control" accept="image/*"></div>`,
             onConfirm: async () => {
-                const amount = parseFloat(document.getElementById('oe-amount').value), file = document.getElementById('oe-file').files[0]; if (!amount) return false;
-                let url = ''; if (file) { const snap = await firebase.storage().ref(`expenses/office_${Date.now()}`).put(file); url = await snap.ref.getDownloadURL(); }
-                const cat = document.getElementById('oe-cat').value, details = document.getElementById('oe-details').value;
-                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ source: 'office', type: 'spend', amount, category: cat, details, createdBy: auth.currentUser.email.toLowerCase(), timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-                window.AppLogger.log('LOG_EXPENSE', 'fees_accounting', { category: cat, amount, details }); return true;
+                const amount = parseFloat(document.getElementById('oe-amount').value), 
+                      file = document.getElementById('oe-file').files[0],
+                      dateVal = document.getElementById('oe-date').value;
+                
+                if (!amount) return false;
+                
+                let url = ''; 
+                if (file) { 
+                    const snap = await firebase.storage().ref(`expenses/office_${Date.now()}`).put(file); 
+                    url = await snap.ref.getDownloadURL(); 
+                }
+                
+                const cat = document.getElementById('oe-cat').value, 
+                      details = document.getElementById('oe-details').value;
+                
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ 
+                    source: 'office', 
+                    type: 'spend', 
+                    amount, 
+                    category: cat, 
+                    details, 
+                    attachmentUrl: url,
+                    createdBy: auth.currentUser.email.toLowerCase(), 
+                    timestamp: dateVal === today ? firebase.firestore.FieldValue.serverTimestamp() : new Date(dateVal)
+                });
+                
+                window.AppLogger.log('LOG_EXPENSE', 'fees_accounting', { category: cat, amount, details, date: dateVal }); 
+                return true;
             }
         });
     },
@@ -1194,8 +1521,27 @@ window.feesManager = {
     },
     renderAuditLogs() {
         const container = document.getElementById('fees-content-audit_logs'); if (!container) return;
+        
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        if (!isAdmin) {
+            container.innerHTML = `<div class="empty-state" style="padding:100px 20px;">
+                <i data-lucide="shield-alert" style="width:48px; height:48px; color:var(--accent-primary); margin-bottom:20px;"></i>
+                <h2>Unauthorized Access</h2>
+                <p>Only system administrators can view the Activity Log.</p>
+            </div>`;
+            if (window.lucide) lucide.createIcons();
+            return;
+        }
+
         const q = this.searchQuery, modF = this.logModuleFilter, actF = this.logActionFilter;
-        const filtered = this.auditLogs.filter(log => { if (modF !== 'all' && log.module !== modF) return false; if (actF !== 'all' && log.action !== actF) return false; if (!q) return true; const searchStr = `${log.action} ${log.module} ${log.performedBy} ${JSON.stringify(log.details)}`.toLowerCase(); return searchStr.includes(q); });
+        const filtered = this.auditLogs.filter(log => { 
+            if (modF !== 'all' && log.module !== modF) return false; 
+            if (actF !== 'all' && log.action !== actF) return false; 
+            if (!q) return true; 
+            const searchStr = `${log.action} ${log.module} ${log.performedBy} ${JSON.stringify(log.details)}`.toLowerCase(); 
+            return searchStr.includes(q); 
+        });
         filtered.sort((a, b) => {
             let valA, valB; if (this.sortField === 'timestamp') { valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime(); valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime(); }
             else if (this.sortField === 'action') { valA = (a.action || '').toLowerCase(); valB = (b.action || '').toLowerCase(); }

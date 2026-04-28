@@ -64,10 +64,14 @@ service cloud.firestore {
 
     // --- Staff Directory Module ---
     match /modules/staff_directory {
-      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('staff_directory'));
+      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('staff_directory') || getPerm('fees_accounting', 'wallet_view_own'));
       
       match /staff/{staffId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
+        allow read: if isAuthenticated() && (
+          isAdmin() || 
+          getPerm('staff_directory', 'view') || 
+          resource.data.email.lower() == request.auth.token.email.lower()
+        );
         allow create: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'add'));
         allow update: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'edit'));
         allow delete: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'delete'));
@@ -127,7 +131,11 @@ service cloud.firestore {
         allow read: if isAuthenticated() && (
           isAdmin() || 
           getPerm('fees_accounting', 'exp_all') || 
-          (getPerm('fees_accounting', 'exp_own') && resource.data.createdBy == request.auth.token.email.lower())
+          (getPerm('fees_accounting', 'exp_own') && resource.data.createdBy == request.auth.token.email.lower()) ||
+          (getPerm('fees_accounting', 'wallet_view_own') && (
+            resource.data.createdBy == request.auth.token.email.lower() ||
+            (resource.data.staffId != null && getStaffEmail(resource.data.staffId) == request.auth.token.email.lower())
+          ))
         );
         allow create: if isAuthenticated() && (
           isAdmin() || 
@@ -135,8 +143,18 @@ service cloud.firestore {
           getPerm('fees_accounting', 'exp_own')
         ) && request.resource.data.createdBy == request.auth.token.email.lower() && request.resource.data.source == 'office';
         
-        allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all'));
+        allow update, delete: if isAuthenticated() && (
+          isAdmin() || 
+          getPerm('fees_accounting', 'exp_all') ||
+          (getPerm('fees_accounting', 'wallet_edit_own') && resource.data.createdBy == request.auth.token.email.lower() && resource.data.source == 'staff_wallet')
+        );
       }
+
+    // Helper to get staff email by ID (used for wallet security)
+    function getStaffEmail(staffId) {
+      return get(/databases/$(database)/documents/modules/staff_directory/staff/$(staffId)).data.email.lower();
+    }
+
       
       match /salaries/{id} {
         allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_view'));
@@ -155,16 +173,27 @@ service cloud.firestore {
       allow read: if request.auth != null && (request.auth.token.email.lower() == email.lower() || isAdmin());
       
       // Allow creation if:
-      // 1. User is auto-provisioning themselves from an allowed domain
+      // 1. User is auto-provisioning themselves from an allowed domain (RESTRICTED)
       // 2. An existing admin is manually authorizing a new email
       allow create: if request.auth != null && (
-        (request.auth.token.email.lower() == email.lower() && (
-          email.lower().matches('.*@abhishri\\.edu\\.in')
-        )) || isAdmin()
+        (
+          request.auth.token.email.lower() == email.lower() && 
+          email.lower().matches('.*@abhishri\\.edu\\.in') &&
+          // SECURITY FIX: Prevent self-elevation
+          request.resource.data.isAdmin == false &&
+          // SECURITY FIX: Ensure they only get baseline permissions
+          request.resource.data.permissions.smart_campus.control == false &&
+          request.resource.data.permissions.whatsapp_sender.manage == false
+        ) || isAdmin()
       );
 
       // Only admins can update or delete users
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() && (
+        // Prevent accidental lockout: don't let admins remove their own admin status
+        // unless there is at least one other admin (simplified here to just blocking self-edit of isAdmin)
+        (request.resource.data.isAdmin == resource.data.isAdmin || request.auth.token.email.lower() != email.lower())
+      );
+      allow delete: if isAdmin() && request.auth.token.email.lower() != email.lower();
     }
 
     // Helper for Admin check

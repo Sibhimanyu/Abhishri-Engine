@@ -341,16 +341,31 @@ window.studentDirectory = {
                 <div style="margin-left:auto; display:flex; gap:10px;"><button class="btn btn-primary" onclick="window.studentDirectory.printStudentReport('${id}')"><i data-lucide="printer"></i> Print Report</button></div>`;
         }
 
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feesPerms = userData.permissions?.fees_accounting || {};
+        const perfPerms = userData.permissions?.student_performance || {};
+
         const feeData = (window.feesManager?.fees?.[id]) || { total: 0, paid: 0 };
         const balance = (feeData.total || 0) - (feeData.paid || 0);
         
-        // Pulses
-        const pulseSnap = await firestore.collection('modules').doc('student_directory').collection('performance_logs')
-            .where('studentId', '==', id).limit(50).get();
-        const allPulses = [];
-        pulseSnap.forEach(doc => allPulses.push(doc.data()));
-        allPulses.sort((a, b) => new Date(b.date) - new Date(a.date));
-        const latestPulses = allPulses.slice(0, 3);
+        // Pulses with safety catch
+        let allPulses = [];
+        let latestPulses = [];
+        if (isAdmin || perfPerms.view || perfPerms === true) {
+            try {
+                const pulseSnap = await firestore.collection('modules').doc('student_directory').collection('performance_logs')
+                    .where('studentId', '==', id).limit(50).get();
+                pulseSnap.forEach(doc => allPulses.push(doc.data()));
+                allPulses.sort((a, b) => new Date(b.date) - new Date(a.date));
+                latestPulses = allPulses.slice(0, 3);
+            } catch (e) {
+                console.warn("Performance pulse access restricted or failed", e);
+            }
+        }
+
+        const canSeeFees = isAdmin || feesPerms.view || feesPerms === true || feesPerms.ledger;
+        const canSeePerf = isAdmin || perfPerms.view || perfPerms === true;
 
         let html = `
             <div class="profile-container" style="padding-bottom: 60px;">
@@ -455,7 +470,8 @@ window.studentDirectory = {
                     </div>
                 </div>
 
-                <div class="profile-info-grid" style="display:grid; grid-template-columns: 1.5fr 1fr; gap:32px; margin-top: 32px;">
+                <div class="profile-info-grid" style="display:grid; grid-template-columns: ${canSeeFees && canSeePerf ? '1.5fr 1fr' : '1fr'}; gap:32px; margin-top: 32px;">
+                    ${canSeeFees ? `
                     <div class="profile-info-card" style="background:var(--surface); border:1px solid var(--card-border); padding:32px; border-radius:24px;">
                         <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="wallet"></i> Financial Status</div>
                         <div class="highlights" style="margin-top:0; grid-template-columns: repeat(3, 1fr);">
@@ -464,12 +480,14 @@ window.studentDirectory = {
                             <div class="highlight-item" style="border-left: 4px solid var(--accent-primary);"><h3>Due</h3><div style="color:var(--accent-primary)">₹${balance.toLocaleString('en-IN')}</div></div>
                         </div>
                         <button class="btn btn-ghost btn-sm" style="margin-top:20px; width:100%; border:1px dashed rgba(255,255,255,0.1); height:45px;" onclick="window.feesManager.switchView('student_fees', '${id}')">OPEN FULL ACCOUNTING LEDGER <i data-lucide="external-link"></i></button>
-                    </div>
+                    </div>` : ''}
+                    
+                    ${canSeePerf ? `
                     <div class="profile-info-card" style="background:var(--surface); border:1px solid var(--card-border); padding:32px; border-radius:24px;">
                         <div class="form-section-title" style="margin-top:0; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:15px; margin-bottom:20px;"><i data-lucide="zap"></i> Growth Pulse</div>
                         ${latestPulses.length > 0 ? latestPulses.map(p => `<div style="padding:12px; background:rgba(255,255,255,0.02); border-radius:12px; margin-bottom:10px; border-left:3px solid var(--accent-secondary);"><div style="display:flex; justify-content:space-between; font-size:0.75rem; margin-bottom:4px;"><span style="font-weight:700;">${p.category}</span><span style="opacity:0.6;">${p.date}</span></div><div style="font-size:0.85rem; line-height:1.4; color:var(--text-main);">${p.notes}</div></div>`).join('') : '<div class="empty-state" style="padding:20px;"><p>No development logs found.</p></div>'}
                         <button class="btn btn-ghost btn-sm" style="width:100%; margin-top:10px;" onclick="window.studentDirectory.switchView('performance', '${id}')">FULL PERFORMANCE HISTORY <i data-lucide="chevron-right"></i></button>
-                    </div>
+                    </div>` : ''}
                 </div>
             </div>`;
         container.innerHTML = html;
@@ -582,5 +600,9 @@ window.studentDirectory = {
         firestore.collection('modules').doc('student_directory').collection('students').add(sample).then(() => AppDialog.toast('Sample student with full profile added!', 'success'));
     },
 
-    printStudentReport(id) { window.print(); }
+    printStudentReport(id) { 
+        const s = this.students[id];
+        window.AppLogger.log('PRINT_STUDENT_REPORT', 'student_directory', { name: s?.name }, id);
+        window.print(); 
+    }
 };

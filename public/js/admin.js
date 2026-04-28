@@ -51,7 +51,7 @@ window.adminPanel = {
             subtitleEl.innerText = 'Configure smart campus automation';
             window.smartCampus.renderAdminScenes();
         } else if (view === 'audit_logs') {
-            titleEl.innerText = 'System Audit History';
+            titleEl.innerText = 'System Activity Log';
             subtitleEl.innerText = 'Detailed activity and access logs';
             if (window.feesManager) window.feesManager.renderAuditLogs();
         }
@@ -311,6 +311,9 @@ window.adminPanel = {
                             <button class="btn btn-secondary btn-sm" style="margin-top:15px; width:100%;" id="sync-wa-templates-btn" onclick="window.adminPanel.handleSyncTemplates(this)">
                                 <i data-lucide="refresh-cw"></i> Sync Message Templates
                             </button>
+                            <button class="btn btn-ghost btn-sm text-danger" style="margin-top:10px; width:100%;" onclick="window.adminPanel.handleClearWhatsAppLogs()">
+                                <i data-lucide="trash-2"></i> Clear Debug Logs
+                            </button>
                         ` : ''}
                     </div>
 
@@ -407,6 +410,27 @@ window.adminPanel = {
         }
     },
 
+    async handleClearWhatsAppLogs() {
+        AppDialog.confirm({
+            title: 'Clear Debug Logs?',
+            msg: 'This will permanently delete all WhatsApp API debug logs from the Realtime Database. This cannot be undone.',
+            danger: true,
+            confirmText: 'Clear Logs',
+            onConfirm: async () => {
+                try {
+                    await db.ref('modules/whatsapp_sender/debug_logs').remove();
+                    window.AppLogger.log('CLEAR_WHATSAPP_LOGS', 'admin_panel', { module: 'whatsapp_sender' });
+                    AppDialog.toast('Debug logs cleared successfully', 'success');
+                    return true;
+                } catch (error) {
+                    console.error("Error clearing logs:", error);
+                    AppDialog.toast('Failed to clear logs: ' + error.message, 'error');
+                    return false;
+                }
+            }
+        });
+    },
+
     showAddUserModal() {
         AppDialog.confirm({
             title: 'Authorize New User',
@@ -459,8 +483,14 @@ window.adminPanel = {
                     student_directory: { view: true, add: false, edit: false, delete: false, attendance_mark: true, attendance_view: false },
                     student_performance: { view: true, log: true },
                     staff_directory: { view: true, add: false, edit: false, delete: false, attendance_mark: true, attendance_view: false, pulse_view: false },
-                    fees_accounting: { view: false, ledger: false, trans_add: false, trans_delete: false, config: false, exp_own: true, exp_all: false, salaries_process: false, salaries_view: false },
+                    fees_accounting: { view: false, ledger: false, trans_add: false, trans_delete: false, config: false, exp_own: true, exp_all: false, salaries_process: false, salaries_view: false, wallet_view_own: true },
                     whatsapp_sender: { access: true, broadcast: false, manage: false, config: false }
+                }
+            },
+            wallet_own: {
+                isAdmin: false,
+                permissions: {
+                    fees_accounting: { wallet_view_own: true, wallet_edit_own: true }
                 }
             },
             none: { isAdmin: false, permissions: {} }
@@ -476,6 +506,7 @@ window.adminPanel = {
                         <button class="btn btn-secondary btn-sm preset-btn" data-preset="admin"><i data-lucide="shield"></i> Admin</button>
                         <button class="btn btn-secondary btn-sm preset-btn" data-preset="manager"><i data-lucide="briefcase"></i> Manager</button>
                         <button class="btn btn-secondary btn-sm preset-btn" data-preset="staff"><i data-lucide="user"></i> Staff</button>
+                        <button class="btn btn-secondary btn-sm preset-btn" data-preset="wallet_own"><i data-lucide="wallet"></i> Wallet Only</button>
                         <button class="btn btn-secondary btn-sm preset-btn" data-preset="none"><i data-lucide="x-circle"></i> Clear All</button>
                     </div>
                 </div>
@@ -542,6 +573,8 @@ window.adminPanel = {
                                 <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="config" ${getPerm('fees_accounting', 'config')}> Configure Templates</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="exp_own" ${getPerm('fees_accounting', 'exp_own')}> Log Own Expenses</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="exp_all" ${getPerm('fees_accounting', 'exp_all')}> Manage All Expenses</label>
+                                <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="wallet_view_own" ${getPerm('fees_accounting', 'wallet_view_own')}> View Own Wallet Balance</label>
+                                <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="wallet_edit_own" ${getPerm('fees_accounting', 'wallet_edit_own')}> Manage Own Wallet Entries (Del)</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="salaries_process" ${getPerm('fees_accounting', 'salaries_process')}> Process Payroll</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="fees_accounting" data-act="salaries_view" ${getPerm('fees_accounting', 'salaries_view')}> View All Salaries</label>
                             </div>

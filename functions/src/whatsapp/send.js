@@ -230,7 +230,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
   }
 
   // 2. Main Dispatch Loop (BATCHED)
-  const BATCH_SIZE = 100;
+  const BATCH_SIZE = 200;
   const variablesValues = (variables || []).join("|");
 
   for (let i = 0; i < activeRecipients.length; i += BATCH_SIZE) {

@@ -583,7 +583,7 @@
           <span>Back to Portal</span>
         </div>
 
-        <div class="sidebar-section-label"
+        <div class="sidebar-section-label" id="label-fees-revenue"
           style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 20px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">
           Revenue Management</div>
         <div class="nav-item active" onclick="window.feesManager.switchView('collections')" id="nav-fees-collections">
@@ -603,12 +603,16 @@
           <span>Package Templates</span>
         </div>
 
-        <div class="sidebar-section-label"
+        <div class="sidebar-section-label" id="label-fees-expenditure"
           style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin: 30px 0 10px 20px; letter-spacing: 1px; opacity: 0.6;">
           Expenditure & Payroll</div>
         <div class="nav-item" onclick="window.feesManager.switchView('office_expenses')" id="nav-fees-office_expenses">
           <i data-lucide="building"></i>
           <span>Office Expenses</span>
+        </div>
+        <div class="nav-item" onclick="window.feesManager.switchView('staff_wallets')" id="nav-fees-staff_wallets">
+          <i data-lucide="wallet-cards"></i>
+          <span>Staff Wallets</span>
         </div>
         <div class="nav-item" onclick="window.feesManager.switchView('salaries')" id="nav-fees-salaries">
           <i data-lucide="banknote"></i>
@@ -670,6 +674,11 @@
         <div id="fees-view-plans" class="fees-subview" style="display:none;">
           <div id="fees-content-plans"></div>
         </div>
+
+        <!-- Staff Wallets View -->
+        <div id="fees-view-staff_wallets" class="fees-subview" style="display:none;">
+          <div id="fees-content-staff_wallets"></div>
+        </div>
       </div>
     </main>
   </div>
@@ -707,7 +716,7 @@
         </div>
         <div class="nav-item" onclick="switchAdminView('audit_logs')" id="nav-item-audit_logs">
           <i data-lucide="scroll"></i>
-          <span>Audit History</span>
+          <span>Activity Log</span>
         </div>
       </nav>
 
@@ -722,8 +731,8 @@
     <main class="console-main">
       <header>
         <div class="view-title">
-          <h1 id="admin-page-title">Entity Management</h1>
-          <p id="admin-page-subtitle">Manage visibility and control</p>
+          <h1 id="admin-page-title">System Activity Log</h1>
+          <p id="admin-page-subtitle">Detailed activity and access logs</p>
         </div>
       </header>
 
@@ -808,7 +817,7 @@
           </table>
         </div>
 
-        <!-- Audit History Tab -->
+        <!-- Activity Log Tab -->
         <div id="admin-content-audit_logs" class="admin-content">
           <div id="admin-audit-toolbar" class="admin-toolbar" style="margin-bottom: 20px;">
             <!-- Toolbar for audit logs will be moved here -->

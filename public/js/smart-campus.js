@@ -9,6 +9,10 @@ window.smartCampus = {
     areasListener: null,
     scenesListener: null,
 
+    initialize() {
+        this.subscribe();
+    },
+
     switchView(view, areaId = null) {
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
