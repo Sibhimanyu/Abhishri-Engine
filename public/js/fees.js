@@ -12,6 +12,8 @@ window.feesManager = {
     salaries: [],
     transactions: [],
     auditLogs: [],
+    lastAuditLogDoc: null,
+    logsLoading: false,
     isSubscribed: false,
     dataLoaded: false,
     currentView: 'collections', // collections, overview, transactions, office_expenses, salaries, plans, student_fees, audit_logs
@@ -104,14 +106,7 @@ window.feesManager = {
 
         // 6. Audit Logs
         if (isAdmin) {
-            firestore.collection('audit_logs')
-                .orderBy('timestamp', 'desc').limit(200)
-                .onSnapshot((snapshot) => {
-                    const logs = [];
-                    snapshot.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
-                    this.auditLogs = logs;
-                    this.render();
-                }, err => console.warn("Fees - Audit Logs sync blocked:", err));
+            this.subscribeAuditLogs();
         }
 
         // 7. Expenses & Salaries (They have their own permission-aware methods)
@@ -227,6 +222,55 @@ window.feesManager = {
     resubscribe() {
         this.isSubscribed = false;
         this.subscribe();
+    },
+
+    subscribeAuditLogs() {
+        if (this._auditLogsUnsubscribe) this._auditLogsUnsubscribe();
+        this.auditLogs = [];
+        this.lastAuditLogDoc = null;
+
+        const query = firestore.collection('audit_logs')
+            .orderBy('timestamp', 'desc')
+            .limit(100);
+
+        this._auditLogsUnsubscribe = query.onSnapshot(snap => {
+            const logs = [];
+            snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+            this.auditLogs = logs;
+            if (snap.docs.length > 0) {
+                this.lastAuditLogDoc = snap.docs[snap.docs.length - 1];
+            }
+            this.render();
+        }, err => console.warn("Audit Logs sync failed:", err));
+    },
+
+    async loadMoreAuditLogs() {
+        if (this.logsLoading || !this.lastAuditLogDoc) return;
+        this.logsLoading = true;
+        this.render();
+
+        try {
+            const snap = await firestore.collection('audit_logs')
+                .orderBy('timestamp', 'desc')
+                .startAfter(this.lastAuditLogDoc)
+                .limit(100)
+                .get();
+
+            if (snap.docs.length > 0) {
+                const moreLogs = [];
+                snap.forEach(doc => moreLogs.push({ id: doc.id, ...doc.data() }));
+                this.auditLogs = [...this.auditLogs, ...moreLogs];
+                this.lastAuditLogDoc = snap.docs[snap.docs.length - 1];
+            } else {
+                this.lastAuditLogDoc = null; // No more logs
+            }
+        } catch (err) {
+            console.error("Error loading more logs:", err);
+            AppDialog.toast("Failed to load more logs", "error");
+        } finally {
+            this.logsLoading = false;
+            this.render();
+        }
     },
 
     renderSidebar() {
@@ -1528,39 +1572,101 @@ window.feesManager = {
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
         if (!isAdmin) {
-            container.innerHTML = `<div class="empty-state" style="padding:100px 20px;">
-                <i data-lucide="shield-alert" style="width:48px; height:48px; color:var(--accent-primary); margin-bottom:20px;"></i>
-                <h2>Unauthorized Access</h2>
-                <p>Only system administrators can view the Activity Log.</p>
-            </div>`;
+            container.innerHTML = `<div class="empty-state" style="padding:100px 20px;"><i data-lucide="shield-alert" style="width:48px; height:48px; color:var(--accent-primary); margin-bottom:20px;"></i><h2>Unauthorized Access</h2><p>Only system administrators can view the Activity Log.</p></div>`;
             if (window.lucide) lucide.createIcons();
             return;
         }
 
         const q = this.searchQuery, modF = this.logModuleFilter, actF = this.logActionFilter;
-        const filtered = this.auditLogs.filter(log => { 
+        
+        // Use a local variable to filter, but always keep auditLogs as the source (which is already sorted desc by timestamp from firebase)
+        let displayLogs = [...this.auditLogs];
+
+        const filtered = displayLogs.filter(log => { 
             if (modF !== 'all' && log.module !== modF) return false; 
             if (actF !== 'all' && log.action !== actF) return false; 
             if (!q) return true; 
-            const searchStr = `${log.action} ${log.module} ${log.performedBy} ${JSON.stringify(log.details)}`.toLowerCase(); 
+            const searchStr = `${log.action} ${log.module} ${log.performedBy} ${JSON.stringify(log.details || {})}`.toLowerCase(); 
             return searchStr.includes(q); 
         });
+
+        // Always sort by timestamp desc unless another field is explicitly set
+        const sortField = this.sortField === 'name' ? 'timestamp' : this.sortField; // Default 'name' from global doesn't apply here
+        
         filtered.sort((a, b) => {
-            let valA, valB; if (this.sortField === 'timestamp') { valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime(); valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime(); }
-            else if (this.sortField === 'action') { valA = (a.action || '').toLowerCase(); valB = (b.action || '').toLowerCase(); }
-            else if (this.sortField === 'module') { valA = (a.module || '').toLowerCase(); valB = (b.module || '').toLowerCase(); }
-            else if (this.sortField === 'performedBy') { valA = (a.performedBy || '').toLowerCase(); valB = (b.performedBy || '').toLowerCase(); }
-            else { valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime(); valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime(); }
-            if (this.sortOrder === 'asc') return valA > valB ? 1 : -1; return valA < valB ? 1 : -1;
+            let valA, valB; 
+            if (sortField === 'timestamp') { 
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime(); 
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime(); 
+            }
+            else if (sortField === 'action') { valA = (a.action || '').toLowerCase(); valB = (b.action || '').toLowerCase(); }
+            else if (sortField === 'module') { valA = (a.module || '').toLowerCase(); valB = (b.module || '').toLowerCase(); }
+            else if (sortField === 'performedBy') { valA = (a.performedBy || '').toLowerCase(); valB = (b.performedBy || '').toLowerCase(); }
+            else { 
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime(); 
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime(); 
+            }
+            
+            // For timestamp, if order is asc, it's old to new. If desc (default), it's new to old.
+            const order = (sortField === 'timestamp' && this.sortField === 'name') ? 'desc' : this.sortOrder;
+            if (order === 'asc') return valA > valB ? 1 : -1; 
+            return valA < valB ? 1 : -1;
         });
-        let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:0 8px;"><div style="font-size:0.9rem; color:var(--text-dim); font-weight:600;">Showing ${filtered.length} entries ${modF !== 'all' || actF !== 'all' || q ? '(filtered)' : ''}</div>${modF !== 'all' || actF !== 'all' || q ? `<button class="btn btn-ghost btn-sm" onclick="feesManager.searchQuery=''; feesManager.logModuleFilter='all'; feesManager.logActionFilter='all'; feesManager.render();" style="color:var(--accent); font-weight:700;">RESET FILTERS</button>` : ''}</div><div class="console-card" style="padding:0; overflow:hidden; border-radius:24px;"><table class="console-table"><thead><tr><th onclick="window.feesManager.setSort('timestamp')" style="cursor:pointer;">Time ${this.getSortIcon('timestamp')}</th><th onclick="window.feesManager.setSort('action')" style="cursor:pointer;">Action ${this.getSortIcon('action')}</th><th onclick="window.feesManager.setSort('module')" style="cursor:pointer;">Module ${this.getSortIcon('module')}</th><th onclick="window.feesManager.setSort('performedBy')" style="cursor:pointer;">Performed By ${this.getSortIcon('performedBy')}</th><th>Details</th></tr></thead><tbody>`;
+
+        let html = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:0 8px;">
+                <div style="font-size:0.9rem; color:var(--text-dim); font-weight:600;">Showing ${filtered.length} entries ${modF !== 'all' || actF !== 'all' || q ? '(filtered)' : ''}</div>
+                ${modF !== 'all' || actF !== 'all' || q ? `<button class="btn btn-ghost btn-sm" onclick="feesManager.searchQuery=''; feesManager.logModuleFilter='all'; feesManager.logActionFilter='all'; feesManager.render();" style="color:var(--accent); font-weight:700;">RESET FILTERS</button>` : ''}
+            </div>
+            <div class="console-card" style="padding:0; overflow:hidden; border-radius:24px;">
+                <table class="console-table">
+                    <thead>
+                        <tr>
+                            <th onclick="window.feesManager.setSort('timestamp')" style="cursor:pointer;">Time ${this.getSortIcon('timestamp')}</th>
+                            <th onclick="window.feesManager.setSort('action')" style="cursor:pointer;">Action ${this.getSortIcon('action')}</th>
+                            <th onclick="window.feesManager.setSort('module')" style="cursor:pointer;">Module ${this.getSortIcon('module')}</th>
+                            <th onclick="window.feesManager.setSort('performedBy')" style="cursor:pointer;">Performed By ${this.getSortIcon('performedBy')}</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
         filtered.forEach(log => {
-            const date = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp), timeStr = date.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-            let detailsHtml = ''; if (log.details) { detailsHtml = Object.entries(log.details).map(([k, v]) => { if (typeof v === 'object') return ''; return `<span style="font-size:0.7rem; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; margin-right:4px;">${k}: <strong>${v}</strong></span>`; }).join(''); }
+            const date = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
+            const timeStr = isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            let detailsHtml = ''; 
+            if (log.details) { 
+                detailsHtml = Object.entries(log.details).map(([k, v]) => { 
+                    if (typeof v === 'object') return ''; 
+                    return `<span style="font-size:0.7rem; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; margin-right:4px; margin-bottom:4px;">${k}: <strong>${v}</strong></span>`; 
+                }).join(''); 
+            }
             const actionClass = log.action.includes('DELETE') || log.action.includes('REVERSE') ? 'badge-danger' : log.action.includes('ADD') || log.action.includes('COLLECT') || log.action.includes('APPROVE') ? 'badge-success' : 'badge-outline';
-            html += `<tr><td style="white-space:nowrap; padding: 16px 12px;"><div style="font-weight:700; color:var(--text-main); font-size:0.85rem;">${timeStr.split(',')[0]}</div><div style="font-size:0.7rem; opacity:0.6;">${timeStr.split(',')[1] || ''}</div></td><td style="padding: 16px 12px;"><span class="badge ${actionClass}" style="font-size:0.65rem; padding: 4px 10px; border-radius:8px;">${log.action.replace(/_/g, ' ')}</span></td><td style="padding: 16px 12px;"><span style="font-size:0.75rem; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.02em;">${log.module.replace(/_/g, ' ')}</span></td><td style="padding: 16px 12px;"><div style="font-weight:600; font-size:0.85rem;">${log.performedBy || 'System'}</div></td><td style="padding: 16px 12px; max-width:400px;"><div style="display:flex; flex-wrap:wrap; gap:6px;">${detailsHtml}</div></td></tr>`;
+            html += `
+                <tr>
+                    <td style="white-space:nowrap; padding: 16px 12px;"><div style="font-weight:700; color:var(--text-main); font-size:0.85rem;">${timeStr.split(',')[0]}</div><div style="font-size:0.7rem; opacity:0.6;">${timeStr.split(',')[1] || ''}</div></td>
+                    <td style="padding: 16px 12px;"><span class="badge ${actionClass}" style="font-size:0.65rem; padding: 4px 10px; border-radius:8px;">${log.action.replace(/_/g, ' ')}</span></td>
+                    <td style="padding: 16px 12px;"><span style="font-size:0.75rem; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.02em;">${(log.module || 'system').replace(/_/g, ' ')}</span></td>
+                    <td style="padding: 16px 12px;"><div style="font-weight:600; font-size:0.85rem;">${log.performedBy || 'System'}</div></td>
+                    <td style="padding: 16px 12px; max-width:400px;"><div style="display:flex; flex-wrap:wrap; gap:6px;">${detailsHtml}</div></td>
+                </tr>`;
         });
-        if (filtered.length === 0) html += `<tr><td colspan="5" style="text-align:center; padding:60px; color:var(--text-dim);">No activity logs found matching your search.</td></tr>`;
-        html += `</tbody></table></div>`; container.innerHTML = html;
+
+        if (filtered.length === 0) {
+            html += `<tr><td colspan="5" style="text-align:center; padding:60px; color:var(--text-dim);">No activity logs found matching your search.</td></tr>`;
+        }
+
+        html += `</tbody></table></div>`;
+
+        if (this.lastAuditLogDoc && !q && modF === 'all' && actF === 'all') {
+            html += `<div style="text-align:center; padding:32px;">
+                <button class="btn btn-secondary" onclick="window.feesManager.loadMoreAuditLogs()" ${this.logsLoading ? 'disabled' : ''}>
+                    ${this.logsLoading ? '<div class="loading-spinner" style="width:16px; height:16px;"></div> Loading...' : '<i data-lucide="refresh-cw"></i> Load More Logs'}
+                </button>
+            </div>`;
+        }
+
+        container.innerHTML = html;
+        if (window.lucide) lucide.createIcons({ root: container });
     }
 };
