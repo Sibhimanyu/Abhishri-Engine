@@ -706,6 +706,9 @@ window.feesManager = {
         const filteredStaffIds = staffIds.filter(id => {
             const s = this.staff[id];
             const isOwn = s.email && s.email.toLowerCase() === currentUserEmail;
+            const isWalletEnabled = s.walletEnabled !== false; // Default to true if not specified
+            
+            if (!isWalletEnabled) return false;
             if (!canViewAll && !isOwn) return false;
             return !q || (s.name || '').toLowerCase().includes(q) || (s.designation || '').toLowerCase().includes(q);
         }).sort((a, b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));

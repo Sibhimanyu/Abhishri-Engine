@@ -5,6 +5,7 @@
 
 window.staffDirectory = {
     staff: {},
+    allowedUsers: {},
     attendance: {},
     isSubscribed: false,
     dataLoaded: false,
@@ -27,6 +28,8 @@ window.staffDirectory = {
         const perms = userData.permissions?.staff_directory || {};
         const isMaster = isAdmin || perms === true;
 
+        this.subscribeAllowedUsers();
+
         if (isMaster || perms.view || perms.add || perms.edit || perms.delete || perms.attendance_mark || perms.attendance_view || perms.pulse) {
             // Use Centralized Data Manager
             window.staffDataManager.subscribe();
@@ -39,6 +42,16 @@ window.staffDirectory = {
 
         // Initial attendance subscription
         this.subscribeToAttendance(this.selectedDate);
+    },
+
+    subscribeAllowedUsers() {
+        if (this._allowedUsersUnsubscribe) this._allowedUsersUnsubscribe();
+        this._allowedUsersUnsubscribe = firestore.collection('allowedUsers').onSnapshot(snap => {
+            const users = {};
+            snap.forEach(doc => users[doc.id] = { id: doc.id, ...doc.data() });
+            this.allowedUsers = users;
+            this.render();
+        }, err => console.warn("Staff: Allowed Users sync failed", err));
     },
 
     subscribeToAttendance(dateKey) {
@@ -219,47 +232,60 @@ window.staffDirectory = {
         if (!container) return;
 
         if (!this.dataLoaded) {
-            container.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:100px 0; gap:20px; opacity:0.7;"><div class="loading-spinner"></div><p style="font-weight:600; color:var(--text-dim); letter-spacing:1px;">SYNCHRONIZING STAFF RECORDS...</p></div>`;
+            container.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:100px 0; gap:20px; opacity:0.7;"><div class="loading-spinner"></div><p style="font-weight:600; color:var(--text-dim); letter-spacing:1px;">SYNCHRONIZING USER PROFILES...</p></div>`;
             return;
         }
 
         const toolbar = document.getElementById('staff-toolbar');
         if (toolbar) {
-            toolbar.innerHTML = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search by name or role..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>`;
+            toolbar.innerHTML = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search by name or email..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>`;
         }
 
-        const sortedIds = Object.keys(this.staff).filter(id => {
+        const staffByEmail = {};
+        Object.keys(this.staff).forEach(id => {
             const s = this.staff[id];
+            if (s.email) staffByEmail[s.email.toLowerCase()] = { ...s, id };
+        });
+
+        const sortedUserEmails = Object.keys(this.allowedUsers).filter(email => {
+            const u = this.allowedUsers[email];
+            const s = staffByEmail[email];
             const q = this.searchQuery.toLowerCase();
-            return (s.name || '').toLowerCase().includes(q) || (s.designation || '').toLowerCase().includes(q);
-        }).sort((a, b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));
+            return email.includes(q) || (s && (s.name || '').toLowerCase().includes(q)) || (s && (s.designation || '').toLowerCase().includes(q));
+        }).sort((a, b) => {
+            const sA = staffByEmail[a];
+            const sB = staffByEmail[b];
+            return (sA?.name || a).localeCompare(sB?.name || b);
+        });
 
-        if (sortedIds.length === 0 && this.searchQuery) {
-            container.innerHTML = '<div class="empty-state"><i data-lucide="users"></i><p>No staff members match your search.</p></div>';
-            return;
-        }
-
-        if (sortedIds.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i data-lucide="users"></i><p>No staff records found.</p></div>';
+        if (sortedUserEmails.length === 0 && this.searchQuery) {
+            container.innerHTML = '<div class="empty-state"><i data-lucide="users"></i><p>No users match your search.</p></div>';
             return;
         }
 
         let html = `
             <div class="metrics-grid">
-                <div class="metric-card"><div class="metric-icon" style="background: rgba(241, 97, 91, 0.15); color: var(--accent-primary);"><i data-lucide="users"></i></div><div class="metric-info"><h3>Total Staff</h3><div class="metric-value">${Object.keys(this.staff).length}</div></div></div>
-                <div class="metric-card"><div class="metric-icon" style="background: rgba(115, 199, 200, 0.15); color: var(--accent-secondary);"><i data-lucide="layers"></i></div><div class="metric-info"><h3>Departments</h3><div class="metric-value">${new Set(Object.values(this.staff).map(s => s.department)).size}</div></div></div>
+                <div class="metric-card"><div class="metric-icon" style="background: rgba(241, 97, 91, 0.15); color: var(--accent-primary);"><i data-lucide="users"></i></div><div class="metric-info"><h3>Authorized Users</h3><div class="metric-value">${Object.keys(this.allowedUsers).length}</div></div></div>
+                <div class="metric-card"><div class="metric-icon" style="background: rgba(115, 199, 200, 0.15); color: var(--accent-secondary);"><i data-lucide="shield-check"></i></div><div class="metric-info"><h3>Linked Profiles</h3><div class="metric-value">${Object.keys(staffByEmail).length}</div></div></div>
             </div><div class="directory-grid">`;
 
-        sortedIds.forEach(id => {
-            const s = this.staff[id];
+        sortedUserEmails.forEach(email => {
+            const u = this.allowedUsers[email];
+            const s = staffByEmail[email];
+            const displayName = s?.name || email.split('@')[0];
+            const initials = displayName[0].toUpperCase();
+            const id = s?.id;
+
             html += `
-                <div class="directory-card" onclick="window.staffDirectory.switchView('report', '${id}')">
-                    <div class="member-header"><div class="member-avatar" style="background: var(--accent-secondary); color: white;">${(s.name || 'S')[0]}</div><div class="member-info"><h3>${s.name}</h3><p>${s.designation || 'No Designation'}</p></div></div>
+                <div class="directory-card" ${id ? `onclick="window.staffDirectory.switchView('report', '${id}')"` : ''} style="${!id ? 'cursor:default; opacity:0.8;' : ''}">
+                    <div class="member-header"><div class="member-avatar" style="background: ${id ? 'var(--accent-secondary)' : 'var(--text-dim)'}; color: white;">${initials}</div><div class="member-info"><h3>${displayName}</h3><p>${s?.designation || (u.isAdmin ? 'Administrator' : 'Authorized User')}</p></div></div>
                     <div class="member-details">
-                        <div class="detail-item"><i data-lucide="phone"></i><span>${s.phone || 'No Phone'}</span></div>
-                        <div class="detail-item"><i data-lucide="mail"></i><span class="text-truncate">${s.email || 'No Email'}</span></div>
+                        <div class="detail-item"><i data-lucide="mail"></i><span class="text-truncate">${email}</span></div>
+                        <div class="detail-item"><i data-lucide="${id ? 'check-circle' : 'alert-circle'}" style="color: ${id ? 'var(--success)' : 'var(--accent-primary)'}"></i><span>${id ? 'Profile Linked' : 'Profile Pending'}</span></div>
                     </div>
-                    <div class="member-actions"><button class="btn btn-ghost btn-sm" style="width:100%; justify-content:center; color: var(--accent-secondary); font-weight: 800; letter-spacing: 0.5px;">VIEW PROFILE <i data-lucide="chevron-right" style="width:16px; height:16px; margin-left:4px;"></i></button></div>
+                    <div class="member-actions">
+                        ${id ? `<button class="btn btn-ghost btn-sm" style="width:100%; justify-content:center; color: var(--accent-secondary); font-weight: 800; letter-spacing: 0.5px;">VIEW PROFILE <i data-lucide="chevron-right" style="width:16px; height:16px; margin-left:4px;"></i></button>` : `<button class="btn btn-secondary btn-sm" style="width:100%; justify-content:center;" onclick="window.staffDirectory.showStaffForm(null, '${email}')"><i data-lucide="plus" style="width:14px;"></i> CREATE PROFILE</button>`}
+                    </div>
                 </div>`;
         });
         container.innerHTML = html + '</div>';
@@ -275,34 +301,62 @@ window.staffDirectory = {
 
         const toolbar = document.getElementById('staff-toolbar');
         if (toolbar) {
-            let toolbarHtml = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search staff records..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div><div style="display:flex; gap:10px;">`;
-            if (isAdmin) toolbarHtml += `<button class="btn btn-secondary" onclick="window.staffDirectory.seedSampleStaff()"><i data-lucide="database"></i> Seed</button>`;
-            if (isAdmin || staffPerms.add) toolbarHtml += `<button class="btn btn-primary" onclick="window.staffDirectory.showStaffForm()"><i data-lucide="user-plus"></i> Add Staff</button>`;
-            toolbarHtml += '</div>';
-            toolbar.innerHTML = toolbarHtml;
+            toolbar.innerHTML = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search profiles..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>`;
         }
 
-        const sortedIds = Object.keys(this.staff).filter(id => {
+        const staffByEmail = {};
+        Object.keys(this.staff).forEach(id => {
             const s = this.staff[id];
-            const q = this.searchQuery.toLowerCase();
-            return (s.name || '').toLowerCase().includes(q) || (s.department || '').toLowerCase().includes(q);
-        }).sort((a, b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));
+            if (s.email) staffByEmail[s.email.toLowerCase()] = { ...s, id };
+        });
 
-        let html = `<div class="section-title">Staff Records</div><table class="console-table"><thead><tr><th>Name</th><th>Role</th><th>Contact</th><th>Joining</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
-        sortedIds.forEach(id => {
-            const s = this.staff[id];
+        const sortedUserEmails = Object.keys(this.allowedUsers).filter(email => {
+            const u = this.allowedUsers[email];
+            const s = staffByEmail[email];
+            const q = this.searchQuery.toLowerCase();
+            return email.includes(q) || (s && (s.name || '').toLowerCase().includes(q));
+        }).sort((a, b) => a.localeCompare(b));
+
+        let html = `<div class="section-title">User Profile Management</div>
+                    <table class="console-table">
+                        <thead>
+                            <tr>
+                                <th>Authorized User</th>
+                                <th>Profile Status</th>
+                                <th>Role / Designation</th>
+                                <th style="text-align:right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+
+        sortedUserEmails.forEach(email => {
+            const u = this.allowedUsers[email];
+            const s = staffByEmail[email];
+            const id = s?.id;
+
             html += `
                 <tr>
-                    <td><div style="font-weight:700; color:var(--text-main);">${s.name}</div><div style="font-size:0.75rem; color:var(--text-dim)">${s.department || 'N/A'}</div></td>
-                    <td>${s.designation || 'N/A'}</td><td>${s.phone || 'N/A'}</td><td>${s.joiningDate || 'N/A'}</td>
-                    <td style="text-align:right"><div class="table-actions" style="justify-content:flex-end; gap:12px;">
-                        <button class="btn-icon" onclick="window.staffDirectory.switchView('report', '${id}')" title="Profile View"><i data-lucide="user"></i></button>
-                        ${(isAdmin || staffPerms.edit) ? `<button class="btn-icon" onclick="window.staffDirectory.showStaffForm('${id}')" title="Edit Record"><i data-lucide="edit-3"></i></button>` : ''}
-                        ${(isAdmin || staffPerms.delete) ? `<button class="btn-icon btn-icon-danger" onclick="window.staffDirectory.deleteStaff('${id}')" title="Remove staff"><i data-lucide="trash-2"></i></button>` : ''}
-                    </div></td>
+                    <td><div style="font-weight:700; color:var(--text-main);">${email}</div><div style="font-size:0.75rem; color:var(--text-dim)">${u.isAdmin ? 'Global Administrator' : 'Authorized User'}</div></td>
+                    <td>
+                        <span class="badge ${id ? 'badge-success' : 'badge-warning'}" style="padding: 4px 10px; font-size:0.7rem;">
+                            ${id ? 'LINKED' : 'PENDING'}
+                        </span>
+                    </td>
+                    <td>${s?.designation || 'N/A'}</td>
+                    <td style="text-align:right">
+                        <div class="table-actions" style="justify-content:flex-end; gap:12px;">
+                            ${id ? `
+                                <button class="btn-icon" onclick="window.staffDirectory.switchView('report', '${id}')" title="View Profile"><i data-lucide="user"></i></button>
+                                ${(isAdmin || staffPerms.edit) ? `<button class="btn-icon" onclick="window.staffDirectory.showStaffForm('${id}', '${email}')" title="Edit Profile"><i data-lucide="edit-3"></i></button>` : ''}
+                                ${(isAdmin || staffPerms.delete) ? `<button class="btn-icon btn-icon-danger" onclick="window.staffDirectory.deleteStaff('${id}')" title="Unlink/Remove"><i data-lucide="trash-2"></i></button>` : ''}
+                            ` : `
+                                ${(isAdmin || staffPerms.add) ? `<button class="btn btn-secondary btn-sm" onclick="window.staffDirectory.showStaffForm(null, '${email}')"><i data-lucide="plus"></i> Create Profile</button>` : ''}
+                            `}
+                        </div>
+                    </td>
                 </tr>`;
         });
-        if (sortedIds.length === 0) html += '<tr><td colspan="5" style="text-align:center; padding: 40px;">No staff records found.</td></tr>';
+        if (sortedUserEmails.length === 0) html += '<tr><td colspan="4" style="text-align:center; padding: 40px;">No authorized users found.</td></tr>';
         container.innerHTML = html + '</tbody></table>';
     },
 
@@ -415,11 +469,25 @@ window.staffDirectory = {
             sSpend = window.feesManager?.expenses?.filter(e => (e.staffId === id || (email && e.createdBy === email)) && e.type === 'spend').reduce((a,b)=>a+b.amount, 0) || 0; 
         }
         const balance = sFund - sSpend;
+        const isWalletEnabled = s.walletEnabled !== false; // Default to true if not specified
+        const showWalletMetric = isWalletEnabled && canViewFees;
+
         let latestPulses = [];
         if (canViewPulse) { try { const pulseSnap = await firestore.collection('modules').doc('staff_directory').collection('staff').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(3).get(); pulseSnap.forEach(doc => latestPulses.push(doc.data())); } catch (err) { console.warn('Permission denied fetching staff pulselogs:', err); } }
         const toolbar = document.getElementById('staff-toolbar');
         if (toolbar) toolbar.innerHTML = `<button class="btn btn-secondary" onclick="window.staffDirectory.switchView('directory')"><i data-lucide="arrow-left"></i> Back</button><button class="btn btn-secondary" onclick="window.staffDirectory.printStaffReport('${id}')"><i data-lucide="printer"></i> Print Profile</button>`;
-        container.innerHTML = `<div class="report-page" style="margin-top: 20px; border: none; background: transparent; box-shadow: none;"><div class="report-hero" style="background: linear-gradient(135deg, rgba(115, 199, 200, 0.2) 0%, rgba(241, 97, 91, 0.1) 100%); border-radius: 24px; padding: 48px; border: 1px solid var(--card-border); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 32px;"><div style="display: flex; gap: 32px; align-items: center;"><div class="profile-avatar-wrapper" style="margin: 0; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1);">${(s.name || 'S')[0]}</div><div><h1 style="font-size: 3.5rem; font-weight: 900; margin: 0 0 8px 0; letter-spacing: -2px; line-height: 1;">${s.name}</h1><div style="display: flex; gap: 12px; align-items: center;"><span class="badge badge-success" style="font-size: 0.85rem; padding: 6px 18px; background: var(--accent-secondary); color: #000; font-weight: 800;">OFFICIAL STAFF</span><span style="color: var(--text-main); font-size: 1.2rem; font-weight: 600; opacity: 0.8;">${s.designation || 'No Role'}</span></div></div></div><div class="profile-actions" style="display: flex; gap: 16px;"></div></div><div class="profile-card-main" style="margin-top: 0; border-radius: 24px;"><div class="metrics-grid"><div class="metric-card"><div class="metric-icon" style="background: rgba(115, 199, 200, 0.1); color: var(--accent-secondary);"><i data-lucide="calendar"></i></div><div class="metric-info"><h3>Attendance</h3><div class="metric-value">98%</div></div></div><div class="metric-card"><div class="metric-icon" style="background: ${canViewFees ? (balance >= 0 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(241, 97, 91, 0.1)') : 'rgba(255,255,255,0.05)'}; color: ${canViewFees ? (balance >= 0 ? 'var(--success)' : 'var(--accent-primary)') : 'var(--text-dim)'};"><i data-lucide="wallet"></i></div><div class="metric-info"><h3>Wallet Balance</h3><div class="metric-value" style="color:${canViewFees ? (balance >= 0 ? 'var(--success)' : 'var(--accent-primary)') : 'var(--text-dim)'}">${canViewFees ? `₹${balance.toLocaleString('en-IN')}` : 'No Access'}</div>${canViewFees ? `<button class="btn btn-ghost btn-sm" style="margin-top:8px; height:24px; font-size:0.7rem; padding:0 8px;" onclick="window.feesManager.showStaffWalletStatement('${id}')"><i data-lucide="file-text" style="width:12px; height:12px;"></i> View Statement</button>` : ''}</div></div><div class="metric-card"><div class="metric-icon" style="background: ${canViewPulse ? 'rgba(241, 97, 91, 0.1)' : 'rgba(255,255,255,0.05)'}; color: ${canViewPulse ? 'var(--accent-primary)' : 'var(--text-dim)'};"><i data-lucide="activity"></i></div><div class="metric-info"><h3>Activity Logs</h3><div class="metric-value" style="color:${canViewPulse ? '' : 'var(--text-dim)'}">${canViewPulse ? `${latestPulses.length} Total` : 'No Access'}</div></div></div></div><div class="profile-info-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:32px; margin-top: 40px;"><div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);"><div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="user"></i> Personal Information</div><div class="data-grid" style="grid-template-columns: 1fr 1fr;"><div class="data-item"><div class="data-label">Full Name</div><div class="data-value">${s.name}</div></div><div class="data-item"><div class="data-label">Department</div><div class="data-value">${s.department || 'N/A'}</div></div><div class="data-item"><div class="data-label">Joined On</div><div class="data-value">${s.joiningDate || 'N/A'}</div></div><div class="data-item"><div class="data-label">Blood Group</div><div class="data-value">${s.bloodGroup || 'N/A'}</div></div></div></div><div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);"><div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="phone"></i> Contact Details</div><div class="data-grid" style="grid-template-columns: 1fr;"><div class="data-item"><div class="data-label">Phone</div><div class="data-value">${s.phone || 'N/A'}</div></div><div class="data-item"><div class="data-label">Email</div><div class="data-value">${s.email || 'N/A'}</div></div><div class="data-item"><div class="data-label">Address</div><div class="data-value">${s.address || 'N/A'}</div></div></div></div></div><div class="profile-info-grid" style="display:grid; grid-template-columns: 1.5fr 1fr; gap:32px; margin-top: 32px;"><div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);"><div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="sparkles"></i> Recent Performance</div><div class="pulse-mini-list">${!canViewPulse ? '<div class="empty-state" style="padding:20px;"><i data-lucide="lock" style="margin-bottom:10px;"></i><p style="color:var(--text-dim);">No permission to view data.</p></div>' : (latestPulses.length > 0 ? latestPulses.map(p => `<div style="padding:16px; background:rgba(255,255,255,0.03); border-radius:12px; margin-bottom:12px; border-left:4px solid var(--accent-secondary)"><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><strong>${p.title}</strong><small style="color:var(--text-dim)">${p.date}</small></div><p style="font-size:0.9rem; color:var(--text-dim); margin:0; line-height:1.5;">${p.summary}</p></div>`).join('') : '<div class="empty-state" style="padding:20px;"><p style="color:var(--text-dim);">No performance logs yet.</p></div>')}</div></div><div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);"><div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="shield-check"></i> Employment Status</div><div class="data-grid" style="grid-template-columns: 1fr;"><div class="data-item"><div class="data-label">Employee ID</div><div class="data-value">EMP-${id.slice(-6).toUpperCase()}</div></div><div class="data-item"><div class="data-label">Contract Type</div><div class="data-value">Full-Time</div></div><div class="data-item"><div class="data-label">Emergency</div><div class="data-value">${s.emergencyContact || 'N/A'}</div></div></div></div></div></div></div>`;
+        container.innerHTML = `<div class="report-page" style="margin-top: 20px; border: none; background: transparent; box-shadow: none;"><div class="report-hero" style="background: linear-gradient(135deg, rgba(115, 199, 200, 0.2) 0%, rgba(241, 97, 91, 0.1) 100%); border-radius: 24px; padding: 48px; border: 1px solid var(--card-border); margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 32px;"><div style="display: flex; gap: 32px; align-items: center;"><div class="profile-avatar-wrapper" style="margin: 0; box-shadow: 0 20px 40px rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1);">${(s.name || 'S')[0]}</div><div><h1 style="font-size: 3.5rem; font-weight: 900; margin: 0 0 8px 0; letter-spacing: -2px; line-height: 1;">${s.name}</h1><div style="display: flex; gap: 12px; align-items: center;"><span class="badge badge-success" style="font-size: 0.85rem; padding: 6px 18px; background: var(--accent-secondary); color: #000; font-weight: 800;">OFFICIAL STAFF</span><span style="color: var(--text-main); font-size: 1.2rem; font-weight: 600; opacity: 0.8;">${s.designation || 'No Role'}</span></div></div></div><div class="profile-actions" style="display: flex; gap: 16px;"></div></div><div class="profile-card-main" style="margin-top: 0; border-radius: 24px;"><div class="metrics-grid">                <div class="metric-card"><div class="metric-icon" style="background: rgba(115, 199, 200, 0.1); color: var(--accent-secondary);"><i data-lucide="calendar"></i></div><div class="metric-info"><h3>Attendance</h3><div class="metric-value">98%</div></div></div>
+                ${showWalletMetric ? `
+                    <div class="metric-card">
+                        <div class="metric-icon" style="background: ${balance >= 0 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(241, 97, 91, 0.1)'}; color: ${balance >= 0 ? 'var(--success)' : 'var(--accent-primary)'};"><i data-lucide="wallet"></i></div>
+                        <div class="metric-info">
+                            <h3>Wallet Balance</h3>
+                            <div class="metric-value" style="color:${balance >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">₹${balance.toLocaleString('en-IN')}</div>
+                            <button class="btn btn-ghost btn-sm" style="margin-top:8px; height:24px; font-size:0.7rem; padding:0 8px;" onclick="window.feesManager.showStaffWalletStatement('${id}')"><i data-lucide="file-text" style="width:12px; height:12px;"></i> View Statement</button>
+                        </div>
+                    </div>
+                ` : ''}
+                <div class="metric-card"><div class="metric-icon" style="background: ${canViewPulse ? 'rgba(241, 97, 91, 0.1)' : 'rgba(255,255,255,0.05)'}; color: ${canViewPulse ? 'var(--accent-primary)' : 'var(--text-dim)'};"><i data-lucide="activity"></i></div><div class="metric-info"><h3>Activity Logs</h3><div class="metric-value" style="color:${canViewPulse ? '' : 'var(--text-dim)'}">${canViewPulse ? `${latestPulses.length} Total` : 'No Access'}</div></div></div></div><div class="profile-info-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:32px; margin-top: 40px;"><div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);"><div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="user"></i> Personal Information</div><div class="data-grid" style="grid-template-columns: 1fr 1fr;"><div class="data-item"><div class="data-label">Full Name</div><div class="data-value">${s.name}</div></div><div class="data-item"><div class="data-label">Department</div><div class="data-value">${s.department || 'N/A'}</div></div><div class="data-item"><div class="data-label">Joined On</div><div class="data-value">${s.joiningDate || 'N/A'}</div></div><div class="data-item"><div class="data-label">Blood Group</div><div class="data-value">${s.bloodGroup || 'N/A'}</div></div></div></div><div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);"><div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="phone"></i> Contact Details</div><div class="data-grid" style="grid-template-columns: 1fr;"><div class="data-item"><div class="data-label">Phone</div><div class="data-value">${s.phone || 'N/A'}</div></div><div class="data-item"><div class="data-label">Email</div><div class="data-value">${s.email || 'N/A'}</div></div><div class="data-item"><div class="data-label">Address</div><div class="data-value">${s.address || 'N/A'}</div></div></div></div></div><div class="profile-info-grid" style="display:grid; grid-template-columns: 1.5fr 1fr; gap:32px; margin-top: 32px;"><div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);"><div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="sparkles"></i> Recent Performance</div><div class="pulse-mini-list">${!canViewPulse ? '<div class="empty-state" style="padding:20px;"><i data-lucide="lock" style="margin-bottom:10px;"></i><p style="color:var(--text-dim);">No permission to view data.</p></div>' : (latestPulses.length > 0 ? latestPulses.map(p => `<div style="padding:16px; background:rgba(255,255,255,0.03); border-radius:12px; margin-bottom:12px; border-left:4px solid var(--accent-secondary)"><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><strong>${p.title}</strong><small style="color:var(--text-dim)">${p.date}</small></div><p style="font-size:0.9rem; color:var(--text-dim); margin:0; line-height:1.5;">${p.summary}</p></div>`).join('') : '<div class="empty-state" style="padding:20px;"><p style="color:var(--text-dim);">No performance logs yet.</p></div>')}</div></div><div class="profile-info-card" style="background: rgba(255,255,255,0.02); padding:24px; border-radius:20px; border:1px solid var(--card-border);"><div class="form-section-title" style="margin-bottom:20px;"><i data-lucide="shield-check"></i> Employment Status</div><div class="data-grid" style="grid-template-columns: 1fr;"><div class="data-item"><div class="data-label">Employee ID</div><div class="data-value">EMP-${id.slice(-6).toUpperCase()}</div></div><div class="data-item"><div class="data-label">Contract Type</div><div class="data-value">Full-Time</div></div><div class="data-item"><div class="data-label">Emergency</div><div class="data-value">${s.emergencyContact || 'N/A'}</div></div></div></div></div></div></div>`;
     },
 
     printStaffReport(id) {
@@ -429,16 +497,76 @@ window.staffDirectory = {
         printWindow.document.close(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
     },
 
-    showStaffForm(id = null) {
+    showStaffForm(id = null, linkedEmail = null) {
         const s = id ? this.staff[id] : {};
-        const content = `<div class="form-group"><label>Full Name</label><input type="text" id="sf-name" class="form-control" value="${s.name || ''}" /></div><div class="form-grid-2"><div class="form-group"><label>Designation</label><input type="text" id="sf-role" class="form-control" value="${s.designation || ''}" /></div><div class="form-group"><label>Department</label><input type="text" id="sf-dept" class="form-control" value="${s.department || ''}" /></div></div><div class="form-grid-2"><div class="form-group"><label>Phone</label><input type="text" id="sf-phone" class="form-control" value="${s.phone || ''}" /></div><div class="form-group"><label>Email</label><input type="email" id="sf-email" class="form-control" value="${s.email || ''}" /></div></div><div class="form-grid-2"><div class="form-grid-2"><div class="form-group"><label>Joining Date</label><input type="date" id="sf-date" class="form-control" value="${s.joiningDate || ''}" /></div><div class="form-group"><label>Monthly Base Salary (₹)</label><input type="number" id="sf-salary" class="form-control" value="${s.baseSalary || 0}" /></div></div><div class="form-group"><label>Blood Group</label><input type="text" id="sf-blood" class="form-control" value="${s.bloodGroup || ''}" /></div></div><div class="form-group"><label>Home Address</label><textarea id="sf-addr" class="form-control" rows="2">${s.address || ''}</textarea></div><div class="form-group"><label>Emergency Contact Info</label><input type="text" id="sf-emergency" class="form-control" value="${s.emergencyContact || ''}" /></div>`;
+        const email = linkedEmail || s.email || '';
+        const isEmailLocked = !!email;
+
+        const content = `
+            <div class="form-group"><label>Full Name</label><input type="text" id="sf-name" class="form-control" value="${s.name || ''}" placeholder="Legal Name" /></div>
+            <div class="form-grid-2">
+                <div class="form-group"><label>Designation</label><input type="text" id="sf-role" class="form-control" value="${s.designation || ''}" placeholder="e.g. Teacher" /></div>
+                <div class="form-group"><label>Department</label><input type="text" id="sf-dept" class="form-control" value="${s.department || ''}" placeholder="e.g. Science" /></div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group"><label>Phone</label><input type="text" id="sf-phone" class="form-control" value="${s.phone || ''}" /></div>
+                <div class="form-group"><label>Associated User Email</label><input type="email" id="sf-email" class="form-control" value="${email}" ${isEmailLocked ? 'readonly style="background:rgba(255,255,255,0.03); color:var(--text-dim);"' : ''} placeholder="user@abhishri.edu.in" /></div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-grid-2">
+                    <div class="form-group"><label>Joining Date</label><input type="date" id="sf-date" class="form-control" value="${s.joiningDate || ''}" /></div>
+                    <div class="form-group"><label>Monthly Base Salary (₹)</label><input type="number" id="sf-salary" class="form-control" value="${s.baseSalary || 0}" /></div>
+                </div>
+                <div class="form-group"><label>Blood Group</label><input type="text" id="sf-blood" class="form-control" value="${s.bloodGroup || ''}" /></div>
+            </div>
+            <div class="form-group"><label>Home Address</label><textarea id="sf-addr" class="form-control" rows="2">${s.address || ''}</textarea></div>
+            <div class="form-group" style="margin-top:15px; background:rgba(255,255,255,0.03); padding:12px; border-radius:12px; border:1px solid var(--card-border);">
+                <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                    <input type="checkbox" id="sf-wallet-enabled" ${s.walletEnabled ? 'checked' : ''} style="width:18px; height:18px;">
+                    <div>
+                        <div style="font-weight:700; color:var(--text-main);">Enable Wallet System</div>
+                        <div style="font-size:0.75rem; color:var(--text-dim);">Allow tracking credits and expenses for this user.</div>
+                    </div>
+                </label>
+            </div>
+            <div class="form-group"><label>Emergency Contact Info</label><input type="text" id="sf-emergency" class="form-control" value="${s.emergencyContact || ''}" /></div>`;
+        
         AppDialog.confirm({ 
-            title: id ? 'Edit Staff Profile' : 'Add New Staff', content, width: '600px', 
+            title: id ? 'Edit User Profile' : 'Link Profile to User', 
+            content, width: '600px', 
             onConfirm: () => {
-                const data = { name: document.getElementById('sf-name').value, designation: document.getElementById('sf-role').value, department: document.getElementById('sf-dept').value, phone: document.getElementById('sf-phone').value, email: document.getElementById('sf-email').value, joiningDate: document.getElementById('sf-date').value, baseSalary: parseFloat(document.getElementById('sf-salary').value) || 0, bloodGroup: document.getElementById('sf-blood').value, address: document.getElementById('sf-addr').value, emergencyContact: document.getElementById('sf-emergency').value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
-                if (!data.name) return false;
+                const data = { 
+                    name: document.getElementById('sf-name').value, 
+                    designation: document.getElementById('sf-role').value, 
+                    department: document.getElementById('sf-dept').value, 
+                    phone: document.getElementById('sf-phone').value, 
+                    email: document.getElementById('sf-email').value.toLowerCase().trim(), 
+                    joiningDate: document.getElementById('sf-date').value, 
+                    baseSalary: parseFloat(document.getElementById('sf-salary').value) || 0, 
+                    bloodGroup: document.getElementById('sf-blood').value, 
+                    address: document.getElementById('sf-addr').value, 
+                    walletEnabled: document.getElementById('sf-wallet-enabled').checked,
+                    emergencyContact: document.getElementById('sf-emergency').value, 
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+                };
+
+                if (!data.name || !data.email) {
+                    AppDialog.toast('Name and Email are required', 'error');
+                    return false;
+                }
+
+                // Verify the email is an authorized user before linking
+                if (!this.allowedUsers[data.email]) {
+                    AppDialog.toast('This email is not an authorized user. Add them in Admin Panel first.', 'error');
+                    return false;
+                }
+
                 const ref = firestore.collection('modules').doc('staff_directory').collection('staff');
-                (id ? ref.doc(id).update(data) : ref.add(data)).then((res) => { AppDialog.toast('Staff record saved', 'success'); window.AppLogger.log(id ? 'EDIT_STAFF' : 'ADD_STAFF', 'staff_directory', { name: data.name }, id || res.id); }); return true;
+                (id ? ref.doc(id).update(data) : ref.add(data)).then((res) => { 
+                    AppDialog.toast('Profile linked successfully', 'success'); 
+                    window.AppLogger.log(id ? 'EDIT_STAFF' : 'ADD_STAFF', 'staff_directory', { name: data.name, email: data.email }, id || res.id); 
+                }); 
+                return true;
             }
         });
     },
