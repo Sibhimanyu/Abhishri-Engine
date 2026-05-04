@@ -23,6 +23,12 @@ window.feesManager = {
     logModuleFilter: 'all',
     logActionFilter: 'all',
 
+    getComponentKey(c, month = null, academicYear = null) {
+        const yearPrefix = academicYear ? `${academicYear}-` : '';
+        const id = c.uid || c.name;
+        return month ? `${yearPrefix}${id}-${month}` : `${yearPrefix}${id}`;
+    },
+
     setSort(field) {
         if (this.sortField === field) {
             this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc';
@@ -142,7 +148,7 @@ window.feesManager = {
         // Rules allow: 
         //   a) createdBy == currentUserEmail (if exp_own or wallet_view_own)
         //   b) staffId matches them (if wallet_view_own)
-        
+
         // We'll perform two filtered subscriptions to cover both "Own Creations" and "Wallet Credits/Debits targeting them"
         const updateExpenses = () => {
             const expMap = new Map();
@@ -367,7 +373,7 @@ window.feesManager = {
                 'overview': 'ledger',
                 'student_fees': 'ledger',
                 'transactions': 'view',
-                'office_expenses': 'exp_own', 
+                'office_expenses': 'exp_own',
                 'staff_wallets': 'wallet_view_own',
                 'salaries': 'salaries_view',
                 'plans': 'config',
@@ -637,7 +643,7 @@ window.feesManager = {
         </tr></thead><tbody>`;
         const q = this.searchQuery;
         const filtered = this.transactions.filter(t => !q || (this.students[t.studentId]?.name || '').toLowerCase().includes(q));
-        
+
         filtered.sort((a, b) => {
             let valA, valB;
             if (this.sortField === 'date') {
@@ -679,7 +685,7 @@ window.feesManager = {
         const container = document.getElementById('fees-content-office_expenses');
         if (!container) return;
         const filtered = this.expenses.filter(e => e.source === 'office' && (!this.searchQuery || (e.details || '').toLowerCase().includes(this.searchQuery)));
-        
+
         filtered.sort((a, b) => {
             let valA, valB;
             if (this.sortField === 'date') {
@@ -746,12 +752,12 @@ window.feesManager = {
 
         const staffIds = Object.keys(this.staff);
         const q = this.searchQuery;
-        
+
         const filteredStaffIds = staffIds.filter(id => {
             const s = this.staff[id];
             const isOwn = s.email && s.email.toLowerCase() === currentUserEmail;
             const isWalletEnabled = s.walletEnabled !== false; // Default to true if not specified
-            
+
             if (!isWalletEnabled) return false;
             if (!canViewAll && !isOwn) return false;
             return !q || (s.name || '').toLowerCase().includes(q) || (s.designation || '').toLowerCase().includes(q);
@@ -776,17 +782,14 @@ window.feesManager = {
 
         filteredStaffIds.forEach(id => {
             const s = this.staff[id];
-            const email = (s.email || '').toLowerCase();
-            const credits = this.expenses.filter(e => (e.staffId === id || (email && e.createdBy === email)) && e.type === 'funding').reduce((a, b) => a + (b.amount || 0), 0);
-            const debits = this.expenses.filter(e => (e.staffId === id || (email && e.createdBy === email)) && e.type === 'spend').reduce((a, b) => a + (b.amount || 0), 0);
-            const balance = credits - debits;
+            const balance = s.walletBalance || 0;
 
             html += `
                 <tr>
                     <td><strong>${s.name}</strong></td>
                     <td>${s.designation || 'N/A'}</td>
-                    <td style="color:var(--success)">₹${credits.toLocaleString('en-IN')}</td>
-                    <td style="color:var(--accent-primary)">₹${debits.toLocaleString('en-IN')}</td>
+                    <td style="color:var(--success)">—</td>
+                    <td style="color:var(--accent-primary)">—</td>
                     <td><strong style="color: ${balance >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">₹${balance.toLocaleString('en-IN')}</strong></td>
                     <td style="text-align:right">
                         <div class="table-actions" style="justify-content:flex-end">
@@ -810,9 +813,9 @@ window.feesManager = {
     showStaffWalletCreditForm(staffId = null) {
         let opts = '<option value="">-- Select Staff Member --</option>';
         Object.values(this.staff).sort((a, b) => a.name.localeCompare(b.name)).forEach(s => opts += `<option value="${s.id}" ${s.id === staffId ? 'selected' : ''}>${s.name}</option>`);
-        
+
         const today = new Date().toISOString().split('T')[0];
-        
+
         AppDialog.confirm({
             title: 'Add Credit to Staff Wallet',
             content: `
@@ -852,9 +855,9 @@ window.feesManager = {
     showStaffWalletDebitForm(staffId = null) {
         let opts = '<option value="">-- Select Staff Member --</option>';
         Object.values(this.staff).sort((a, b) => a.name.localeCompare(b.name)).forEach(s => opts += `<option value="${s.id}" ${s.id === staffId ? 'selected' : ''}>${s.name}</option>`);
-        
+
         const today = new Date().toISOString().split('T')[0];
-        
+
         AppDialog.confirm({
             title: 'Log Staff Expense (Debit)',
             content: `
@@ -964,7 +967,7 @@ window.feesManager = {
         const isAdmin = userData.isAdmin;
         const feesPerms = userData.permissions?.fees_accounting || {};
         const filtered = this.salaries.filter(s => !this.searchQuery || (this.staff[s.staffId]?.name || '').toLowerCase().includes(this.searchQuery));
-        
+
         filtered.sort((a, b) => {
             let valA, valB;
             if (this.sortField === 'month') {
@@ -1059,7 +1062,58 @@ window.feesManager = {
         container.innerHTML = html + '</div>';
     },
 
+    isRequirementPaid(r, compPayments, academicStartYear, allowLegacyMonthly = true) {
+        if (!r || r.effectiveAmount <= 0) return true;
+
+        const mLong = r.month;
+        const mShort = mLong ? mLong.substring(0, 3) : null;
+        const id = r.uid || r.name;
+
+        // 1. Check Year-Scoped (Current Standard)
+        const yearScopedKeys = [];
+        if (academicStartYear) {
+            yearScopedKeys.push(this.getComponentKey(r, mLong, academicStartYear));
+            if (mShort && mShort !== mLong) yearScopedKeys.push(this.getComponentKey(r, mShort, academicStartYear));
+
+            const yearScopedPaid = [...new Set(yearScopedKeys)].reduce((acc, key) => acc + (compPayments[key] || 0), 0);
+            if (yearScopedPaid >= r.effectiveAmount) return true;
+        }
+
+        // 2. Check Legacy Formats (No Year)
+        // Fallback Fix: If no year-scoped payment is found, we check legacy keys.
+        // We always allow this for one-time items.
+        // For monthly items, we allow it if the record is legacy OR if no year-scoped keys had ANY payments
+        // (this covers the transition period where 2026 payments were logged without prefixes).
+        const isMonthly = (r.frequency || '').toLowerCase() === 'monthly';
+        const hasYearScopedPayments = yearScopedKeys.some(k => (compPayments[k] || 0) > 0);
+
+        if (allowLegacyMonthly || !isMonthly || !hasYearScopedPayments) {
+            const legacyKeys = [];
+            // Format A: ID-Month (e.g., Tuition-June)
+            if (mLong) legacyKeys.push(`${id}-${mLong}`);
+            if (mShort && mShort !== mLong) legacyKeys.push(`${id}-${mShort}`);
+
+            // Format B: Name-Month (e.g., Tuition Fee-June)
+            if (r.name !== id) {
+                if (mLong) legacyKeys.push(`${r.name}-${mLong}`);
+                if (mShort && mShort !== mLong) legacyKeys.push(`${r.name}-${mShort}`);
+            }
+
+            // Format C: Plain ID/Name (for one-time items)
+            if (!mLong) {
+                legacyKeys.push(id);
+                if (r.name !== id) legacyKeys.push(r.name);
+            }
+
+            const legacyPaid = [...new Set(legacyKeys)].reduce((acc, key) => acc + (compPayments[key] || 0), 0);
+            return legacyPaid >= r.effectiveAmount;
+        }
+
+        return false;
+    },
+
     renderStudentFees() {
+        console.log("Fees Ledger v1.3 (Leakage Fix) - " + new Date().toISOString());
         const container = document.getElementById('fees-content-student-fees'), id = this.activeStudentId;
         if (!container || !id) return;
         const userData = window.currentUserData || {};
@@ -1072,8 +1126,9 @@ window.feesManager = {
         const now = new Date();
         const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
         const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
+        const isLegacyRecord = f.academicStartYear === undefined;
         const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
-        const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(1, monthsPassed + 1));
+        const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(0, monthsPassed + 2));
 
         const monthlyTotal = (f.components || []).filter(c => c.frequency === 'monthly').reduce((a, b) => a + b.amount, 0);
         const oneTimeTotal = (f.components || []).filter(c => c.frequency !== 'monthly').reduce((a, b) => a + b.amount, 0);
@@ -1084,93 +1139,123 @@ window.feesManager = {
         const compPayments = f.componentPayments || {};
 
         const allRequirements = [];
-        components.filter(c => c.frequency !== 'monthly' && c.amount > 0).forEach(c => {
-            allRequirements.push({ key: c.name, name: c.name, amount: c.amount, frequency: 'onetime' });
+        // Include all one-time components (frequency not monthly)
+        components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount >= 0).forEach(c => {
+            allRequirements.push({ uid: c.uid, key: c.uid || c.name, name: c.name, amount: c.amount, frequency: 'onetime', month: null });
         });
+        // Include monthly components for each month in the billing cycle
         for (let i = 0; i < (f.billingCycle || 12); i++) {
             const mIdx = (startMonth + i) % 12;
-            const mName = this.MONTHS[mIdx];
-            components.filter(c => c.frequency === 'monthly').forEach(c => {
-                allRequirements.push({ 
-                    key: `${c.name}-${mName}`, 
-                    name: c.name, 
-                    amount: c.amount, 
-                    frequency: 'monthly', 
-                    month: mName, 
-                    relativeIdx: i 
+            const mName = this.MONTHS[mIdx]; // Full name: e.g. "June"
+            components.filter(c => (c.frequency || '').toLowerCase() === 'monthly').forEach(c => {
+                const reqKey = c.uid ? `${c.uid}-${mName}` : `${c.name}-${mName}`;
+                allRequirements.push({
+                    uid: c.uid,
+                    key: reqKey,
+                    name: c.name,
+                    amount: c.amount,
+                    frequency: 'monthly',
+                    month: mName,
+                    relativeIdx: i
                 });
             });
         }
 
-        const totalDiscount = components.filter(c => c.frequency !== 'monthly' && c.amount < 0)
-                                        .reduce((acc, c) => acc + Math.abs(c.amount), 0);
+        const totalDiscount = components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount < 0)
+            .reduce((acc, c) => acc + Math.abs(c.amount), 0);
         let remainingDiscount = totalDiscount;
         const effectiveRequirements = allRequirements.map(req => {
             const deduction = Math.min(req.amount, remainingDiscount);
             remainingDiscount -= deduction;
-            return { ...req, effectiveAmount: req.amount - deduction };
+            return { ...req, effectiveAmount: req.amount - deduction, appliedDiscount: deduction };
         });
+
+        const totalAppliedDiscount = effectiveRequirements.reduce((acc, r) => acc + (r.appliedDiscount || 0), 0);
+        const realizedToDate = (f.paid || 0) + totalAppliedDiscount;
+        const totalEffectiveExpectedToDate = effectiveRequirements
+            .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && r.relativeIdx < installmentsExpected))
+            .reduce((acc, r) => acc + r.effectiveAmount, 0);
+
+        const currentDuesToDisplay = Math.max(0, totalEffectiveExpectedToDate - (f.paid || 0));
 
         const getMonthStatus = (mIdx) => {
             const mName = this.MONTHS[mIdx];
             const reqs = effectiveRequirements.filter(r => r.month === mName);
-            if (reqs.length === 0) return true;
-            return reqs.every(r => (compPayments[r.key] || 0) >= r.effectiveAmount);
+            if (reqs.length === 0) return 'excluded';
+
+            const isFullyPaid = reqs.every(r => this.isRequirementPaid(r, compPayments, academicStartYear, isLegacyRecord));
+            if (isFullyPaid) return 'covered';
+
+            const reqIdx = reqs[0].relativeIdx;
+            if (reqIdx !== undefined && reqIdx >= installmentsExpected) return 'upcoming';
+
+            return 'pending';
         };
+
+        const oneTimeRequirements = effectiveRequirements.filter(r => (r.frequency || '').toLowerCase() !== 'monthly');
+        const oneTimePaid = oneTimeRequirements.every(r => this.isRequirementPaid(r, compPayments, academicStartYear, isLegacyRecord));
+        const oneTimeStatus = oneTimePaid ? 'covered' : 'pending';
 
         const months = [];
         const monthStatuses = [];
+        // Always show 12 months in timeline for context
         for (let i = 0; i < 12; i++) {
             const mIdx = (startMonth + i) % 12;
-            months.push(this.MONTHS[mIdx].substring(0, 3).toUpperCase());
+            months.push(this.MONTHS[mIdx]);
             monthStatuses.push(getMonthStatus(mIdx));
         }
 
-        let firstUnpaidRelativeIdx = f.billingCycle || 12;
-        for (let i = 0; i < (f.billingCycle || 12); i++) {
-            const mIdx = (startMonth + i) % 12;
-            if (!getMonthStatus(mIdx)) { firstUnpaidRelativeIdx = i; break; }
+        let firstUnpaidRelativeIdx = 12;
+        for (let i = 0; i < 12; i++) {
+            if (monthStatuses[i] === 'pending') { firstUnpaidRelativeIdx = i; break; }
         }
-        const maxAllowedRelativeIdx = Math.min((f.billingCycle || 12) - 1, Math.max(0, installmentsExpected - 1));
-        const targetRelativeIdx = Math.min(firstUnpaidRelativeIdx, maxAllowedRelativeIdx);
-        const targetMonthIdx = (startMonth + targetRelativeIdx) % 12;
-        const isThisMonthPaid = getMonthStatus(targetMonthIdx);
-        const thisMonthName = this.MONTHS[targetMonthIdx];
 
-        const totalEffectiveExpectedToDate = effectiveRequirements
-            .filter(r => r.frequency !== 'monthly' || r.relativeIdx < installmentsExpected)
-            .reduce((acc, r) => acc + r.effectiveAmount, 0);
-        
-        const currentDuesToDisplay = Math.max(0, totalEffectiveExpectedToDate - (f.paid || 0));
+        const targetRelativeIdx = (firstUnpaidRelativeIdx < 12) ? firstUnpaidRelativeIdx : Math.max(0, installmentsExpected - 1);
+        const targetMonthName = this.MONTHS[(startMonth + targetRelativeIdx) % 12];
+        const currentStatus = monthStatuses[targetRelativeIdx];
 
         const isConfigured = (f.components && f.components.length > 0) || f.total > 0;
-        const displayStatusName = isConfigured ? `${thisMonthName} Status` : 'Setup Status';
-        const displayStatusValue = isConfigured ? (isThisMonthPaid ? 'PAID' : 'PENDING') : 'MISSING';
-        const displayStatusColor = isConfigured ? (isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)') : 'var(--text-dim)';
-        const displayStatusBorder = isConfigured ? (isThisMonthPaid ? 'var(--success)' : 'var(--accent-primary)') : 'rgba(255,255,255,0.1)';
 
+        // Logical Status Decision
+        let displayStatusName = `${targetMonthName} Status`;
+        let displayStatusValue = 'PAID', displayStatusColor = 'var(--success)', displayStatusBorder = 'var(--success)';
+
+        if (!isConfigured) {
+            displayStatusName = 'Setup Status';
+            displayStatusValue = 'MISSING'; displayStatusColor = 'var(--text-dim)'; displayStatusBorder = 'rgba(255,255,255,0.1)';
+        } else if (!oneTimePaid) {
+            // One-time fees take precedence if unpaid
+            displayStatusName = 'Base Fees';
+            displayStatusValue = 'PENDING'; displayStatusColor = 'var(--accent-primary)'; displayStatusBorder = 'var(--accent-primary)';
+        } else if (currentStatus === 'pending') {
+            displayStatusValue = 'PENDING'; displayStatusColor = 'var(--accent-primary)'; displayStatusBorder = 'var(--accent-primary)';
+        } else if (currentStatus === 'excluded') {
+            displayStatusValue = 'NOT INCLUDED'; displayStatusColor = 'var(--text-dim)'; displayStatusBorder = 'rgba(255,255,255,0.1)';
+        } else if (currentDuesToDisplay > 0) {
+            // If month is covered but there are overall dues (e.g. from previous months)
+            displayStatusValue = 'DUE'; displayStatusColor = 'var(--accent-primary)'; displayStatusBorder = 'var(--accent-primary)';
+        } else if (currentStatus === 'upcoming') {
+            displayStatusValue = 'UPCOMING'; displayStatusColor = 'var(--text-dim)'; displayStatusBorder = 'rgba(255,255,255,0.2)';
+        }
+
+        const annualFeeBeforeOneTimeDiscounts = effectiveRequirements.reduce((acc, r) => acc + r.amount, 0);
+        const annualRemaining = Math.max(0, annualFeeBeforeOneTimeDiscounts - realizedToDate);
         const netBalanceToDate = (f.paid || 0) - totalEffectiveExpectedToDate;
-        let standingStatus = 'UNCONFIGURED';
-        let standingColor = 'var(--text-main)';
 
-        if (isConfigured) {
-            if (netBalanceToDate > 0 && currentDuesToDisplay === 0) {
-                standingStatus = `AHEAD: ₹${netBalanceToDate.toLocaleString('en-IN')}`;
-                standingColor = 'var(--success)';
-            } else if (currentDuesToDisplay > 0) {
-                standingStatus = `DUE: ₹${currentDuesToDisplay.toLocaleString('en-IN')}`;
-                standingColor = 'var(--accent-primary)';
-            } else {
-                standingStatus = 'CLEAR';
-                standingColor = 'var(--success)';
-            }
+        let standingStatus = 'CLEAR', standingColor = 'var(--success)';
+        if (currentDuesToDisplay > 0) {
+            standingStatus = `DUE: ₹${currentDuesToDisplay.toLocaleString('en-IN')}`;
+            standingColor = 'var(--accent-primary)';
+        } else if (netBalanceToDate > 0) {
+            standingStatus = `AHEAD: ₹${netBalanceToDate.toLocaleString('en-IN')}`;
+            standingColor = 'var(--success)';
         }
 
         let html = `
             <div class="fees-dashboard-banner" style="background:var(--surface-light); border: 1px solid var(--card-border); border-radius: 20px; padding: 32px; margin-bottom: 24px; display:flex; justify-content:space-between; align-items:center;">
                 <div>
                     <div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">
-                        <h1 style="margin:0; font-size:2rem; font-weight:800; letter-spacing:-0.5px;">${s.name}</h1>
+                        <h1 style="margin:0; font-size:2rem; font-weight:800; letter-spacing:-0.5px;">${s.name} <span style="font-size:0.6rem; opacity:0.3; vertical-align:middle; font-weight:400;">v1.3</span></h1>
                     </div>
                     <div style="color:var(--text-dim); font-size:0.85rem; font-weight:500; display:flex; gap:16px;">
                         <span>ID: ${id.slice(-8).toUpperCase()}</span>
@@ -1194,15 +1279,15 @@ window.feesManager = {
             <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:20px; margin-bottom:32px;">
                 <div class="console-card" style="padding:24px; border-radius:16px;">
                     <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Net Annual Fee</div>
-                    <div style="font-size:1.8rem; font-weight:900;">₹${(f.total || 0).toLocaleString('en-IN')}</div>
+                    <div style="font-size:1.8rem; font-weight:900;">₹${annualFeeBeforeOneTimeDiscounts.toLocaleString('en-IN')}</div>
                 </div>
                 <div class="console-card" style="padding:24px; border-radius:16px;">
                     <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Realized to Date</div>
-                    <div style="font-size:1.8rem; font-weight:900; color:var(--success);">₹${paid.toLocaleString('en-IN')}</div>
+                    <div style="font-size:1.8rem; font-weight:900; color:var(--success);">₹${realizedToDate.toLocaleString('en-IN')}</div>
                 </div>
                 <div class="console-card" style="padding:24px; border-radius:16px;">
                     <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Annual Remaining</div>
-                    <div style="font-size:1.8rem; font-weight:900; color:var(--text-main);">₹${Math.max(0, (f.total || 0) - paid).toLocaleString('en-IN')}</div>
+                    <div style="font-size:1.8rem; font-weight:900; color:var(--text-main);">₹${annualRemaining.toLocaleString('en-IN')}</div>
                 </div>
                 <div class="console-card" style="padding:24px; border-radius:16px;">
                     <div style="font-size:0.7rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; margin-bottom:8px;">Current Dues</div>
@@ -1214,21 +1299,43 @@ window.feesManager = {
                 </div>
             </div>
 
-            ${arrears > 0 ? (() => {
+            ${currentDuesToDisplay > 0 ? (() => {
                 const overdueItems = [];
-                components.filter(c => c.frequency !== 'monthly').forEach(c => {
-                    const p = compPayments[c.name] || 0;
-                    if (p < c.amount) overdueItems.push({ name: c.name, due: c.amount - p });
+                effectiveRequirements.forEach(r => {
+                    const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && r.relativeIdx < installmentsExpected);
+                    if (!isExpected) return;
+
+                    if (!this.isRequirementPaid(r, compPayments, academicStartYear, isLegacyRecord)) {
+                        // Calculate specific due for this requirement
+                        const mLong = r.month;
+                        const mShort = mLong ? mLong.substring(0, 3) : null;
+                        const id = r.uid || r.name;
+
+                        const keysToTry = [];
+                        if (academicStartYear) {
+                            keysToTry.push(this.getComponentKey(r, mLong, academicStartYear));
+                            if (mShort && mShort !== mLong) keysToTry.push(this.getComponentKey(r, mShort, academicStartYear));
+                        }
+
+                        // Breakdown must match isRequirementPaid logic
+                        const isMonthly = (r.frequency || '').toLowerCase() === 'monthly';
+                        if (isLegacyRecord || !isMonthly) {
+                            if (mLong) keysToTry.push(`${id}-${mLong}`);
+                            if (mShort && mShort !== mLong) keysToTry.push(`${id}-${mShort}`);
+                            if (r.name !== id) {
+                                if (mLong) keysToTry.push(`${r.name}-${mLong}`);
+                                if (mShort && mShort !== mLong) keysToTry.push(`${r.name}-${mShort}`);
+                            }
+                            if (!mLong) {
+                                keysToTry.push(id);
+                                if (r.name !== id) keysToTry.push(r.name);
+                            }
+                        }
+
+                        const p = [...new Set(keysToTry)].reduce((acc, k) => acc + (compPayments[k] || 0), 0);
+                        overdueItems.push({ name: r.name, detail: r.month, due: r.effectiveAmount - p });
+                    }
                 });
-                for (let i = 0; i < installmentsExpected; i++) {
-                    const mIdx = (startMonth + i) % 12;
-                    const mName = this.MONTHS[mIdx];
-                    components.filter(c => c.frequency === 'monthly').forEach(c => {
-                        const key = `${c.name}-${mName}`;
-                        const p = compPayments[key] || 0;
-                        if (p < c.amount) overdueItems.push({ name: c.name, detail: mName, due: c.amount - p });
-                    });
-                }
                 if (overdueItems.length === 0) return '';
                 return `
                 <div style="background:rgba(241, 97, 91, 0.05); border: 1px solid rgba(241, 97, 91, 0.2); border-left: 4px solid var(--accent-primary); border-radius: 16px; padding: 24px; margin-bottom: 32px;">
@@ -1254,23 +1361,37 @@ window.feesManager = {
                         <span style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; background:var(--success); border-radius:3px;"></div> Covered</span>
                         <span style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; background:var(--accent-primary); border-radius:3px;"></div> Pending</span>
                         <span style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; background:rgba(255,255,255,0.1); border-radius:3px;"></div> Upcoming</span>
+                        <span style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); border-radius:3px;"></div> Not Included</span>
                     </div>
                 </div>
                 <div style="display:flex; gap:8px;">
-                    ${months.map((m, i) => {
-                const isFullyPaid = monthStatuses[i];
-                const isExpected = i < installmentsExpected;
-                let bg = 'rgba(255,255,255,0.03)';
-                let col = 'var(--text-dim)';
-                let border = '1px solid rgba(255,255,255,0.05)';
-                if (isFullyPaid) { bg = 'var(--success)'; col = '#000'; border = 'none'; }
-                else if (isExpected) { bg = 'transparent'; col = 'var(--accent-primary)'; border = '2px solid var(--accent-primary)'; }
+                    ${(() => {
+                const getStyle = (status) => {
+                    if (status === 'covered') return { bg: 'var(--success)', col: '#000', border: 'none', opacity: 1 };
+                    if (status === 'pending') return { bg: 'transparent', col: 'var(--accent-primary)', border: '2px solid var(--accent-primary)', opacity: 1 };
+                    if (status === 'upcoming') return { bg: 'rgba(255,255,255,0.08)', col: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.2)', opacity: 1 };
+                    if (status === 'excluded') return { bg: 'transparent', col: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(255,255,255,0.05)', opacity: 0.3 };
+                    return { bg: 'rgba(255,255,255,0.03)', col: 'var(--text-dim)', border: '1px solid rgba(255,255,255,0.05)', opacity: 1 };
+                };
 
-                return `<div style="flex:1; height:48px; display:flex; align-items:center; justify-content:center; background:${bg}; border:${border}; border-radius:8px; color:${col}; font-weight:800; font-size:0.8rem;">${m}</div>`;
-            }).join('')}
+                let blocks = '';
+                // 1. Setup Fees block (Admission, Uniforms, etc)
+                if (oneTimeRequirements.length > 0) {
+                    const style = getStyle(oneTimeStatus);
+                    blocks += `<div style="flex:0.8; height:48px; display:flex; align-items:center; justify-content:center; background:${style.bg}; border:${style.border}; border-radius:8px; color:${style.col}; font-weight:800; font-size:0.75rem; margin-right:12px; position:relative; opacity:${style.opacity};" title="Setup Fees (One-time)">SETUP</div>`;
+                }
+
+                // 2. Monthly blocks
+                blocks += months.map((m, i) => {
+                    const style = getStyle(monthStatuses[i]);
+                    const displayMonth = m.substring(0, 3).toUpperCase();
+                    return `<div style="flex:1; height:48px; display:flex; align-items:center; justify-content:center; background:${style.bg}; border:${style.border}; border-radius:8px; color:${style.col}; font-weight:800; font-size:0.8rem; opacity:${style.opacity};">${displayMonth}</div>`;
+                }).join('');
+
+                return blocks;
+            })()}
                 </div>
             </div>
-
             <div style="display:flex; flex-direction:column; gap:32px; margin-bottom:80px;">
                 <div>
                     <h3 style="margin-top:0; margin-bottom:16px; font-size:1.1rem; font-weight:800; display:flex; align-items:center; gap:8px;"><i data-lucide="layers" style="width:18px;"></i> Detailed Fee Architecture</h3>
@@ -1327,7 +1448,25 @@ window.feesManager = {
                 return db - da;
             }).map(t => {
                 const d = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp);
-                const breakdownHtml = t.breakdown ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">${Object.entries(t.breakdown).map(([k, v]) => `<span style="font-size:0.6rem; padding:2px 6px; background:rgba(255,255,255,0.05); border-radius:4px; color:var(--text-dim);">${k}: <strong style="color:var(--text-main);">₹${v.toLocaleString('en-IN')}</strong></span>`).join('')}</div>` : '';
+                
+                // Human-readable breakdown
+                const breakdownHtml = t.breakdown ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">${Object.entries(t.breakdown).map(([k, v]) => {
+                    // Extract name from key (e.g., "2026-uid-June" or "uid-June" or "uid")
+                    // We try to match the UID against current components to get the pretty name
+                    let displayName = k;
+                    const parts = k.split('-');
+                    // Possible formats: [Year, UID, Month], [UID, Month], [UID]
+                    const uid = parts.length === 3 ? parts[1] : (parts.length === 2 ? parts[0] : k);
+                    const month = parts.length === 3 ? parts[2] : (parts.length === 2 ? parts[1] : null);
+                    
+                    const comp = f.components?.find(c => c.uid === uid || c.name === uid);
+                    if (comp) {
+                        displayName = comp.name + (month ? ` (${month})` : '');
+                    }
+
+                    return `<span style="font-size:0.6rem; padding:2px 6px; background:rgba(255,255,255,0.05); border-radius:4px; color:var(--text-dim); border:1px solid rgba(255,255,255,0.05);">${displayName}: <strong style="color:var(--text-main);">₹${v.toLocaleString('en-IN')}</strong></span>`;
+                }).join('')}</div>` : '';
+
                 return `
                                         <tr>
                                             <td style="padding:16px 24px;">
@@ -1358,13 +1497,23 @@ window.feesManager = {
 
         container.innerHTML = html;
         const toolbar = document.getElementById('fees-toolbar');
-        if (toolbar) toolbar.innerHTML = `<button class="btn btn-secondary" onclick="window.feesManager.switchView('overview')"><i data-lucide="arrow-left"></i> Back to Ledger</button><div style="margin-left:auto; display:flex; gap:10px;"><button class="btn btn-secondary" onclick="window.feesManager.printStudentInvoice('${id}')"><i data-lucide="printer"></i> Print Invoice</button>${(isAdmin || feesPerms.config) ? `<button class="btn btn-primary" onclick="window.feesManager.showSetupFeesForm('${id}')"><i data-lucide="settings"></i> Configure Fees</button>` : ''}</div>`;
+        if (toolbar) {
+            toolbar.innerHTML = `
+                <button class="btn btn-secondary" onclick="window.feesManager.switchView('overview')">
+                    <i data-lucide="arrow-left"></i> Back to Ledger
+                </button>
+                <div style="margin-left:auto; display:flex; gap:10px;">
+                    ${(isAdmin || feesPerms.ledger) ? `<button class="btn btn-ghost" title="Fix Sync Issues" onclick="window.feesManager.reconcileStudentFees('${id}')"><i data-lucide="refresh-cw"></i> Reconcile</button>` : ''}
+                    <button class="btn btn-secondary" onclick="window.feesManager.printStudentInvoice('${id}')"><i data-lucide="printer"></i> Print Invoice</button>
+                    ${(isAdmin || feesPerms.config) ? `<button class="btn btn-primary" onclick="window.feesManager.showSetupFeesForm('${id}')"><i data-lucide="settings"></i> Configure Fees</button>` : ''}
+                </div>`;
+        }
         if (typeof lucide !== 'undefined') lucide.createIcons();
     },
 
     showAddPlanForm(id = null) {
         const p = id ? this.plans[id] : { name: '', billingCycle: 12, components: [], startMonth: 5 };
-        const renderRow = (c = { name: '', frequency: 'onetime', amount: 0 }) => `<div class="form-row plan-component-row" style="display:grid; grid-template-columns: 1.8fr 1fr 1.2fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;"><input type="text" class="form-control pc-name" value="${c.name}" placeholder="Fee Name"><select class="form-control pc-freq"><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select><input type="number" class="form-control pc-amount" value="${c.amount || ''}" placeholder="Rate"><button onclick="this.parentElement.remove(); window.feesManager.recalcPlanTotal();" class="btn-icon text-danger"><i data-lucide="x"></i></button></div>`;
+        const renderRow = (c = { name: '', frequency: 'onetime', amount: 0, uid: `comp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}` }) => `<div class="form-row plan-component-row" data-uid="${c.uid || `comp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`}" style="display:grid; grid-template-columns: 1.8fr 1fr 1.2fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;"><input type="text" class="form-control pc-name" value="${c.name}" placeholder="Fee Name"><select class="form-control pc-freq"><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select><input type="number" class="form-control pc-amount" value="${c.amount || ''}" placeholder="Rate"><button onclick="this.parentElement.remove(); window.feesManager.recalcPlanTotal();" class="btn-icon text-danger"><i data-lucide="x"></i></button></div>`;
         AppDialog.confirm({
             title: id ? 'Edit Template' : 'Create Template', width: '850px',
             content: `<div style="display:grid; grid-template-columns: 300px 1fr; gap:32px;"><div><div class="form-group"><label>Package Name</label><input type="text" id="plan-name" class="form-control" value="${p.name}"></div><div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;"><div class="form-group"><label>Cycle (Mo)</label><input type="number" id="plan-cycle" class="form-control" value="${p.billingCycle || 12}"></div><div class="form-group"><label>Start Month</label><select id="plan-start" class="form-control">${this.MONTHS.map((m, i) => `<option value="${i}" ${i === (p.startMonth === undefined ? 5 : p.startMonth) ? 'selected' : ''}>${m}</option>`).join('')}</select></div></div><div id="plan-total-display" style="font-size:2rem; font-weight:900; margin-top:20px; color:var(--accent-secondary);">₹0</div></div><div><div class="form-section-title" style="display:flex; justify-content:space-between;"><span>Components</span><button class="btn btn-secondary btn-sm" id="add-plan-comp-btn">Add Item</button></div><div id="plan-components-container" style="max-height:450px; overflow-y:auto; margin-top:20px;">${p.components.length > 0 ? p.components.map(c => renderRow(c)).join('') : renderRow()}</div></div></div>`,
@@ -1376,7 +1525,7 @@ window.feesManager = {
             },
             onConfirm: async () => {
                 const name = document.getElementById('plan-name').value; if (!name) return false;
-                const components = []; document.querySelectorAll('.plan-component-row').forEach(row => { const n = row.querySelector('.pc-name').value, a = parseFloat(row.querySelector('.pc-amount').value) || 0; if (n) components.push({ name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'academic' }); });
+                const components = []; document.querySelectorAll('.plan-component-row').forEach(row => { const n = row.querySelector('.pc-name').value, a = parseFloat(row.querySelector('.pc-amount').value) || 0; if (n) components.push({ uid: row.dataset.uid, name: n, amount: a, frequency: row.querySelector('.pc-freq').value, type: 'academic' }); });
                 const data = { name, components, billingCycle: parseInt(document.getElementById('plan-cycle').value) || 12, startMonth: parseInt(document.getElementById('plan-start').value), updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: auth.currentUser.email };
                 if (!id) data.createdAt = data.updatedAt;
                 const ref = firestore.collection('modules').doc('fees_accounting').collection('plans');
@@ -1392,11 +1541,11 @@ window.feesManager = {
         let opts = '<option value="">-- Select Template --</option>';
         Object.keys(this.plans).sort((a, b) => this.plans[a].name.localeCompare(this.plans[b].name)).forEach(pid => opts += `<option value="${pid}" ${pid === f.planId ? 'selected' : ''}>${this.plans[pid].name}</option>`);
 
-        const renderRow = (c = { name: '', frequency: 'onetime', amount: 0, originalAmount: 0, type: 'other' }) => {
+        const renderRow = (c = { name: '', frequency: 'onetime', amount: 0, originalAmount: 0, type: 'other', uid: `comp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}` }) => {
             const isTemplate = c.type === 'academic';
             const orig = c.originalAmount || c.amount || 0;
             const disabledAttr = isTemplate ? 'disabled' : '';
-            return `<div class="form-row component-row" style="display:grid; grid-template-columns: 1.8fr 1fr 1fr 1fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;" data-type="${c.type || 'other'}"><input type="text" class="form-control c-name" value="${c.name}" placeholder="Name" ${disabledAttr}><select class="form-control c-freq" ${disabledAttr}><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select><div class="form-group" style="margin:0;"><label style="font-size:0.5rem; opacity:0.5;">STD</label><input type="number" class="form-control c-orig" value="${orig}" ${disabledAttr}></div><div class="form-group" style="margin:0;"><label style="font-size:0.5rem; opacity:0.5; color:var(--accent-primary);">PAY</label><input type="number" class="form-control c-amount" value="${c.amount === 0 ? '0' : (c.amount || '')}"></div><button onclick="this.parentElement.remove(); window.feesManager.recalcSetupTotal();" class="btn-icon text-danger" ${disabledAttr}><i data-lucide="x"></i></button></div>`;
+            return `<div class="form-row component-row" data-uid="${c.uid || `comp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`}" style="display:grid; grid-template-columns: 1.8fr 1fr 1fr 1fr 40px; gap:12px; margin-bottom:12px; align-items:center; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px;" data-type="${c.type || 'other'}"><input type="text" class="form-control c-name" value="${c.name}" placeholder="Name" ${disabledAttr}><select class="form-control c-freq" ${disabledAttr}><option value="onetime" ${c.frequency === 'onetime' ? 'selected' : ''}>One-time</option><option value="monthly" ${c.frequency === 'monthly' ? 'selected' : ''}>Monthly</option></select><div class="form-group" style="margin:0;"><label style="font-size:0.5rem; opacity:0.5;">STD</label><input type="number" class="form-control c-orig" value="${orig}" ${disabledAttr}></div><div class="form-group" style="margin:0;"><label style="font-size:0.5rem; opacity:0.5; color:var(--accent-primary);">PAY</label><input type="number" class="form-control c-amount" value="${c.amount === 0 ? '0' : (c.amount || '')}"></div><button onclick="this.parentElement.remove(); window.feesManager.recalcSetupTotal();" class="btn-icon text-danger" ${disabledAttr}><i data-lucide="x"></i></button></div>`;
         };
 
         AppDialog.confirm({
@@ -1411,40 +1560,124 @@ window.feesManager = {
                 overlay.addEventListener('input', this.recalcSetupTotal); this.recalcSetupTotal();
                 if (window.lucide) window.lucide.createIcons({ root: overlay });
             },
-            onConfirm: () => {
-                const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0, o = parseFloat(row.querySelector('.c-orig').value) || a, t = row.getAttribute('data-type') || 'other'; if (n) components.push({ name: n, amount: a, originalAmount: o, frequency: row.querySelector('.c-freq').value, type: t }); });
+            onConfirm: async () => {
+                const components = []; document.querySelectorAll('.component-row').forEach(row => { const n = row.querySelector('.c-name').value, a = parseFloat(row.querySelector('.c-amount').value) || 0, o = parseFloat(row.querySelector('.c-orig').value) || a, t = row.getAttribute('data-type') || 'other'; if (n) components.push({ uid: row.dataset.uid, name: n, amount: a, originalAmount: o, frequency: row.querySelector('.c-freq').value, type: t }); });
                 const total = this.recalcSetupTotal();
-                firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, startMonth: parseInt(document.getElementById('sf-start').value), academicStartYear: parseInt(document.getElementById('sf-start-year').value), components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                await firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId).set({ total, planId: document.getElementById('sf-plan-id').value, billingCycle: parseInt(document.getElementById('sf-cycle').value) || 12, startMonth: parseInt(document.getElementById('sf-start').value), academicStartYear: parseInt(document.getElementById('sf-start-year').value), components, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                
+                // Automatic Reconciliation after Fee Setup
+                await this.performReconciliation(studentId, true);
+                
                 window.AppLogger.log('SETUP_FEES', 'fees_accounting', { studentName: s.name, total }, studentId);
-                AppDialog.toast('Fee structure updated', 'success'); return true;
+                AppDialog.toast('Fee structure updated and ledger re-synced', 'success'); return true;
             }
         });
     },
     showPaymentForm(studentId) {
         const s = this.students[studentId] || { name: 'Student' }, f = this.fees[studentId] || { components: [], startMonth: 5, billingCycle: 12, paid: 0 };
         const today = new Date().toISOString().split('T')[0], startMonth = f.startMonth !== undefined ? f.startMonth : 5;
-        const credits = (f.components || []).filter(c => c.frequency !== 'monthly' && c.amount < 0).map(c => Math.abs(c.amount));
-        let availableCredit = credits.reduce((a, b) => a + b, 0);
-        const getEffectiveAmount = (baseAmount) => { if (baseAmount <= 0) return baseAmount; let currentAmount = baseAmount; if (availableCredit > 0) { const deduction = Math.min(currentAmount, availableCredit); currentAmount -= deduction; availableCredit -= deduction; } return currentAmount; };
-        const effective = [];
-        (f.components || []).filter(c => c.frequency !== 'monthly' && c.amount > 0).forEach(c => effective.push({ ...c, amount: getEffectiveAmount(c.amount) }));
-        for (let i = 0; i < (f.billingCycle || 12); i++) { const mIdx = (startMonth + i) % 12, mName = this.MONTHS[mIdx]; (f.components || []).filter(c => c.frequency === 'monthly').forEach(c => effective.push({ ...c, amount: getEffectiveAmount(c.amount), month: mName })); }
+        const academicStartYear = f.academicStartYear || (new Date().getMonth() < startMonth ? new Date().getFullYear() - 1 : new Date().getFullYear());
+
+        // 1. Generate requirements using the exact same logic as the Ledger
+        const allRequirements = [];
+        const components = f.components || [];
+        components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount > 0).forEach(c => {
+            allRequirements.push({ ...c, month: null });
+        });
+        for (let i = 0; i < (f.billingCycle || 12); i++) {
+            const mIdx = (startMonth + i) % 12, mName = this.MONTHS[mIdx];
+            components.filter(c => (c.frequency || '').toLowerCase() === 'monthly').forEach(c => {
+                allRequirements.push({ ...c, month: mName, relativeIdx: i });
+            });
+        }
+
+        const totalDiscount = components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount < 0)
+            .reduce((acc, c) => acc + Math.abs(c.amount), 0);
+        let remainingDiscount = totalDiscount;
+        const effectiveRequirements = allRequirements.map(req => {
+            const deduction = Math.min(req.amount, remainingDiscount);
+            remainingDiscount -= deduction;
+            return { ...req, effectiveAmount: req.amount - deduction };
+        });
+
         const paidSoFar = f.componentPayments || {};
-        const renderAllocationRow = (name, total, paid, key, monthIdx = null) => {
+        const renderAllocationRow = (name, total, paid, key, monthIdx = null, type = 'monthly', relativeIdx = 99) => {
             const due = Math.max(0, total - paid); if (due <= 0) return '';
-            return `<div class="allocation-row" style="display:grid; grid-template-columns: 1fr 100px 120px; gap:12px; align-items:center; margin-bottom:8px; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px;"><div style="font-size:0.85rem;"><strong>${name}</strong>${monthIdx !== null ? `<div style="font-size:0.6rem; opacity:0.5; text-transform:uppercase;">${this.MONTHS[monthIdx]}</div>` : ''}</div><div style="font-size:0.75rem; opacity:0.6; text-align:right;">Due: ₹${due.toLocaleString('en-IN')}</div><input type="number" class="form-control alloc-input" data-key="${key}" data-due="${due}" max="${due}" min="0" placeholder="₹0" style="height:32px; font-size:0.85rem;"></div>`;
+            return `<div class="allocation-row" style="display:grid; grid-template-columns: 1fr 100px 120px; gap:12px; align-items:center; margin-bottom:8px; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:8px;">
+                <div style="font-size:0.85rem;">
+                    <strong>${name}</strong>
+                    ${monthIdx !== null ? `<div style="font-size:0.6rem; opacity:0.5; text-transform:uppercase;">${this.MONTHS[monthIdx]}</div>` : `<div style="font-size:0.6rem; opacity:0.5; text-transform:uppercase; color:var(--accent-secondary);">Setup Fee</div>`}
+                </div>
+                <div style="font-size:0.75rem; opacity:0.6; text-align:right;">Due: ₹${due.toLocaleString('en-IN')}</div>
+                <input type="number" class="form-control alloc-input" 
+                    data-key="${key}" 
+                    data-due="${due}" 
+                    data-type="${type}" 
+                    data-relative-idx="${relativeIdx}" 
+                    max="${due}" min="0" placeholder="₹0" style="height:32px; font-size:0.85rem;">
+            </div>`;
         };
+
         let allocationHtml = '<div style="margin-top:20px; border-top:1px solid var(--card-border); padding-top:20px;"><label style="font-weight:800; font-size:0.7rem; color:var(--accent-secondary); text-transform:uppercase; display:block; margin-bottom:12px;">Payment Allocation</label><div id="allocation-container" style="max-height:300px; overflow-y:auto; padding-right:8px;">';
-        effective.forEach(c => { const key = c.frequency === 'monthly' ? `${c.name}-${c.month}` : c.name, mIdx = c.frequency === 'monthly' ? this.MONTHS.indexOf(c.month) : null; allocationHtml += renderAllocationRow(c.name, c.amount, paidSoFar[key] || 0, key, mIdx); });
+
+        effectiveRequirements.forEach(r => {
+            const key = this.getComponentKey(r, r.month, academicStartYear);
+            const mIdx = (r.frequency || '').toLowerCase() === 'monthly' ? this.MONTHS.indexOf(r.month) : null;
+            const type = (r.frequency || '').toLowerCase() === 'monthly' ? 'monthly' : 'setup';
+            const relIdx = r.relativeIdx !== undefined ? r.relativeIdx : -1; // Setup fees get -1 priority
+            allocationHtml += renderAllocationRow(r.name, r.effectiveAmount, paidSoFar[key] || 0, key, mIdx, type, relIdx);
+        });
+
         allocationHtml += '</div><div id="alloc-remaining" style="font-size:0.75rem; margin-top:10px; text-align:right; font-weight:700;">Unallocated: <span style="color:var(--accent-primary);">₹0</span></div></div>';
         AppDialog.confirm({
             title: `Log Payment: ${s.name}`, width: '500px',
             content: `<div class="form-group"><label>Transaction Date</label><input type="date" id="pf-date" class="form-control" value="${today}"></div><div class="form-group" style="margin-top:15px;"><label>Amount Received (₹)</label><input type="number" id="pf-amount" class="form-control" placeholder="Total payment amount"></div><div class="form-group" style="margin-top:15px;"><label>Method</label><select id="pf-method" class="form-control"><option>Cash</option><option>GPay/UPI</option><option>Bank Transfer</option><option>Card Payment</option></select></div><div class="form-group" style="margin-top:15px;"><label>Reference</label><input type="text" id="pf-ref" class="form-control" placeholder="TXN ID / Note"></div>${allocationHtml}`,
             onOpen: (overlay) => {
-                const amtI = overlay.querySelector('#pf-amount'), remD = overlay.querySelector('#alloc-remaining span'), inputs = overlay.querySelectorAll('.alloc-input');
-                const updateRemaining = () => { const total = parseFloat(amtI.value) || 0; let allocated = 0; inputs.forEach(i => allocated += (parseFloat(i.value) || 0)); const rem = total - allocated; remD.innerText = `₹${rem.toLocaleString('en-IN')}`; remD.style.color = rem === 0 ? 'var(--success)' : (rem < 0 ? 'var(--accent-primary)' : 'var(--text-dim)'); };
-                amtI.oninput = (e) => { let totalToAlloc = parseFloat(e.target.value) || 0; inputs.forEach(i => { const due = parseFloat(i.dataset.due) || 0; if (totalToAlloc >= due && due > 0) { i.value = due; totalToAlloc -= due; } else if (totalToAlloc > 0 && due > 0) { i.value = totalToAlloc; totalToAlloc = 0; } else { i.value = ''; } }); updateRemaining(); };
-                inputs.forEach(i => { i.oninput = (e) => { let val = parseFloat(e.target.value) || 0; const due = parseFloat(e.target.dataset.due) || 0; if (val > due) e.target.value = due; else if (val < 0) e.target.value = 0; updateRemaining(); }; });
+                const amtI = overlay.querySelector('#pf-amount'), remD = overlay.querySelector('#alloc-remaining span'), inputs = Array.from(overlay.querySelectorAll('.alloc-input'));
+                
+                // Smart Waterfall Sorting: Setup fees first (-1), then monthly fees by relativeIdx (oldest first)
+                const sortedInputs = [...inputs].sort((a, b) => {
+                    const idxA = parseInt(a.dataset.relativeIdx), idxB = parseInt(b.dataset.relativeIdx);
+                    return idxA - idxB;
+                });
+
+                const updateRemaining = () => {
+                    const total = parseFloat(amtI.value) || 0;
+                    let allocated = 0;
+                    inputs.forEach(i => allocated += (parseFloat(i.value) || 0));
+                    const rem = total - allocated;
+                    remD.innerText = `₹${rem.toLocaleString('en-IN')}`;
+                    remD.style.color = rem === 0 ? 'var(--success)' : (rem < 0 ? 'var(--accent-primary)' : 'var(--text-dim)');
+                };
+
+                amtI.oninput = (e) => {
+                    let totalToAlloc = parseFloat(e.target.value) || 0;
+                    // Reset all first
+                    inputs.forEach(i => i.value = '');
+                    
+                    // Apply Waterfall
+                    sortedInputs.forEach(i => {
+                        const due = parseFloat(i.dataset.due) || 0;
+                        if (totalToAlloc <= 0) return;
+                        
+                        const toApply = Math.min(totalToAlloc, due);
+                        if (toApply > 0) {
+                            i.value = toApply;
+                            totalToAlloc -= toApply;
+                        }
+                    });
+                    updateRemaining();
+                };
+
+                inputs.forEach(i => {
+                    i.oninput = (e) => {
+                        let val = parseFloat(e.target.value) || 0;
+                        const due = parseFloat(e.target.dataset.due) || 0;
+                        if (val > due) e.target.value = due;
+                        else if (val < 0) e.target.value = 0;
+                        updateRemaining();
+                    };
+                });
             },
             onConfirm: () => {
                 const amount = parseFloat(document.getElementById('pf-amount').value), customDate = document.getElementById('pf-date').value; if (!amount) return false;
@@ -1454,25 +1687,147 @@ window.feesManager = {
         });
     },
     savePayment(sid, data) {
-        data.studentId = sid; data.timestamp = data.backDate ? new Date(data.backDate) : firebase.firestore.FieldValue.serverTimestamp();
-        firestore.collection('modules').doc('fees_accounting').collection('transactions').add(data).then(() => {
-            const f = this.fees[sid] || { paid: 0, componentPayments: {} }, curr = f.paid || 0, newCompPayments = { ...(f.componentPayments || {}) };
-            if (data.breakdown) { Object.entries(data.breakdown).forEach(([k, v]) => { newCompPayments[k] = (newCompPayments[k] || 0) + v; }); }
-            firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(sid).set({ paid: curr + data.amount, componentPayments: newCompPayments }, { merge: true });
-            AppDialog.toast('Payment saved', 'success'); window.AppLogger.log('COLLECT_FEE', 'fees_accounting', { studentId: sid, amount: data.amount }, sid);
+        data.studentId = sid;
+        data.timestamp = data.backDate ? new Date(data.backDate) : firebase.firestore.FieldValue.serverTimestamp();
+        data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+
+        return firestore.collection('modules').doc('fees_accounting').collection('transactions').add(data)
+            .then(async (docRef) => {
+                // Automatic Reconciliation after Payment
+                await this.performReconciliation(sid, true);
+                
+                AppDialog.toast('Payment saved', 'success');
+                window.AppLogger.log('COLLECT_FEE', 'fees_accounting', { studentId: sid, amount: data.amount }, sid);
+                return { id: docRef.id };
+            }).catch(err => {
+                console.error("Payment Error:", err);
+                AppDialog.toast('Failed to save payment', 'danger');
+            });
+    },
+
+    async reconcileStudentFees(studentId) {
+        const s = this.students[studentId] || { name: 'Student' };
+        const f = this.fees[studentId];
+        if (!f) return;
+
+        AppDialog.confirm({
+            title: 'Manual Reconciliation',
+            content: `This will re-calculate and re-allocate all payments for ${s.name} from scratch. Use this if you notice any discrepancies.`,
+            confirmText: 'Sync Ledger',
+            onConfirm: () => this.performReconciliation(studentId, false)
         });
     },
-    deleteTransaction(tid, studentId, amount) {
+
+    async performReconciliation(studentId, silent = true) {
+        const s = this.students[studentId] || { name: 'Student' };
+
+        // We fetch the LATEST fee doc to ensure we reconcile against the new structure
+        const sfRef = firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId);
+        const sfSnap = await sfRef.get();
+        if (!sfSnap.exists) return;
+        const f = sfSnap.data();
+
+        if (!silent) AppDialog.toast(`Re-allocating ledger for ${s.name}...`, 'info');
+
+        try {
+            // 1. Fetch ALL transactions for this student and sort chronologically
+            const snapshot = await firestore.collection('modules').doc('fees_accounting').collection('transactions')
+                .where('studentId', '==', studentId)
+                .get();
+
+            const sortedTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                .sort((a, b) => {
+                    const da = a.timestamp?.toDate ? a.timestamp.toDate() : (a.timestamp ? new Date(a.timestamp) : new Date(0));
+                    const db = b.timestamp?.toDate ? b.timestamp.toDate() : (b.timestamp ? new Date(b.timestamp) : new Date(0));
+                    return da - db;
+                });
+
+            let totalCashReceived = 0;
+            sortedTransactions.forEach(t => totalCashReceived += (parseFloat(t.amount) || 0));
+
+            // 2. Generate current requirements (Waterfall Order)
+            const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
+            const academicStartYear = f.academicStartYear || new Date().getFullYear();
+            const allReqs = [];
+
+            if (f.components) {
+                // Setup Reqs
+                f.components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount > 0).forEach(c => {
+                    allReqs.push({ key: this.getComponentKey(c, null, academicStartYear), amount: c.amount, priority: -1 });
+                });
+
+                // Monthly Reqs
+                for (let i = 0; i < (f.billingCycle || 12); i++) {
+                    const mName = this.MONTHS[(startMonth + i) % 12];
+                    f.components.filter(c => (c.frequency || '').toLowerCase() === 'monthly').forEach(c => {
+                        allReqs.push({ key: this.getComponentKey(c, mName, academicStartYear), amount: c.amount, priority: i });
+                    });
+                }
+            }
+
+            // 3. Perform Waterfall Re-allocation PER TRANSACTION
+            const batch = firestore.batch();
+            const newCompPayments = {};
+            const sortedReqs = allReqs.sort((a, b) => a.priority - b.priority);
+
+            sortedTransactions.forEach(t => {
+                let remainingInTransaction = parseFloat(t.amount) || 0;
+                const tBreakdown = {};
+
+                sortedReqs.forEach(req => {
+                    if (remainingInTransaction <= 0) return;
+
+                    const alreadyAllocatedForReq = newCompPayments[req.key] || 0;
+                    const stillNeededForReq = Math.max(0, req.amount - alreadyAllocatedForReq);
+
+                    if (stillNeededForReq > 0) {
+                        const toAlloc = Math.min(remainingInTransaction, stillNeededForReq);
+                        newCompPayments[req.key] = alreadyAllocatedForReq + toAlloc;
+                        tBreakdown[req.key] = toAlloc;
+                        remainingInTransaction -= toAlloc;
+                    }
+                });
+
+                // Update individual transaction breakdown in Firestore
+                batch.update(firestore.collection('modules').doc('fees_accounting').collection('transactions').doc(t.id), {
+                    breakdown: tBreakdown
+                });
+            });
+
+            // 4. Update Student Fee Summary
+            batch.update(sfRef, {
+                paid: totalCashReceived,
+                componentPayments: newCompPayments,
+                lastReconciledAt: firebase.firestore.FieldValue.serverTimestamp(),
+                reconciledBy: auth.currentUser?.email || 'system'
+            });
+
+            await batch.commit();
+
+            if (!silent) AppDialog.toast(`Reconciliation successful.`, 'success');
+            return true;
+        } catch (err) {
+            console.error("Auto-Reconciliation Error:", err);
+            if (!silent) AppDialog.toast('Reconciliation failed.', 'danger');
+            return false;
+        }
+    },    deleteTransaction(tid, studentId, amount) {
         AppDialog.confirm({
             title: 'Reverse Transaction', content: `Are you sure you want to delete this payment of ₹${amount.toLocaleString('en-IN')}? This will increase the student's balance due.`, confirmClass: 'btn-danger',
             onConfirm: async () => {
-                const txn = this.transactions.find(t => t.id === tid), f = this.fees[studentId] || { paid: 0, componentPayments: {} }, curr = f.paid || 0, compPayments = { ...(f.componentPayments || {}) };
-                if (txn && txn.breakdown) { Object.entries(txn.breakdown).forEach(([k, v]) => { compPayments[k] = Math.max(0, (compPayments[k] || 0) - v); }); }
-                const batch = firestore.batch();
-                batch.delete(firestore.collection('modules').doc('fees_accounting').collection('transactions').doc(tid));
-                batch.set(firestore.collection('modules').doc('fees_accounting').collection('student_fees').doc(studentId), { paid: Math.max(0, curr - amount), componentPayments: compPayments }, { merge: true });
-                await batch.commit(); window.AppLogger.log('DELETE_TRANSACTION', 'fees_accounting', { studentId, amount }, tid);
-                AppDialog.toast('Transaction reversed', 'info'); return true;
+                try {
+                    await firestore.collection('modules').doc('fees_accounting').collection('transactions').doc(tid).delete();
+                    
+                    // Automatic Reconciliation after Deletion
+                    await this.performReconciliation(studentId, true);
+                    
+                    window.AppLogger.log('DELETE_TRANSACTION', 'fees_accounting', { studentId, amount }, tid);
+                    AppDialog.toast('Transaction reversed and ledger re-synced', 'info'); return true;
+                } catch (err) {
+                    console.error("Reversal Error:", err);
+                    AppDialog.toast('Failed to reverse transaction', 'danger');
+                    return false;
+                }
             }
         });
     },
@@ -1487,33 +1842,33 @@ window.feesManager = {
                 <div class="form-group" style="margin-top:15px;"><label>Details</label><input type="text" id="oe-details" class="form-control"></div>
                 <div class="form-group" style="margin-top:15px;"><label>Receipt Image</label><input type="file" id="oe-file" class="form-control" accept="image/*"></div>`,
             onConfirm: async () => {
-                const amount = parseFloat(document.getElementById('oe-amount').value), 
-                      file = document.getElementById('oe-file').files[0],
-                      dateVal = document.getElementById('oe-date').value;
-                
+                const amount = parseFloat(document.getElementById('oe-amount').value),
+                    file = document.getElementById('oe-file').files[0],
+                    dateVal = document.getElementById('oe-date').value;
+
                 if (!amount) return false;
-                
-                let url = ''; 
-                if (file) { 
-                    const snap = await firebase.storage().ref(`expenses/office_${Date.now()}`).put(file); 
-                    url = await snap.ref.getDownloadURL(); 
+
+                let url = '';
+                if (file) {
+                    const snap = await firebase.storage().ref(`expenses/office_${Date.now()}`).put(file);
+                    url = await snap.ref.getDownloadURL();
                 }
-                
-                const cat = document.getElementById('oe-cat').value, 
-                      details = document.getElementById('oe-details').value;
-                
-                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({ 
-                    source: 'office', 
-                    type: 'spend', 
-                    amount, 
-                    category: cat, 
-                    details, 
+
+                const cat = document.getElementById('oe-cat').value,
+                    details = document.getElementById('oe-details').value;
+
+                await firestore.collection('modules').doc('fees_accounting').collection('expenses').add({
+                    source: 'office',
+                    type: 'spend',
+                    amount,
+                    category: cat,
+                    details,
                     attachmentUrl: url,
-                    createdBy: auth.currentUser.email.toLowerCase(), 
+                    createdBy: auth.currentUser.email.toLowerCase(),
                     timestamp: dateVal === today ? firebase.firestore.FieldValue.serverTimestamp() : new Date(dateVal)
                 });
-                
-                window.AppLogger.log('LOG_EXPENSE', 'fees_accounting', { category: cat, amount, details, date: dateVal }); 
+
+                window.AppLogger.log('LOG_EXPENSE', 'fees_accounting', { category: cat, amount, details, date: dateVal });
                 return true;
             }
         });
@@ -1553,7 +1908,25 @@ window.feesManager = {
         const s = this.students[t.studentId] || { name: 'Student' };
         window.AppLogger.log('DOWNLOAD_RECEIPT', 'fees_accounting', { studentName: s.name, transactionId: id, amount: t.amount }, t.studentId);
         const f = this.fees[t.studentId] || { total: 0, paid: 0 }, startYear = f.academicStartYear || (new Date().getMonth() < (f.startMonth || 5) ? new Date().getFullYear() - 1 : new Date().getFullYear()), academicYear = `${startYear}-${(startYear + 1).toString().slice(-2)}`, planName = f.planId && this.plans[f.planId] ? this.plans[f.planId].name : 'General / Custom Plan', win = window.open('', '_blank'), ts = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp), date = formatDate(ts), time = ts.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-        const breakdownHtml = t.breakdown ? Object.entries(t.breakdown).map(([key, amount]) => { const [name, month] = key.split('-'); return `<tr><td><div style="font-weight: bold;">${name}</div><div style="font-size: 0.65rem; text-transform: uppercase; color: #666;">${month || 'One-time'}</div></td><td style="text-align: right; font-weight: bold;">₹${amount.toLocaleString('en-IN')}</td></tr>`; }).join('') : `<tr><td>School Fees / Academic Charges</td><td style="text-align: right; font-weight: bold;">₹${t.amount.toLocaleString('en-IN')}</td></tr>`;
+        const breakdownHtml = t.breakdown ? Object.entries(t.breakdown).map(([key, amount]) => {
+            let name = 'Fee Component', month = '';
+            if (key.includes('-')) {
+                const parts = key.split('-');
+                const monthCandidate = parts[parts.length - 1];
+                if (this.MONTHS.includes(monthCandidate)) {
+                    month = monthCandidate;
+                    const idPart = parts.slice(0, -1).join('-');
+                    const comp = f.components?.find(c => c.uid === idPart || c.name === idPart);
+                    name = comp ? comp.name : idPart;
+                } else {
+                    name = key;
+                }
+            } else {
+                const comp = f.components?.find(c => c.uid === key || c.name === key);
+                name = comp ? comp.name : key;
+            }
+            return `<tr><td><div style="font-weight: bold;">${name}</div><div style="font-size: 0.65rem; text-transform: uppercase; color: #666;">${month || 'One-time'}</div></td><td style="text-align: right; font-weight: bold;">₹${amount.toLocaleString('en-IN')}</td></tr>`;
+        }).join('') : `<tr><td>School Fees / Academic Charges</td><td style="text-align: right; font-weight: bold;">₹${t.amount.toLocaleString('en-IN')}</td></tr>`;
         win.document.write(`<html><head><title>Receipt - ${id.slice(-8).toUpperCase()}</title><style>body { font-family: 'Helvetica', 'Arial', sans-serif; padding: 30px; color: #000; line-height: 1.4; font-size: 10pt; } .header { display: flex; justify-content: space-between; border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 25px; } .inst-name { font-size: 1.8rem; font-weight: 900; margin: 0; color: #000; letter-spacing: -0.5px; } .receipt-title { font-size: 1.1rem; font-weight: 700; text-transform: uppercase; color: #000; margin-top: 4px; } .info-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 30px; margin-bottom: 30px; } .info-box h3 { font-size: 0.75rem; text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid #000; padding-bottom: 4px; color: #000; } .info-content { font-size: 0.95rem; } table { width: 100%; border-collapse: collapse; margin-bottom: 30px; border: 1px solid #000; } th { text-align: left; padding: 12px 8px; font-size: 0.75rem; text-transform: uppercase; border-bottom: 2px solid #000; background: #fff; } td { padding: 12px 8px; border-bottom: 1px solid #000; font-size: 0.9rem; } .summary-container { display: grid; grid-template-columns: 1fr 320px; gap: 40px; } .payment-details { background: #fff; border: 1px solid #000; padding: 15px; border-radius: 8px; } .payment-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.85rem; } .totals-card { background: #fff; color: #000; padding: 20px; border-radius: 12px; border: 2px solid #000; } .total-row { display: flex; justify-content: space-between; margin-bottom: 10px; } .total-row.main { border-top: 2px solid #000; padding-top: 12px; margin-top: 12px; font-size: 1.3rem; font-weight: 900; } .footer { margin-top: 60px; font-size: 0.75rem; text-align: center; color: #000; border-top: 1px solid #000; padding-top: 20px; } .signature-box { margin-top: 40px; text-align: right; } .signature-line { display: inline-block; width: 200px; border-top: 1px solid #000; margin-top: 40px; text-align: center; font-size: 0.7rem; text-transform: uppercase; font-weight: 700; } @media print { html, body { height: 100%; overflow: hidden; margin: 0; padding: 0; } body { padding: 1cm; } @page { size: auto; margin: 0; } .totals-card { -webkit-print-color-adjust: exact; background-color: #fff !important; color: #000 !important; border: 2px solid #000 !important; } .footer { position: fixed; bottom: 1cm; left: 1cm; right: 1cm; } * { page-break-inside: avoid; } }</style></head><body><div class="header"><div><h1 class="inst-name">ABHISHRI ACADEMY</h1><div class="receipt-title">Fee Receipt</div></div><div style="text-align: right;"><div style="font-weight: 800; font-size: 1.1rem;">Academic Year ${academicYear}</div><div style="color: #000; font-size: 0.85rem; margin-top: 4px;">Receipt No: ${id.slice(-8).toUpperCase()}</div></div></div><div class="info-grid"><div class="info-box"><h3>Student Information</h3><div class="info-content"><strong style="font-size: 1.2rem;">${s.name}</strong><br><div style="margin-top: 6px; color: #333; font-size: 0.85rem;"><strong>Fee Structure:</strong> ${planName}<br></div></div></div><div class="info-box" style="text-align: right;"><h3>Transaction Details</h3><div class="info-content"><span style="color: #000;">Date:</span> ${date}<br><span style="color: #000;">Payment Mode:</span> <strong>${(t.method || 'CASH').toUpperCase()}</strong><br>${t.reference ? `<span style="color: #000;">Reference:</span> ${t.reference}` : ''}</div></div></div><table><thead><tr><th>Description</th><th style="text-align: right;">Amount Paid</th></tr></thead><tbody>${breakdownHtml}</tbody></table><div class="summary-container"><div><div class="payment-details"><h4 style="margin: 0 0 10px 0; font-size: 0.7rem; text-transform: uppercase; color: #888;">Note</h4><p style="margin: 0; font-size: 0.85rem; color: #555;">This receipt confirms the successful collection of the mentioned amount towards school fees. Please retain this copy for your records.</p></div><div class="signature-box"><div style="border: 1px dashed #000; width: 150px; height: 80px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.6rem; text-transform: uppercase; color: #888; border-radius: 8px;">School Seal</div></div></div><div class="totals-card"><div class="total-row"><span>Amount Received</span><span>₹${t.amount.toLocaleString('en-IN')}</span></div><div class="total-row main"><span>TOTAL PAID</span><span>₹${t.amount.toLocaleString('en-IN')}</span></div></div></div><div class="footer"><strong>Abhishri Academy</strong><br>84, Dhalavaipattinam Road, Dharapuram, Tamil Nadu 638656 | <strong>Contact: +91 95 004 004 59</strong><br><span style="font-size: 0.65rem; opacity: 0.8; margin-top: 8px; display: block;">This is a computer-generated receipt. No physical signature is mandatory.</span></div><script>window.onload=()=>{window.print(); setTimeout(()=>window.close(), 1000);};</script></body></html>`);
         win.document.close();
     },
@@ -1566,9 +1939,10 @@ window.feesManager = {
         win.document.write(`<html><head><title>Invoice - ${s.name}</title><style>body { font-family: 'Helvetica', 'Arial', sans-serif; padding: 10px; color: #000; line-height: 1.1; font-size: 8.5pt; } .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px; } .inst-name { font-size: 1.4rem; font-weight: bold; margin: 0; } .statement-title { font-size: 0.9rem; font-weight: bold; text-transform: uppercase; margin-top: 2px; } .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 12px; } .info-box h3 { font-size: 0.65rem; text-transform: uppercase; margin-bottom: 4px; border-bottom: 1px solid #000; padding-bottom: 2px; } .info-content { font-size: 0.85rem; } table { width: 100%; border-collapse: collapse; margin-bottom: 12px; } th { text-align: left; padding: 6px 4px; font-size: 0.65rem; text-transform: uppercase; border-bottom: 1.5px solid #000; border-top: 1.5px solid #000; } td { padding: 5px 4px; border-bottom: 1px solid #eee; font-size: 0.8rem; } .summary-section { display: grid; grid-template-columns: 1fr 260px; gap: 25px; margin-top: 5px; } .summary-card { border: 1px solid #000; padding: 10px; } .summary-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 0.8rem; } .summary-row.bold { font-weight: bold; border-top: 1px solid #000; padding-top: 4px; margin-top: 4px; } .summary-row.total { border-top: 1px solid #000; padding-top: 6px; margin-top: 6px; font-weight: bold; font-size: 1rem; } .footer { margin-top: 20px; font-size: 0.65rem; text-align: center; border-top: 1px solid #000; padding-top: 8px; } .stamp-box { border: 1px dashed #000; width: 140px; height: 70px; margin-top: 15px; display: flex; align-items: center; justify-content: center; font-size: 0.55rem; text-transform: uppercase; color: #888; } @media print { html, body { height: 99%; overflow: hidden; margin: 0; padding: 0; } body { padding: 0.5cm; } @page { size: A4; margin: 0; } * { page-break-inside: avoid; } .summary-section { page-break-inside: avoid; } }</style></head><body><div class="header"><div><h1 class="inst-name">ABHISHRI ACADEMY</h1><div class="statement-title">Fee Statement / Invoice</div></div><div style="text-align: right;"><div style="font-weight: bold;">Academic Year ${academicYear}</div><div>Date: ${formatDate(new Date())}</div><div style="font-size: 0.7rem;">INV-F-${id.slice(-6).toUpperCase()}</div></div></div><div class="info-grid" style="grid-template-columns: 1fr;"><div class="info-box" style="text-align: right; border-bottom: 2px solid #000; padding-bottom: 10px;"><h3>Student Details</h3><div class="info-content"><strong style="font-size: 1.1rem;">${s.name}</strong><br><div style="font-size: 0.85rem; color: #333; margin-top: 6px;"><strong>Fee Structure:</strong> ${planName}<br><strong>Admission for Class:</strong> ${s.admissionForClass || 'N/A'}</div></div></div></div><table><thead><tr><th>Fee Description</th><th style="text-align: right;">Rate</th><th style="text-align: center;">Cycle</th><th style="text-align: right;">Standard</th><th style="text-align: right;">Waiver</th><th style="text-align: right;">Payable</th></tr></thead><tbody>${(f.components || []).map(c => { const mult = c.frequency === 'monthly' ? (f.billingCycle || 12) : 1, stdRate = (c.originalAmount || c.amount), stdTotal = stdRate * mult, netTotal = c.amount * mult, wav = Math.max(0, stdTotal - netTotal); return `<tr><td><div style="font-weight: bold;">${c.name}</div><div style="font-size: 0.6rem; text-transform: uppercase;">${c.frequency}</div></td><td style="text-align: right;">₹${stdRate.toLocaleString('en-IN')}</td><td style="text-align: center;">${mult}</td><td style="text-align: right;">₹${stdTotal.toLocaleString('en-IN')}</td><td style="text-align: right;">${wav > 0 ? '- ₹' + wav.toLocaleString('en-IN') : '—'}</td><td style="text-align: right; font-weight: bold;">₹${netTotal.toLocaleString('en-IN')}</td></tr>`; }).join('')}</tbody></table><div class="summary-section"><div><div style="font-size: 0.75rem; font-weight: 800; text-transform: uppercase; margin-bottom: 12px; border-bottom: 2px solid #000; padding-bottom: 4px; letter-spacing: 0.05em;">Dues Status (To Date)</div><div style="font-size: 0.95rem; line-height: 1.6;">Expected to Date: ₹${expectedToDate.toLocaleString('en-IN')}<br>Amount Paid to Date: ₹${(f.paid || 0).toLocaleString('en-IN')}<br><strong style="font-size: 1.1rem; border-top: 1px solid #eee; display: block; margin-top: 5px; padding-top: 5px;">Outstanding Due: ₹${Math.max(0, arrears).toLocaleString('en-IN')}</strong></div><div style="margin-top: 30px;"><div style="border: 1px dashed #000; width: 160px; height: 90px; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; text-transform: uppercase; color: #888; border-radius: 12px; background: #fafafa;">Office Stamp & Seal</div></div></div><div class="summary-card" style="border-radius: 16px; border-width: 2px; background: #fff;"><div class="summary-row"><span>Annual Fee Total</span><span>₹${((f.components || []).reduce((acc, c) => acc + ((c.originalAmount || c.amount) * (c.frequency === 'monthly' ? (f.billingCycle || 12) : 1)), 0)).toLocaleString('en-IN')}</span></div><div class="summary-row" style="color: #666;"><span>Total Waivers</span><span>- ₹${((f.components || []).reduce((acc, c) => acc + (Math.max(0, (c.originalAmount || c.amount) - c.amount) * (c.frequency === 'monthly' ? (f.billingCycle || 12) : 1)), 0)).toLocaleString('en-IN')}</span></div><div class="summary-row bold" style="border-top: 2px solid #000; margin-top: 10px; padding-top: 10px;"><span>Net Annual Commitment</span><span>₹${(f.total || 0).toLocaleString('en-IN')}</span></div><div class="summary-row total" style="color: #22c55e;"><span>Total Received</span><span>₹${(f.paid || 0).toLocaleString('en-IN')}</span></div><div class="summary-row total" style="border-top: 3px solid #000; font-size: 1.3rem; margin-top: 15px; padding-top: 15px;"><span>Balance Due</span><span>₹${Math.max(0, (f.total || 0) - (f.paid || 0)).toLocaleString('en-IN')}</span></div></div></div><div class="footer" style="margin-top: 60px; border-top: 2px solid #000; padding-top: 20px;"><strong>Abhishri Academy</strong><br>84, Dhalavaipattinam Road, Dharapuram, Tamil Nadu 638656 | <strong>Contact: +91 95 004 004 59</strong><br><span style="font-size: 0.65rem; opacity: 0.8; margin-top: 10px; display: block; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Computer Generated Statement • Official Record</span></div><script>window.onload = () => { window.print(); setTimeout(()=>window.close(), 1000); };</script></body></html>`);
         win.document.close();
     },
+
     renderAuditLogs() {
         const container = document.getElementById('fees-content-audit_logs'); if (!container) return;
-        
+
         const userData = window.currentUserData || {};
         const isAdmin = userData.isAdmin;
         if (!isAdmin) {
@@ -1578,38 +1952,38 @@ window.feesManager = {
         }
 
         const q = this.searchQuery, modF = this.logModuleFilter, actF = this.logActionFilter;
-        
+
         // Use a local variable to filter, but always keep auditLogs as the source (which is already sorted desc by timestamp from firebase)
         let displayLogs = [...this.auditLogs];
 
-        const filtered = displayLogs.filter(log => { 
-            if (modF !== 'all' && log.module !== modF) return false; 
-            if (actF !== 'all' && log.action !== actF) return false; 
-            if (!q) return true; 
-            const searchStr = `${log.action} ${log.module} ${log.performedBy} ${JSON.stringify(log.details || {})}`.toLowerCase(); 
-            return searchStr.includes(q); 
+        const filtered = displayLogs.filter(log => {
+            if (modF !== 'all' && log.module !== modF) return false;
+            if (actF !== 'all' && log.action !== actF) return false;
+            if (!q) return true;
+            const searchStr = `${log.action} ${log.module} ${log.performedBy} ${JSON.stringify(log.details || {})}`.toLowerCase();
+            return searchStr.includes(q);
         });
 
         // Always sort by timestamp desc unless another field is explicitly set
         const sortField = this.sortField === 'name' ? 'timestamp' : this.sortField; // Default 'name' from global doesn't apply here
-        
+
         filtered.sort((a, b) => {
-            let valA, valB; 
-            if (sortField === 'timestamp') { 
-                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime(); 
-                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime(); 
+            let valA, valB;
+            if (sortField === 'timestamp') {
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
             }
             else if (sortField === 'action') { valA = (a.action || '').toLowerCase(); valB = (b.action || '').toLowerCase(); }
             else if (sortField === 'module') { valA = (a.module || '').toLowerCase(); valB = (b.module || '').toLowerCase(); }
             else if (sortField === 'performedBy') { valA = (a.performedBy || '').toLowerCase(); valB = (b.performedBy || '').toLowerCase(); }
-            else { 
-                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime(); 
-                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime(); 
+            else {
+                valA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+                valB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
             }
-            
+
             // For timestamp, if order is asc, it's old to new. If desc (default), it's new to old.
             const order = (sortField === 'timestamp' && this.sortField === 'name') ? 'desc' : this.sortOrder;
-            if (order === 'asc') return valA > valB ? 1 : -1; 
+            if (order === 'asc') return valA > valB ? 1 : -1;
             return valA < valB ? 1 : -1;
         });
 
@@ -1634,12 +2008,12 @@ window.feesManager = {
         filtered.forEach(log => {
             const date = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp);
             const timeStr = isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-            let detailsHtml = ''; 
-            if (log.details) { 
-                detailsHtml = Object.entries(log.details).map(([k, v]) => { 
-                    if (typeof v === 'object') return ''; 
-                    return `<span style="font-size:0.7rem; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; margin-right:4px; margin-bottom:4px;">${k}: <strong>${v}</strong></span>`; 
-                }).join(''); 
+            let detailsHtml = '';
+            if (log.details) {
+                detailsHtml = Object.entries(log.details).map(([k, v]) => {
+                    if (typeof v === 'object') return '';
+                    return `<span style="font-size:0.7rem; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; margin-right:4px; margin-bottom:4px;">${k}: <strong>${v}</strong></span>`;
+                }).join('');
             }
             const actionClass = log.action.includes('DELETE') || log.action.includes('REVERSE') ? 'badge-danger' : log.action.includes('ADD') || log.action.includes('COLLECT') || log.action.includes('APPROVE') ? 'badge-success' : 'badge-outline';
             html += `

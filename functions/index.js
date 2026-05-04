@@ -32,3 +32,8 @@ exports.whatsappWebhook = whatsappWebhook.whatsappWebhook;
 
 // --- Auth Module ---
 exports.syncPermissionsToRTDB = authSync.syncPermissionsToRTDB;
+
+// --- Fees & Accounting Module ---
+const feeTriggers = require("./src/fees/triggers");
+exports.syncStudentFeeTotals = feeTriggers.syncStudentFeeTotals;
+exports.syncStaffWalletBalance = feeTriggers.syncStaffWalletBalance;
