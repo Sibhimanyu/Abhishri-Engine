@@ -705,6 +705,10 @@
           <i data-lucide="users"></i>
           <span>Users</span>
         </div>
+        <div class="nav-item" onclick="switchAdminView('attendance')" id="nav-item-attendance">
+          <i data-lucide="map-pin"></i>
+          <span>Attendance Setup</span>
+        </div>
         <div class="nav-item" onclick="switchAdminView('whatsapp')" id="nav-item-whatsapp">
           <i data-lucide="message-circle"></i>
           <span>WhatsApp Config</span>
@@ -814,6 +818,10 @@
               <!-- User rows injected here -->
             </tbody>
           </table>
+        </div>
+
+        <div id="admin-content-attendance" class="admin-content">
+          <div id="admin-attendance-config-container"></div>
         </div>
 
         <!-- Activity Log Tab -->

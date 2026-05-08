@@ -225,6 +225,32 @@ window.feesManager = {
             }, err => console.warn("Fees - Salaries sync blocked: ", err));
     },
 
+    getStaffWalletEntries(staffId) {
+        const staff = this.staff[staffId];
+        const email = (staff?.email || '').toLowerCase();
+        return this.expenses.filter(e =>
+            e.source === 'staff_wallet' &&
+            (e.staffId === staffId || (email && e.createdBy === email))
+        );
+    },
+
+    hasStaffWallet(staffId) {
+        const staff = this.staff[staffId];
+        if (!staff) return false;
+        return staff.walletEnabled === true ||
+            Number(staff.walletBalance || 0) !== 0 ||
+            this.getStaffWalletEntries(staffId).length > 0;
+    },
+
+    getStaffWalletTotals(staffId) {
+        return this.getStaffWalletEntries(staffId).reduce((totals, entry) => {
+            const amount = entry.amount || 0;
+            if (entry.type === 'funding') totals.credits += amount;
+            else if (entry.type === 'spend') totals.expenses += amount;
+            return totals;
+        }, { credits: 0, expenses: 0 });
+    },
+
     resubscribe() {
         this.isSubscribed = false;
         this.subscribe();
@@ -756,9 +782,8 @@ window.feesManager = {
         const filteredStaffIds = staffIds.filter(id => {
             const s = this.staff[id];
             const isOwn = s.email && s.email.toLowerCase() === currentUserEmail;
-            const isWalletEnabled = s.walletEnabled !== false; // Default to true if not specified
 
-            if (!isWalletEnabled) return false;
+            if (!this.hasStaffWallet(id)) return false;
             if (!canViewAll && !isOwn) return false;
             return !q || (s.name || '').toLowerCase().includes(q) || (s.designation || '').toLowerCase().includes(q);
         }).sort((a, b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));
@@ -782,14 +807,15 @@ window.feesManager = {
 
         filteredStaffIds.forEach(id => {
             const s = this.staff[id];
-            const balance = s.walletBalance || 0;
+            const totals = this.getStaffWalletTotals(id);
+            const balance = s.walletBalance !== undefined ? s.walletBalance : totals.credits - totals.expenses;
 
             html += `
                 <tr>
                     <td><strong>${s.name}</strong></td>
                     <td>${s.designation || 'N/A'}</td>
-                    <td style="color:var(--success)">—</td>
-                    <td style="color:var(--accent-primary)">—</td>
+                    <td style="color:var(--success)">₹${totals.credits.toLocaleString('en-IN')}</td>
+                    <td style="color:var(--accent-primary)">₹${totals.expenses.toLocaleString('en-IN')}</td>
                     <td><strong style="color: ${balance >= 0 ? 'var(--success)' : 'var(--accent-primary)'}">₹${balance.toLocaleString('en-IN')}</strong></td>
                     <td style="text-align:right">
                         <div class="table-actions" style="justify-content:flex-end">
@@ -804,7 +830,7 @@ window.feesManager = {
         });
 
         if (filteredStaffIds.length === 0) {
-            html += `<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">No staff records found matching your search.</td></tr>`;
+            html += `<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">No staff wallets found. Credit or debit a staff member to create one.</td></tr>`;
         }
 
         container.innerHTML = html + '</tbody></table>';
@@ -909,8 +935,15 @@ window.feesManager = {
         const s = this.staff[staffId];
         if (!s) return;
 
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const feesPerms = userData.permissions?.fees_accounting || {};
+        const currentUserEmail = auth.currentUser?.email?.toLowerCase();
         const email = (s.email || '').toLowerCase();
-        const filteredExpenses = this.expenses.filter(e => e.staffId === staffId || (email && e.createdBy === email)).sort((a, b) => {
+        const filteredExpenses = this.expenses.filter(e =>
+            e.source === 'staff_wallet' &&
+            (e.staffId === staffId || (email && e.createdBy === email))
+        ).sort((a, b) => {
             const da = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
             const db = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
             return db - da;

@@ -8,6 +8,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Helper to get staff email by ID (used for wallet security)
+    function getStaffEmail(staffId) {
+      return get(/databases/$(database)/documents/modules/staff_directory/staff/$(staffId)).data.email.lower();
+    }
+
     // Rules for the new modular structure
     match /modules/whatsapp_sender {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
@@ -82,6 +87,11 @@ service cloud.firestore {
         allow create: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'pulse'));
         allow delete: if isAdmin();
       }
+
+      match /config/{configId} {
+        allow read: if isAuthenticated() && isAdmin();
+        allow write: if isAuthenticated() && isAdmin();
+      }
     }
 
     match /modules/smart_campus {
@@ -150,12 +160,6 @@ service cloud.firestore {
         );
       }
 
-    // Helper to get staff email by ID (used for wallet security)
-    function getStaffEmail(staffId) {
-      return get(/databases/$(database)/documents/modules/staff_directory/staff/$(staffId)).data.email.lower();
-    }
-
-      
       match /salaries/{id} {
         allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_view'));
         allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_process'));

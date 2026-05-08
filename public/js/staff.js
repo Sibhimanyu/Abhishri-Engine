@@ -30,7 +30,7 @@ window.staffDirectory = {
 
         this.subscribeAllowedUsers();
 
-        if (isMaster || perms.view || perms.add || perms.edit || perms.delete || perms.attendance_mark || perms.attendance_view || perms.pulse) {
+        if (isMaster || perms.view || perms.add || perms.edit || perms.delete || perms.attendance_mark || perms.attendance_view || perms.attendance_self || perms.pulse) {
             // Use Centralized Data Manager
             window.staffDataManager.subscribe();
             window.staffDataManager.onUpdate((data) => {
@@ -63,8 +63,9 @@ window.staffDirectory = {
         const isAdmin = userData.isAdmin;
         const perms = userData.permissions?.staff_directory || {};
         const isMaster = isAdmin || perms === true;
+        const canSelfAttend = isMaster || !!perms.attendance_self || !!this.getOwnStaffId();
 
-        if (isMaster || perms.attendance_mark || perms.attendance_view) {
+        if (isMaster || perms.attendance_mark || perms.attendance_view || perms.attendance_self || canSelfAttend) {
             this.attendanceRef = db.ref(`modules/staff_directory/attendance/${dateKey}`);
             this.attendanceRef.on('value', (snapshot) => {
                 this.attendance = snapshot.val() || {};
@@ -124,12 +125,17 @@ window.staffDirectory = {
         const container = document.getElementById('staff-content');
         if (!container) return;
 
+        if (this.currentView === 'directory' && staffPerms.attendance_self && !isMaster && !staffPerms.view && !staffPerms.add && !staffPerms.edit && !staffPerms.delete && !staffPerms.attendance_mark && !staffPerms.attendance_view && !staffPerms.pulse) {
+            this.switchView('attendance');
+            return;
+        }
+
         // Block views based on granular permissions
         if (!isAdmin) {
             const viewMapping = {
                 'directory': { mod: 'staff_directory', act: 'view' },
                 'manage': { mod: 'staff_directory', act: 'add' }, // Entry point for manage
-                'attendance': { mod: 'staff_directory', act: 'attendance_mark' },
+                'attendance': { mod: 'staff_directory', act: 'attendance_self' },
                 'attendance_reports': { mod: 'staff_directory', act: 'attendance_view' },
                 'performance': { mod: 'staff_directory', act: 'pulse' },
                 'report': { mod: 'staff_directory', act: 'view' }
@@ -143,6 +149,8 @@ window.staffDirectory = {
                 const s = this.staff[this.currentStaffId];
                 const isOwnProfile = s && s.email && auth.currentUser?.email?.toLowerCase() === s.email.toLowerCase();
                 hasEntry = (userData.permissions?.[p.mod] && userData.permissions[p.mod][p.act]) || isOwnProfile;
+            } else if (this.currentView === 'attendance') {
+                hasEntry = (userData.permissions?.[p.mod] && userData.permissions[p.mod][p.act]) || (userData.permissions?.staff_directory?.attendance_mark) || !!userData.permissions?.staff_directory?.attendance_self;
             } else {
                 hasEntry = userData.permissions?.[p.mod] && userData.permissions[p.mod][p.act];
             }
@@ -171,7 +179,7 @@ window.staffDirectory = {
 
         setNavVisible('nav-staff-directory', isMaster || staffPerms.view);
         setNavVisible('nav-staff-manage', isMaster || (staffPerms.add || staffPerms.edit || staffPerms.delete));
-        setNavVisible('nav-staff-attendance', isMaster || staffPerms.attendance_mark);
+        setNavVisible('nav-staff-attendance', isMaster || staffPerms.attendance_mark || staffPerms.attendance_self);
         setNavVisible('nav-staff-attendance_reports', isMaster || staffPerms.attendance_view);
         setNavVisible('nav-staff-performance', isMaster || staffPerms.pulse);
 
@@ -206,6 +214,12 @@ window.staffDirectory = {
     handleSearch(query) {
         this.searchQuery = query;
         this.render();
+    },
+
+    getOwnStaffId() {
+        const email = auth.currentUser?.email?.toLowerCase();
+        if (!email) return null;
+        return Object.keys(this.staff).find(id => (this.staff[id].email || '').toLowerCase() === email) || null;
     },
 
     seedSampleStaff() {
@@ -363,13 +377,144 @@ window.staffDirectory = {
     renderAttendance() {
         const container = document.getElementById('staff-content-attendance');
         if (!container) return;
+        const userData = window.currentUserData || {};
+        const staffPerms = userData.permissions?.staff_directory || {};
+        const canMarkAll = userData.isAdmin || staffPerms === true || staffPerms.attendance_mark;
+        const canSelfAttend = userData.isAdmin || staffPerms.attendance_self;
+        const ownStaffId = this.getOwnStaffId();
+        const ownAttendance = ownStaffId ? (this.attendance[ownStaffId] || { status: 'none' }) : null;
         const toolbar = document.getElementById('staff-toolbar');
-        if (toolbar) toolbar.innerHTML = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Quick find staff..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>`;
+        if (toolbar) toolbar.innerHTML = canMarkAll ? `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Quick find staff..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"></div>` : '';
+
+        if (!canMarkAll) {
+            const statusLabels = { present: 'Present', late: 'Late', absent: 'Absent', none: 'Not Marked' };
+            const statusClasses = { present: 'status-success', late: 'status-warning', absent: 'status-danger', none: 'status-none' };
+            container.innerHTML = `<div class="report-page">
+                <div class="report-hero">
+                    <h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Self Attendance</h2>
+                    <p style="color:var(--text-dim); font-size:1.1rem;">Mark yourself present when you are within the school location radius.</p>
+                </div>
+                <div class="report-body">
+                    ${ownStaffId && canSelfAttend ? `
+                        <div class="metrics-grid" style="margin-bottom:32px;">
+                            <div class="metric-card">
+                                <div class="metric-icon" style="background:rgba(74, 222, 128, 0.1); color:var(--success);"><i data-lucide="user-check"></i></div>
+                                <div class="metric-info">
+                                    <h3>Today&apos;s Status</h3>
+                                    <div class="metric-value"><span class="status-pill ${statusClasses[ownAttendance.status || 'none']}">${statusLabels[ownAttendance.status || 'none']}</span></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="window.staffDirectory.markMyAttendanceNow()"><i data-lucide="user-check"></i> Mark Present Now</button>
+                        </div>
+                        <div style="margin-top:20px; font-size:0.85rem; color:var(--text-dim);">This works only when your GPS location matches the school location settings.</div>
+                    ` : `
+                        <div class="empty-state"><i data-lucide="alert-circle"></i><p>${ownStaffId ? 'Self attendance is not enabled for your account yet.' : 'Your login is not linked to a staff profile yet.'}</p></div>
+                    `}
+                </div>
+            </div>`;
+            return;
+        }
+
         const sortedIds = Object.keys(this.staff).filter(id => (this.staff[id].name || '').toLowerCase().includes(this.searchQuery.toLowerCase())).sort((a,b) => (this.staff[a].name || '').localeCompare(this.staff[b].name || ''));
-        container.innerHTML = `<div class="report-page"><div class="report-hero"><h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Staff Attendance Marker</h2><p style="color:var(--text-dim); font-size:1.1rem;">Mark daily presence for ${parseInputDate(new Date().toISOString().split('T')[0])}</p></div><div class="report-body"><table class="console-table"><thead><tr><th>Staff</th><th>Role</th><th style="text-align:right; min-width:280px;">Quick Actions</th></tr></thead><tbody>${sortedIds.map(id => {
+        container.innerHTML = `<div class="report-page"><div class="report-hero"><h2 style="font-size:2rem; font-weight:800; margin-bottom:8px;">Staff Attendance Marker</h2><p style="color:var(--text-dim); font-size:1.1rem;">Mark daily presence for ${parseInputDate(new Date().toISOString().split('T')[0])}.</p></div><div class="report-body"><table class="console-table"><thead><tr><th>Staff</th><th>Role</th><th style="text-align:right; min-width:280px;">Quick Actions</th></tr></thead><tbody>${sortedIds.map(id => {
             const s = this.staff[id], att = this.attendance[id] || { status: 'none' };
             return `<tr><td><strong>${s.name}</strong></td><td>${s.designation || 'N/A'}</td><td style="text-align:right"><div class="attendance-actions" style="justify-content:flex-end; gap:10px;"><button class="btn-chip ${att.status === 'present' ? 'active' : ''}" onclick="window.staffDirectory.markAttendance('${id}', 'present')">PRESENT</button><button class="btn-chip btn-chip-danger ${att.status === 'absent' ? 'active' : ''}" onclick="window.staffDirectory.markAttendance('${id}', 'absent')">ABSENT</button><button class="btn-chip btn-chip-warning ${att.status === 'late' ? 'active' : ''}" onclick="window.staffDirectory.markAttendance('${id}', 'late')">LATE</button></div></td></tr>`;
         }).join('')}</tbody></table></div></div>`;
+    },
+
+    async markMyAttendanceNow() {
+        try {
+            const staffPerms = (window.currentUserData || {}).permissions?.staff_directory || {};
+            if (!(window.currentUserData?.isAdmin || staffPerms.attendance_self)) {
+                AppDialog.toast('Unauthorized', 'error');
+                return;
+            }
+            AppDialog.toast('Checking GPS location...', 'info');
+            const location = await this.getCurrentLocationForAttendance();
+            AppDialog.toast(`GPS detected: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)} (${Math.round(location.accuracy)}m accuracy)`, 'info');
+            const callable = firebase.functions().httpsCallable('selfMarkStaffAttendance');
+            const result = await callable({
+                location,
+                device: {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform
+                }
+            });
+            const ownStaffId = this.getOwnStaffId();
+            if (ownStaffId) {
+                this.selectedDate = result.data.date || this.selectedDate;
+                this.attendance[ownStaffId] = {
+                    ...(this.attendance[ownStaffId] || {}),
+                    status: result.data.status,
+                    timestamp: Date.now(),
+                    markedBy: 'self',
+                    markedByEmail: window.currentUserData?.email || auth.currentUser?.email || '',
+                    method: 'location',
+                };
+                if (this.currentView === 'attendance') {
+                    this.renderAttendance();
+                }
+            }
+            AppDialog.toast(`Attendance marked ${result.data.status}.`, 'success');
+            this.subscribeToAttendance(result.data.date || this.selectedDate);
+        } catch (err) {
+            const details = err?.details;
+            if (details && typeof details === 'object') {
+                const parts = [];
+                if (details.expectedSchoolLocation) parts.push(`School: ${details.expectedSchoolLocation.latitude}, ${details.expectedSchoolLocation.longitude}`);
+                if (details.detectedLocation) {
+                    const dl = details.detectedLocation;
+                    if (typeof dl === 'string') parts.push(`Location: ${dl}`);
+                    else parts.push(`Location: ${dl.latitude}, ${dl.longitude}${dl.accuracy != null ? ` (${Math.round(dl.accuracy)}m)` : ''}`);
+                }
+                if (details.distanceMeters != null) parts.push(`Distance: ${Math.round(details.distanceMeters)}m`);
+                if (details.allowedRadiusMeters != null) parts.push(`Radius: ${Math.round(details.allowedRadiusMeters)}m`);
+                if (details.maxAccuracyMeters != null) parts.push(`Max accuracy: ${Math.round(details.maxAccuracyMeters)}m`);
+                if (parts.length) {
+                    AppDialog.toast(`${err.message || 'Attendance check-in failed'} | ${parts.join(' | ')}`, 'error');
+                    return;
+                }
+            }
+            AppDialog.toast(err.message || 'Attendance check-in failed', 'error');
+        }
+    },
+
+    async getCurrentLocationForAttendance() {
+        if (!navigator.geolocation) {
+            throw new Error('Location is not supported in this browser.');
+        }
+
+        AppDialog.toast('Requesting GPS location...', 'info');
+
+        return new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    resolve({
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude,
+                        accuracy: pos.coords.accuracy,
+                    });
+                },
+                (err) => {
+                    reject(new Error(err.message || 'Could not get GPS location.'));
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 15000,
+                    maximumAge: 0,
+                }
+            );
+        });
+    },
+
+    async showAttendanceConfigForm() {
+        AppDialog.toast('Attendance settings are managed from the Admin Panel.', 'info');
+    },
+
+    async fillCurrentAttendanceLocation() {
+        AppDialog.toast('Attendance settings are managed from the Admin Panel.', 'info');
     },
 
     renderAttendanceReports() {
@@ -465,12 +610,12 @@ window.staffDirectory = {
         const userData = window.currentUserData || {}, isAdmin = userData.isAdmin, feePerms = userData.permissions?.fees_accounting || {}, canViewFees = isAdmin || feePerms === true || feePerms.view || (isOwnProfile && feePerms.wallet_view_own), staffPerms = userData.permissions?.staff_directory || {}, canViewPulse = isAdmin || staffPerms.pulse;
         let sFund = 0, sSpend = 0;
         if (canViewFees) { 
-            sFund = window.feesManager?.expenses?.filter(e => (e.staffId === id || (email && e.createdBy === email)) && e.type === 'funding').reduce((a,b)=>a+b.amount, 0) || 0; 
-            sSpend = window.feesManager?.expenses?.filter(e => (e.staffId === id || (email && e.createdBy === email)) && e.type === 'spend').reduce((a,b)=>a+b.amount, 0) || 0; 
+            sFund = window.feesManager?.expenses?.filter(e => e.source === 'staff_wallet' && (e.staffId === id || (email && e.createdBy === email)) && e.type === 'funding').reduce((a,b)=>a+b.amount, 0) || 0; 
+            sSpend = window.feesManager?.expenses?.filter(e => e.source === 'staff_wallet' && (e.staffId === id || (email && e.createdBy === email)) && e.type === 'spend').reduce((a,b)=>a+b.amount, 0) || 0; 
         }
-        const balance = sFund - sSpend;
-        const isWalletEnabled = s.walletEnabled !== false; // Default to true if not specified
-        const showWalletMetric = isWalletEnabled && canViewFees;
+        const balance = s.walletBalance !== undefined ? s.walletBalance : sFund - sSpend;
+        const hasWallet = window.feesManager?.hasStaffWallet ? window.feesManager.hasStaffWallet(id) : (s.walletEnabled === true || Number(s.walletBalance || 0) !== 0 || sFund > 0 || sSpend > 0);
+        const showWalletMetric = hasWallet && canViewFees;
 
         let latestPulses = [];
         if (canViewPulse) { try { const pulseSnap = await firestore.collection('modules').doc('staff_directory').collection('staff').doc(id).collection('performance_logs').orderBy('date', 'desc').limit(3).get(); pulseSnap.forEach(doc => latestPulses.push(doc.data())); } catch (err) { console.warn('Permission denied fetching staff pulselogs:', err); } }
@@ -522,7 +667,7 @@ window.staffDirectory = {
             <div class="form-group"><label>Home Address</label><textarea id="sf-addr" class="form-control" rows="2">${s.address || ''}</textarea></div>
             <div class="form-group" style="margin-top:15px; background:rgba(255,255,255,0.03); padding:12px; border-radius:12px; border:1px solid var(--card-border);">
                 <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                    <input type="checkbox" id="sf-wallet-enabled" ${s.walletEnabled ? 'checked' : ''} style="width:18px; height:18px;">
+                    <input type="checkbox" id="sf-wallet-enabled" ${s.walletEnabled === true ? 'checked' : ''} style="width:18px; height:18px;">
                     <div>
                         <div style="font-weight:700; color:var(--text-main);">Enable Wallet System</div>
                         <div style="font-size:0.75rem; color:var(--text-dim);">Allow tracking credits and expenses for this user.</div>

@@ -37,3 +37,8 @@ exports.syncPermissionsToRTDB = authSync.syncPermissionsToRTDB;
 const feeTriggers = require("./src/fees/triggers");
 exports.syncStudentFeeTotals = feeTriggers.syncStudentFeeTotals;
 exports.syncStaffWalletBalance = feeTriggers.syncStaffWalletBalance;
+
+// --- Staff Attendance Module ---
+const staffAttendance = require("./src/staff/attendance");
+exports.selfMarkStaffAttendance = staffAttendance.selfMarkStaffAttendance;
+exports.updateStaffAttendanceConfig = staffAttendance.updateStaffAttendanceConfig;

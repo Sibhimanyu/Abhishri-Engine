@@ -526,7 +526,11 @@ window.navigateTo = function (route, updateHash = true) {
         if (hasModPerm('staff_directory')) {
             document.getElementById('staff-app').classList.add('active');
             window.staffDirectory.subscribe();
+            const staffPerms = userData.permissions?.staff_directory || {};
+            const hasStaffDirectoryAccess = !!(isAdmin || staffPerms === true || staffPerms.view || staffPerms.add || staffPerms.edit || staffPerms.delete || staffPerms.attendance_mark || staffPerms.attendance_view || staffPerms.pulse);
+            const defaultStaffView = (staffPerms.attendance_self && !hasStaffDirectoryAccess) ? 'attendance' : 'directory';
             if (subRoute && window.staffDirectory.switchView) window.staffDirectory.switchView(subRoute);
+            else if (window.staffDirectory.switchView) window.staffDirectory.switchView(defaultStaffView);
             else window.staffDirectory.render();
         } else {
             AppDialog.toast('Access Denied', 'error');
@@ -628,4 +632,3 @@ function getAreaIcon(name) {
     if (lower.includes('gate') || lower.includes('security')) return 'shield';
     return 'box';
 }
-

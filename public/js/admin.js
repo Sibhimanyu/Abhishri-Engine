@@ -42,6 +42,10 @@ window.adminPanel = {
             titleEl.innerText = 'User Management';
             subtitleEl.innerText = 'Manage authorized emails and permissions';
             this.renderUserManagement();
+        } else if (view === 'attendance') {
+            titleEl.innerText = 'Attendance Setup';
+            subtitleEl.innerText = 'Configure school location and self check-in settings';
+            this.renderAttendanceConfig();
         } else if (view === 'whatsapp') {
             titleEl.innerText = 'WhatsApp Configuration';
             subtitleEl.innerText = 'Manage API keys and settings';
@@ -141,6 +145,100 @@ window.adminPanel = {
         this.renderUsersTable();
     },
 
+    async renderAttendanceConfig() {
+        const container = document.getElementById('admin-attendance-config-container');
+        if (!container) return;
+
+        let config = {};
+        try {
+            const snap = await firestore.collection('modules').doc('staff_directory').collection('config').doc('attendance').get();
+            config = snap.exists ? snap.data() : {};
+        } catch (err) {
+            console.warn('Could not load attendance config:', err);
+        }
+
+        container.innerHTML = `
+            <div style="max-width: 900px; margin: 0 auto; padding: 20px;">
+                <div class="card glass-card" style="padding:32px; background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: 20px;">
+                    <div class="form-section-title" style="margin-top:0;"><i data-lucide="map-pin"></i> School Attendance Setup</div>
+                    <p style="color:var(--text-dim); margin-bottom:24px;">Teachers can check in only when they are within the configured school location radius.</p>
+
+                    <form id="attendance-config-form" onsubmit="window.adminPanel.handleSaveAttendanceConfig(event)">
+                        <div class="form-grid-2">
+                            <div class="form-group">
+                                <label>School Latitude</label>
+                                <input type="number" step="any" id="att-school-lat" class="form-control" value="${config.schoolLatitude || ''}" placeholder="18.5204">
+                            </div>
+                            <div class="form-group">
+                                <label>School Longitude</label>
+                                <input type="number" step="any" id="att-school-lng" class="form-control" value="${config.schoolLongitude || ''}" placeholder="73.8567">
+                            </div>
+                        </div>
+                        <div class="form-grid-2">
+                            <div class="form-group">
+                                <label>Late After</label>
+                                <input type="time" id="att-late" class="form-control" value="${config.lateAfter || ''}">
+                            </div>
+                            <div class="form-group">
+                                <label>Timezone</label>
+                                <input type="text" id="att-timezone" class="form-control" value="${config.timezone || 'Asia/Kolkata'}">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Optional Reference Radius (meters)</label>
+                            <input type="number" id="att-radius" class="form-control" value="${config.allowedRadiusMeters || 100}">
+                        </div>
+                        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:24px;">
+                            <button type="button" class="btn btn-secondary" onclick="window.adminPanel.fillAttendanceLocationFromThisDevice()"><i data-lucide="crosshair"></i> Use This Device Location</button>
+                            <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save Settings</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons({ root: container });
+    },
+
+    async handleSaveAttendanceConfig(e) {
+        e.preventDefault();
+        const payload = {
+            schoolLatitude: parseFloat(document.getElementById('att-school-lat').value),
+            schoolLongitude: parseFloat(document.getElementById('att-school-lng').value),
+            allowedRadiusMeters: parseFloat(document.getElementById('att-radius').value) || 100,
+            lateAfter: document.getElementById('att-late').value || null,
+            timezone: document.getElementById('att-timezone').value || 'Asia/Kolkata'
+        };
+
+        if (!Number.isFinite(payload.schoolLatitude) || !Number.isFinite(payload.schoolLongitude)) {
+            AppDialog.toast('School coordinates are required', 'error');
+            return;
+        }
+
+        try {
+            const callable = firebase.functions().httpsCallable('updateStaffAttendanceConfig');
+            await callable(payload);
+            AppDialog.toast('Attendance settings saved', 'success');
+        } catch (err) {
+            AppDialog.toast('Failed to save: ' + err.message, 'error');
+        }
+    },
+
+    async fillAttendanceLocationFromThisDevice() {
+        if (!navigator.geolocation) {
+            AppDialog.toast('Location is not available on this device', 'error');
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(pos => {
+            const lat = document.getElementById('att-school-lat');
+            const lng = document.getElementById('att-school-lng');
+            if (lat) lat.value = pos.coords.latitude.toFixed(7);
+            if (lng) lng.value = pos.coords.longitude.toFixed(7);
+            AppDialog.toast('Filled from current location', 'success');
+        }, err => {
+            AppDialog.toast(err.message || 'Could not get location', 'error');
+        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    },
+
     renderWhitelist() {
         firestore.collection('allowedUsers').onSnapshot(snap => {
             const container = document.getElementById('whitelist-list');
@@ -173,6 +271,7 @@ window.adminPanel = {
 
                     if (perms.staff_directory?.view || perms.staff_directory === true) badges.push('<span class="perm-badge perm-badge-staff">Staff View</span>');
                     if (perms.staff_directory?.manage) badges.push('<span class="perm-badge perm-badge-staff">Staff Ctrl</span>');
+                    if (perms.staff_directory?.attendance_self) badges.push('<span class="perm-badge perm-badge-staff">Staff Self</span>');
                     if (perms.staff_directory?.attendance) badges.push('<span class="perm-badge perm-badge-staff">Staff Attd</span>');
                     if (perms.staff_directory?.pulse) badges.push('<span class="perm-badge perm-badge-staff">Staff Perf</span>');
 
@@ -471,7 +570,7 @@ window.adminPanel = {
                     smart_campus: { view: true, control: true, scenes: true },
                     student_directory: { view: true, add: true, edit: true, delete: true, attendance_mark: true, attendance_view: true },
                     student_performance: { view: true, log: true },
-                    staff_directory: { view: true, add: true, edit: true, delete: true, attendance_mark: true, attendance_view: true, pulse_view: true },
+                    staff_directory: { view: true, add: true, edit: true, delete: true, attendance_mark: true, attendance_view: true, attendance_self: true, pulse_view: true },
                     fees_accounting: { view: true, ledger: true, trans_add: true, trans_delete: true, config: true, exp_own: true, exp_all: true, salaries_process: true, salaries_view: true },
                     whatsapp_sender: { access: true, broadcast: true, manage: true, config: true }
                 }
@@ -482,7 +581,7 @@ window.adminPanel = {
                     smart_campus: { view: true, control: false, scenes: false },
                     student_directory: { view: true, add: false, edit: false, delete: false, attendance_mark: true, attendance_view: false },
                     student_performance: { view: true, log: true },
-                    staff_directory: { view: true, add: false, edit: false, delete: false, attendance_mark: true, attendance_view: false, pulse_view: false },
+                    staff_directory: { view: true, add: false, edit: false, delete: false, attendance_mark: false, attendance_view: false, attendance_self: true, pulse_view: false },
                     fees_accounting: { view: false, ledger: false, trans_add: false, trans_delete: false, config: false, exp_own: true, exp_all: false, salaries_process: false, salaries_view: false, wallet_view_own: true },
                     whatsapp_sender: { access: true, broadcast: false, manage: false, config: false }
                 }
@@ -558,6 +657,7 @@ window.adminPanel = {
                                 <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="add" ${getPerm('staff_directory', 'add')}> Add New Staff</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="edit" ${getPerm('staff_directory', 'edit')}> Edit Staff Data</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="delete" ${getPerm('staff_directory', 'delete')}> Delete Records</label>
+                                <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="attendance_self" ${getPerm('staff_directory', 'attendance_self')}> Self Attendance Check-in</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="attendance_mark" ${getPerm('staff_directory', 'attendance_mark')}> Mark Attendance</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="attendance_view" ${getPerm('staff_directory', 'attendance_view')}> View Attendance Reports</label>
                                 <label><input type="checkbox" class="perm-check" data-mod="staff_directory" data-act="pulse_view" ${getPerm('staff_directory', 'pulse_view')}> Access Staff Pulse</label>
@@ -837,4 +937,3 @@ window.openCreateSceneModal = (sceneId = null) => {
         }
     });
 };
-
