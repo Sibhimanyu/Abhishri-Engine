@@ -202,7 +202,11 @@ window.staffDirectory = {
                 const s = window.studentDataManager?.students?.[this.currentStudentId];
                 subtitle.innerText = s ? `Profile — ${s.name}` : 'Student Profile';
             } else if (this.currentView === 'staff') {
-                const staffCount = Object.keys(this.allowedUsers).filter(e => (this.allowedUsers[e]?.role || 'staff') !== 'student').length;
+                const _sg = new Set(['student', 'tuition_student', 'parent']);
+                const staffCount = Object.keys(this.allowedUsers).filter(e => {
+                    const d = this.allowedUsers[e];
+                    return d?.role !== 'student' && !_sg.has(d?.permissionGroup);
+                }).length;
                 subtitle.innerText = `${staffCount} members`;
             } else if (this.currentView === 'preschool') {
                 const count = Object.values(window.studentDataManager?.students || {}).filter(s => (s.studentType || 'preschool') === 'preschool').length;
@@ -255,12 +259,145 @@ window.staffDirectory = {
 
     handleSearch(query) {
         this.searchQuery = query;
-        // In attendance context render() would bail (wrong hash) — call directly instead
+        // Bypass render() entirely — only rebuild the content grid, never touch the toolbar
         if (this.appContext === 'attendance') {
-            this.renderAttendance();
+            if (window.attendancePanel) window.attendancePanel.render();
+            else this.renderAttendance();
+        } else if (this.currentView === 'staff') {
+            this._renderDirectoryContent('people-content-staff');
+        } else if (this.currentView === 'preschool') {
+            this._renderDirectoryContent('people-content-preschool');
+        } else if (this.currentView === 'tuition') {
+            this._renderDirectoryContent('people-content-tuition');
         } else {
             this.render();
         }
+    },
+
+    // Rebuild ONLY the cards/rows grid without touching the toolbar.
+    _renderDirectoryContent(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container || !this.dataLoaded) return;
+
+        const q = this.searchQuery.toLowerCase();
+        const filter = this.currentPeopleFilter;
+        const allStudents = window.studentDataManager?.students || {};
+
+        const STUDENT_GROUPS = new Set(['student', 'tuition_student', 'parent']);
+        const staffByEmail = {};
+        Object.keys(this.staff).forEach(id => {
+            const s = this.staff[id];
+            if (s.email) staffByEmail[s.email.toLowerCase()] = { ...s, id };
+        });
+        const staffEmails = Object.keys(this.allowedUsers).filter(e => {
+            const d = this.allowedUsers[e];
+            return d?.role !== 'student' && !STUDENT_GROUPS.has(d?.permissionGroup);
+        });
+
+        const filteredUserEmails = filter !== 'students'
+            ? staffEmails.filter(email => {
+                const s = staffByEmail[email];
+                return email.includes(q) || (s && (s.name || '').toLowerCase().includes(q)) || (s && (s.designation || '').toLowerCase().includes(q));
+            }).sort((a, b) => ((staffByEmail[a]?.name || a).localeCompare(staffByEmail[b]?.name || b)))
+            : [];
+
+        const filteredStudents = filter !== 'staff'
+            ? Object.entries(allStudents)
+                .filter(([, s]) => {
+                    const matchSearch = (s.name || '').toLowerCase().includes(q);
+                    const matchWing = this.studentWingFilter === 'all' || (s.studentType || 'preschool') === this.studentWingFilter;
+                    return matchSearch && matchWing;
+                })
+                .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''))
+            : [];
+
+        if (filteredUserEmails.length === 0 && filteredStudents.length === 0) {
+            container.innerHTML = `<div class="empty-state"><i data-lucide="users"></i><p>${q ? 'No results.' : 'No records yet.'}</p></div>`;
+            if (typeof lucide !== 'undefined') lucide.createIcons({ root: container });
+            return;
+        }
+
+        // Reuse the same card-building logic from renderDirectory
+        let html = '';
+        if (filteredUserEmails.length > 0) {
+            html += '<div class="directory-grid">';
+            filteredUserEmails.forEach(email => {
+                const u = this.allowedUsers[email];
+                const s = staffByEmail[email];
+                const id = s?.id;
+
+                if (id) {
+                    // Has a profile — same layout as student cards
+                    html += `
+                        <div class="directory-card" onclick="window.staffDirectory.switchView('report', '${id}')">
+                            <div class="member-header">
+                                <div class="member-avatar" style="background:rgba(115,199,200,0.15); color:var(--accent-secondary);">${(s.name || 'S')[0].toUpperCase()}</div>
+                                <div class="member-info">
+                                    <h3>${s.name}</h3>
+                                    <p>${s.designation || 'No designation'}</p>
+                                    ${s.wing ? `<div style="margin-top:4px;">${this.staffWingBadgeHtml(s.wing)}</div>` : ''}
+                                </div>
+                            </div>
+                            <div class="member-details">
+                                <div class="detail-item"><i data-lucide="phone"></i><span>${s.phone || 'No phone'}</span></div>
+                                <div class="detail-item"><i data-lucide="calendar"></i><span>${s.joiningDate || 'No date'}</span></div>
+                            </div>
+                            <div class="member-actions"><button class="btn btn-ghost btn-sm" style="width:100%; justify-content:center; color:var(--accent-secondary); font-weight:800; letter-spacing:0.5px;">VIEW PROFILE <i data-lucide="chevron-right" style="width:16px; height:16px; margin-left:4px;"></i></button></div>
+                        </div>`;
+                } else {
+                    // No profile yet — muted card with create action
+                    const name = email.split('@')[0];
+                    html += `
+                        <div class="directory-card" style="opacity:0.6;">
+                            <div class="member-header">
+                                <div class="member-avatar" style="background:rgba(255,255,255,0.06); color:var(--text-dim);">${name[0].toUpperCase()}</div>
+                                <div class="member-info">
+                                    <h3>${name}</h3>
+                                    <p>${u?.isAdmin ? 'Administrator' : 'Authorized User'}</p>
+                                </div>
+                            </div>
+                            <div class="member-details">
+                                <div class="detail-item"><i data-lucide="mail"></i><span class="text-truncate">${email}</span></div>
+                            </div>
+                            <div class="member-actions">
+                                <button class="btn btn-secondary btn-sm" style="width:100%; justify-content:center;" onclick="window.staffDirectory.showStaffForm(null, '${email}')">
+                                    <i data-lucide="plus" style="width:14px;"></i> Create Profile
+                                </button>
+                            </div>
+                        </div>`;
+                }
+            });
+            html += '</div>';
+        }
+
+        if (filteredStudents.length > 0) {
+            html += '<div class="directory-grid">';
+            filteredStudents.forEach(([id, s]) => {
+                const wingType = s.studentType || 'preschool';
+                const wingColor = wingType === 'preschool' ? 'var(--accent-secondary)' : '#fbbf24';
+                const wingBg    = wingType === 'preschool' ? 'rgba(115,199,200,0.15)' : 'rgba(251,191,36,0.15)';
+                html += `
+                    <div class="directory-card" onclick="window.staffDirectory.switchView('student_report', '${id}')">
+                        <div class="member-header">
+                            <div class="member-avatar" style="background:${wingBg}; color:${wingColor};">${(s.name || 'S').charAt(0).toUpperCase()}</div>
+                            <div class="member-info">
+                                <h3>${s.name}</h3>
+                                <p>${s.admissionForClass || 'No class set'}</p>
+                                <div style="margin-top:4px;"><span style="background:${wingBg}; color:${wingColor}; padding:2px 10px; border-radius:8px; font-size:0.7rem; font-weight:800; letter-spacing:0.5px;">${wingType.toUpperCase()}</span></div>
+                            </div>
+                        </div>
+                        <div class="member-details">
+                            <div class="detail-item"><i data-lucide="phone"></i><span>${s.fatherPhone || s.motherPhone || 'No phone'}</span></div>
+                            <div class="detail-item"><i data-lucide="calendar"></i><span>${s.enrollmentDate ? new Date(s.enrollmentDate).toLocaleDateString('en-IN') : 'No date'}</span></div>
+                        </div>
+                        <div class="member-actions"><button class="btn btn-ghost btn-sm" style="width:100%; justify-content:center; color:${wingColor}; font-weight:800; letter-spacing:0.5px;">VIEW PROFILE <i data-lucide="chevron-right" style="width:16px; height:16px; margin-left:4px;"></i></button></div>
+                    </div>`;
+            });
+            html += '</div>';
+        }
+
+        container.innerHTML = html;
+        if (typeof lucide !== 'undefined') lucide.createIcons({ root: container });
     },
 
     getOwnStaffId() {
@@ -483,8 +620,23 @@ window.staffDirectory = {
     async assignUserGroup(email, groupId) {
         if (this._isSuperAdmin(email)) { AppDialog.toast('Super Admin permissions are protected.', 'error'); return; }
         if (groupId === 'superadmin' && !this._isSuperAdmin(email)) { AppDialog.toast('Super Admin group is reserved.', 'error'); return; }
+
         const group = this.PERMISSION_GROUPS.find(g => g.id === groupId);
         if (!group) return;
+
+        const current = this.allowedUsers[email];
+        const currentIsStudent = current?.role === 'student';
+        const newIsStudent = !!group.isStudent;
+
+        // Hard boundary — students/parents cannot become staff and vice versa
+        if (currentIsStudent && !newIsStudent) {
+            AppDialog.toast('Student and parent accounts cannot be changed to staff roles. Remove the account and add them as staff separately if needed.', 'error');
+            return;
+        }
+        if (!currentIsStudent && newIsStudent && current) {
+            AppDialog.toast('Staff accounts cannot be changed to student or parent roles.', 'error');
+            return;
+        }
         const update = {
             isAdmin: !!group.isAdmin,
             role: group.isStudent ? 'student' : 'staff',
@@ -591,8 +743,11 @@ window.staffDirectory = {
             </div>`;
         }).join('');
 
-        // Group select options (exclude superadmin — it's fixed)
-        const groupOpts = GROUPS.filter(g => !g.isSuperAdmin).map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+        // Separate group lists — staff and student groups cannot be mixed
+        const staffGroupOpts   = GROUPS.filter(g => !g.isSuperAdmin && !g.isStudent).map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+        const studentGroupOpts = GROUPS.filter(g => g.isStudent).map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+        // Legacy single list (used for pending rows where role is unknown)
+        const groupOpts = staffGroupOpts;
 
         // Build lookup maps for resolving real names
         const allStudents = window.studentDataManager?.students || {};
@@ -634,9 +789,9 @@ window.staffDirectory = {
             return { name: data.displayName || email.split('@')[0], sub: '' };
         };
 
-        // Build rows
+        // Build rows — staff only; students/parents authenticate via student directory, not allowedUsers
         const allRows = [];
-        Object.entries(this.allowedUsers).sort(([ea, da], [eb, db]) => {
+        Object.entries(this.allowedUsers).filter(([, d]) => d?.role !== 'student').sort(([ea, da], [eb, db]) => {
             if (this._isSuperAdmin(ea)) return -1;
             if (this._isSuperAdmin(eb)) return 1;
             const na = resolvedName(ea, da).name;
@@ -652,9 +807,11 @@ window.staffDirectory = {
             const avatarHtml = data.photoURL
                 ? `<img src="${data.photoURL}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;${isSA?'border:2px solid #f59e0b;':''}">`
                 : `<div style="width:34px;height:34px;border-radius:50%;background:${isSA?'rgba(245,158,11,0.2)':group?group.color+'22':'rgba(255,255,255,0.06)'};color:${isSA?'#f59e0b':group?group.color:'var(--text-dim)'};display:flex;align-items:center;justify-content:center;font-size:0.85rem;font-weight:800;flex-shrink:0;${isSA?'border:2px solid #f59e0b;':''}">${name[0].toUpperCase()}</div>`;
+            const isStudentAccount = data.role === 'student';
+            const availableOpts = isStudentAccount ? studentGroupOpts : staffGroupOpts;
             const groupCell = isSA
                 ? `<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(245,158,11,0.12);color:#f59e0b;padding:4px 10px;border-radius:8px;font-size:0.75rem;font-weight:800;"><i data-lucide="crown" style="width:11px;height:11px;"></i> Super Admin</span>`
-                : `<select onchange="window.staffDirectory._onGroupChange(this,'${email}')" style="background:${group?group.color+'11':'rgba(255,255,255,0.04)'};border:1.5px solid ${group?group.color:'rgba(255,255,255,0.1)'};border-radius:10px;color:var(--text-main);padding:6px 10px;font-size:0.8rem;font-weight:700;cursor:pointer;min-width:140px;">${!gid?'<option value="" disabled selected style="opacity:0.5">Assign group\u2026</option>':''}${groupOpts.replace('value="'+gid+'"','value="'+gid+'" selected')}</select>`;
+                : `<select onchange="window.staffDirectory._onGroupChange(this,'${email}')" style="background:${group?group.color+'11':'rgba(255,255,255,0.04)'};border:1.5px solid ${group?group.color:'rgba(255,255,255,0.1)'};border-radius:10px;color:var(--text-main);padding:6px 10px;font-size:0.8rem;font-weight:700;cursor:pointer;min-width:140px;">${!gid?'<option value="" disabled selected style="opacity:0.5">Assign group\u2026</option>':''}${availableOpts.replace('value="'+gid+'"','value="'+gid+'" selected')}</select>`;
             const actions = isSA ? '' : `<button class="btn-icon btn-icon-danger" title="Remove" onclick="window.staffDirectory._removePerson('${email}')"><i data-lucide="user-minus"></i></button>`;
             const matchesFilter = !activeGroup || gid === activeGroup;
             allRows.push(`<tr data-email="${email}" data-name="${name.toLowerCase()}" data-group="${gid||''}" style="${matchesFilter?'':'display:none'}"><td><div style="display:flex;align-items:center;gap:12px;">${avatarHtml}<div><div style="font-weight:700;font-size:0.9rem;">${name}${isSA?'<span style=\"background:rgba(245,158,11,0.12);color:#f59e0b;padding:2px 8px;border-radius:6px;font-size:0.65rem;font-weight:800;margin-left:6px;\">SUPER ADMIN</span>':''}</div>${sub?`<div style="font-size:0.7rem;color:var(--accent-secondary);font-weight:600;margin-top:1px;">${sub}</div>`:''}
@@ -1024,10 +1181,14 @@ window.staffDirectory = {
             if (s.email) staffByEmail[s.email.toLowerCase()] = { ...s, id };
         });
 
-        // Only show non-student accounts in the staff section
-        const staffEmails = Object.keys(this.allowedUsers).filter(email =>
-            (this.allowedUsers[email]?.role || 'staff') !== 'student'
-        );
+        // Exclude any account that is a student/parent — by role OR by permission group
+        const STUDENT_GROUPS = new Set(['student', 'tuition_student', 'parent']);
+        const staffEmails = Object.keys(this.allowedUsers).filter(email => {
+            const d = this.allowedUsers[email];
+            if (d?.role === 'student') return false;
+            if (STUDENT_GROUPS.has(d?.permissionGroup)) return false;
+            return true;
+        });
 
         const filteredUserEmails = this.currentPeopleFilter !== 'students'
             ? staffEmails.filter(email => {
@@ -1062,9 +1223,7 @@ window.staffDirectory = {
         const wingLabel = wingType === 'tuition' ? 'Tuition Student' : 'Preschool Student';
         const addBtn = filter === 'students'
             ? (canAddStudent ? `<button class="btn btn-primary" onclick="window.studentDirectory.showStudentForm(null, '${wingType}')"><i data-lucide="user-plus"></i> New ${wingLabel}</button>` : '')
-            : (canAddStaff ? `
-                ${isAdmin2 ? `<button class="btn btn-secondary" onclick="window.staffDirectory.syncAllStaffLogins()" title="Create login accounts for all staff profiles that don't have one yet"><i data-lucide="refresh-cw"></i> Sync Logins</button>` : ''}
-                <button class="btn btn-primary" onclick="window.staffDirectory.showStaffForm()"><i data-lucide="user-plus"></i> New Staff</button>` : '');
+            : (canAddStaff ? `<button class="btn btn-primary" onclick="window.staffDirectory.showStaffForm()"><i data-lucide="user-plus"></i> New Staff</button>` : '');
         this._setToolbar(`
             <div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search..." oninput="window.staffDirectory.handleSearch(this.value)" value="${this.searchQuery}"><button class="search-clear" onclick="window.staffDirectory.handleSearch(''); this.previousElementSibling.value='';" title="Clear">×</button></div>
             ${addBtn}`);
@@ -1076,29 +1235,52 @@ window.staffDirectory = {
 
         let html = '';
 
-        // Staff section
+        // Staff section — same card layout as student cards
         if (filteredUserEmails.length > 0) {
             html += '<div class="directory-grid">';
             filteredUserEmails.forEach(email => {
                 const u = this.allowedUsers[email];
                 const s = staffByEmail[email];
-                const displayName = s?.name || email.split('@')[0];
-                const initials = displayName[0].toUpperCase();
                 const id = s?.id;
-                html += `
-                    <div class="directory-card" ${id ? `onclick="window.staffDirectory.switchView('report', '${id}')"` : ''} style="${!id ? 'cursor:default; opacity:0.75;' : ''}">
-                        <div class="member-header"><div class="member-avatar" style="background:${id ? 'var(--accent-secondary)' : 'var(--text-dim)'}; color:${id ? '#000' : 'white'};">${initials}</div>
-                        <div class="member-info"><h3>${displayName}</h3><p>${s?.designation || (u.isAdmin ? 'Administrator' : 'Authorized User')}</p>${id && s?.wing ? `<div style="margin-top:4px;">${this.staffWingBadgeHtml(s.wing)}</div>` : ''}</div></div>
-                        <div class="member-details">
-                            <div class="detail-item"><i data-lucide="mail"></i><span class="text-truncate">${email}</span></div>
-                            <div class="detail-item"><i data-lucide="${id ? 'check-circle' : 'alert-circle'}" style="color:${id ? 'var(--success)' : 'var(--accent-primary)'}"></i><span>${id ? 'Profile Linked' : 'Profile Pending'}</span></div>
-                        </div>
-                        <div class="member-actions">
-                            ${id
-                                ? `<button class="btn btn-ghost btn-sm" style="width:100%; justify-content:center; color:var(--accent-secondary); font-weight:800; letter-spacing:0.5px;">VIEW PROFILE <i data-lucide="chevron-right" style="width:16px; height:16px; margin-left:4px;"></i></button>`
-                                : `<button class="btn btn-secondary btn-sm" style="width:100%; justify-content:center;" onclick="event.stopPropagation(); window.staffDirectory.showStaffForm(null, '${email}')"><i data-lucide="plus" style="width:14px;"></i> CREATE PROFILE</button>`}
-                        </div>
-                    </div>`;
+
+                if (id) {
+                    html += `
+                        <div class="directory-card" onclick="window.staffDirectory.switchView('report', '${id}')">
+                            <div class="member-header">
+                                <div class="member-avatar" style="background:rgba(115,199,200,0.15); color:var(--accent-secondary);">${(s.name||'S')[0].toUpperCase()}</div>
+                                <div class="member-info">
+                                    <h3>${s.name}</h3>
+                                    <p>${s.designation || 'No designation'}</p>
+                                    ${s.wing ? `<div style="margin-top:4px;">${this.staffWingBadgeHtml(s.wing)}</div>` : ''}
+                                </div>
+                            </div>
+                            <div class="member-details">
+                                <div class="detail-item"><i data-lucide="phone"></i><span>${s.phone || 'No phone'}</span></div>
+                                <div class="detail-item"><i data-lucide="calendar"></i><span>${s.joiningDate || 'No date'}</span></div>
+                            </div>
+                            <div class="member-actions"><button class="btn btn-ghost btn-sm" style="width:100%; justify-content:center; color:var(--accent-secondary); font-weight:800; letter-spacing:0.5px;">VIEW PROFILE <i data-lucide="chevron-right" style="width:16px; height:16px; margin-left:4px;"></i></button></div>
+                        </div>`;
+                } else {
+                    const name = email.split('@')[0];
+                    html += `
+                        <div class="directory-card" style="opacity:0.6;">
+                            <div class="member-header">
+                                <div class="member-avatar" style="background:rgba(255,255,255,0.06); color:var(--text-dim);">${name[0].toUpperCase()}</div>
+                                <div class="member-info">
+                                    <h3>${name}</h3>
+                                    <p>${u?.isAdmin ? 'Administrator' : 'Authorized User'}</p>
+                                </div>
+                            </div>
+                            <div class="member-details">
+                                <div class="detail-item"><i data-lucide="mail"></i><span class="text-truncate">${email}</span></div>
+                            </div>
+                            <div class="member-actions">
+                                <button class="btn btn-secondary btn-sm" style="width:100%; justify-content:center;" onclick="window.staffDirectory.showStaffForm(null, '${email}')">
+                                    <i data-lucide="plus" style="width:14px;"></i> Create Profile
+                                </button>
+                            </div>
+                        </div>`;
+                }
             });
             html += '</div>';
         }
@@ -1418,7 +1600,10 @@ window.staffDirectory = {
         const currentUserEmail = auth.currentUser?.email?.toLowerCase();
         const isOwnProfile = email && currentUserEmail === email;
 
-        const userData = window.currentUserData || {}, isAdmin = userData.isAdmin, feePerms = userData.permissions?.fees_accounting || {}, canViewFees = isAdmin || feePerms === true || feePerms.view || (isOwnProfile && feePerms.wallet_view_own);
+        const userData = window.currentUserData || {}, isAdmin = userData.isAdmin,
+            staffPerms = userData.permissions?.staff_directory || {},
+            feePerms = userData.permissions?.fees_accounting || {},
+            canViewFees = isAdmin || feePerms === true || feePerms.view || (isOwnProfile && feePerms.wallet_view_own);
         let sFund = 0, sSpend = 0;
         if (canViewFees) { 
             sFund = window.feesManager?.expenses?.filter(e => e.source === 'staff_wallet' && (e.staffId === id || (email && e.createdBy === email)) && e.type === 'funding').reduce((a,b)=>a+b.amount, 0) || 0; 
@@ -1472,7 +1657,6 @@ window.staffDirectory = {
 
         const s = id ? this.staff[id] : {};
         const email = linkedEmail || s.email || '';
-        const isEmailLocked = !!email;
 
         const content = `
             <div class="form-group"><label>Full Name</label><input type="text" id="sf-name" class="form-control" value="${s.name || ''}" placeholder="Legal Name" /></div>
@@ -1491,7 +1675,7 @@ window.staffDirectory = {
             </div>
             <div class="form-grid-2">
                 <div class="form-group"><label>Phone</label><input type="text" id="sf-phone" class="form-control" value="${s.phone || ''}" /></div>
-                <div class="form-group"><label>Associated User Email</label><input type="email" id="sf-email" class="form-control" value="${email}" ${isEmailLocked ? 'readonly style="background:rgba(255,255,255,0.03); color:var(--text-dim);"' : ''} placeholder="user@abhishri.edu.in" /></div>
+                <div class="form-group"><label>Work Email <small style="color:var(--text-dim);font-weight:500;">(they'll use this to log in)</small></label><input type="email" id="sf-email" class="form-control" value="${email}" placeholder="e.g. teacher@abhishri.edu.in" /></div>
             </div>
             <div class="form-grid-2">
                 <div class="form-grid-2">
@@ -1513,7 +1697,7 @@ window.staffDirectory = {
             <div class="form-group"><label>Emergency Contact Info</label><input type="text" id="sf-emergency" class="form-control" value="${s.emergencyContact || ''}" /></div>`;
         
         AppDialog.confirm({ 
-            title: id ? 'Edit User Profile' : 'Link Profile to User', 
+            title: id ? 'Edit Staff Profile' : 'New Staff Profile',
             content, width: '600px', 
             onConfirm: async () => {
                 const data = {

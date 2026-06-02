@@ -130,7 +130,10 @@ service cloud.firestore {
         allow read: if isAuthenticated() && (
           isAdmin() ||
           getPerm('fees_accounting', 'view') ||
-          get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email)).data.linkedStudentId == resource.data.studentId
+          // Student/parent can read their own fee transactions via student directory email match
+          get(/databases/$(database)/documents/modules/student_directory/students/$(resource.data.studentId)).data.studentEmail == request.auth.token.email ||
+          get(/databases/$(database)/documents/modules/student_directory/students/$(resource.data.studentId)).data.motherEmail  == request.auth.token.email ||
+          get(/databases/$(database)/documents/modules/student_directory/students/$(resource.data.studentId)).data.fatherEmail  == request.auth.token.email
         );
         allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
         allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
@@ -139,7 +142,10 @@ service cloud.firestore {
         allow read: if isAuthenticated() && (
           isAdmin() ||
           getPerm('fees_accounting', 'ledger') ||
-          get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email)).data.linkedStudentId == id
+          // Student/parent can read their own fee plan via student directory email match
+          get(/databases/$(database)/documents/modules/student_directory/students/$(id)).data.studentEmail == request.auth.token.email ||
+          get(/databases/$(database)/documents/modules/student_directory/students/$(id)).data.motherEmail  == request.auth.token.email ||
+          get(/databases/$(database)/documents/modules/student_directory/students/$(id)).data.fatherEmail  == request.auth.token.email
         );
         allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
       }

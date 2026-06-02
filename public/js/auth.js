@@ -143,19 +143,34 @@ async function checkUserAccess(user, modal, pendingModal) {
             grantAccess(user, modal, newUserData);
 
         } else {
-            // Unknown — show pending approval
-            firestore.collection('pendingUsers').doc(email).set({
-                email, uid: user.uid, ...profile,
-                firstSeenAt: firebase.firestore.FieldValue.serverTimestamp()
-            }, { merge: true }).catch(() => {});
+            // Not a staff account — check if this email belongs to a student or parent
+            const studentMatch = await findStudentByEmail(email);
+            if (studentMatch) {
+                // Student/parent: grant portal access with session data only — no allowedUsers entry
+                if (pendingModal) pendingModal.classList.add('hidden');
+                grantAccess(user, modal, {
+                    email,
+                    isAdmin: false,
+                    role: 'student',
+                    dashboardType: studentMatch.dashboardType,
+                    linkedStudentId: studentMatch.studentId,
+                    permissions: {}
+                });
+            } else {
+                // Truly unknown — show pending approval
+                firestore.collection('pendingUsers').doc(email).set({
+                    email, uid: user.uid, ...profile,
+                    firstSeenAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true }).catch(() => {});
 
-            if (modal) modal.classList.add('hidden');
-            if (pendingModal) {
-                pendingModal.classList.remove('hidden');
-                document.getElementById('pending-email').innerText = email;
-                if (window.lucide) lucide.createIcons();
+                if (modal) modal.classList.add('hidden');
+                if (pendingModal) {
+                    pendingModal.classList.remove('hidden');
+                    document.getElementById('pending-email').innerText = email;
+                    if (window.lucide) lucide.createIcons();
+                }
+                hideSplash();
             }
-            hideSplash();
         }
     } catch (err) {
         console.error("Access Check Error:", err);
@@ -166,38 +181,37 @@ async function checkUserAccess(user, modal, pendingModal) {
 
 
 
+// Query student directory directly by email — no allowedUsers entry needed for students
+async function findStudentByEmail(email) {
+    try {
+        const col = firestore.collection('modules').doc('student_directory').collection('students');
+        let snap = await col.where('studentEmail', '==', email).limit(1).get();
+        if (!snap.empty) return { studentId: snap.docs[0].id, dashboardType: 'student' };
+        snap = await col.where('motherEmail', '==', email).limit(1).get();
+        if (!snap.empty) return { studentId: snap.docs[0].id, dashboardType: 'parent' };
+        snap = await col.where('fatherEmail', '==', email).limit(1).get();
+        if (!snap.empty) return { studentId: snap.docs[0].id, dashboardType: 'parent' };
+    } catch (e) { console.warn('Student directory query failed:', e?.code); }
+    return null;
+}
+
 function grantAccess(user, modal, userData) {
     if (modal) modal.classList.add('hidden');
     window.currentUserData = userData;
 
-    // Live listener — if an admin changes this user's role/group, apply immediately
-    if (window._permissionListener) window._permissionListener();
-    window._permissionListener = firestore.collection('allowedUsers')
-        .doc(user.email.toLowerCase())
-        .onSnapshot(snap => {
-            if (!snap.exists || !window.currentUserData) return;
-            const fresh = snap.data();
-            const cur = window.currentUserData;
-            const roleChanged  = fresh.role !== cur.role;
-            const groupChanged = fresh.permissionGroup !== cur.permissionGroup;
-            const adminChanged = !!fresh.isAdmin !== !!cur.isAdmin;
-            if (roleChanged || groupChanged || adminChanged) {
-                // Merge updated permissions into session, preserve display metadata
-                window.currentUserData = {
-                    ...fresh,
-                    displayName: cur.displayName || fresh.displayName,
-                    photoURL:    cur.photoURL    || fresh.photoURL
-                };
-                // Re-init modules with new permissions and re-route
-                if (window.staffDirectory)  { window.staffDirectory.isSubscribed = false; }
-                if (window.studentDirectory){ window.studentDirectory.isSubscribed = false; }
-                if (window.feesManager)     { window.feesManager.isSubscribed = false; }
-                handleRouting();
-            }
-        }, () => {});
+    // Store the permission fingerprint at login time.
+    // Checked on each navigation — if it changed, prompt a reload once.
+    if (window._permissionListener) { window._permissionListener(); window._permissionListener = null; }
+    const _permFingerprint = (d) => [!!d?.isAdmin, d?.permissionGroup || '', d?.isAdmin ? '' : JSON.stringify(d?.permissions || {})].join('|');
+    window._sessionPermKey = _permFingerprint(userData);
+    window._permCheckEmail = user.email.toLowerCase();
 
-    // Reset Central Data Managers
-    if (window.studentDataManager) {
+    // Reset Central Data Managers — skip for student/parent accounts,
+    // they don't have collection-level access to the student directory.
+    const _canReadStudents = userData.isAdmin ||
+        (userData.permissions?.student_directory &&
+         Object.values(userData.permissions.student_directory).some(Boolean));
+    if (window.studentDataManager && _canReadStudents) {
         window.studentDataManager.isSubscribed = false;
         window.studentDataManager.subscribe();
     }
@@ -236,7 +250,7 @@ window.addEventListener('hashchange', handleRouting);
 function handleRouting() {
     const userData = window.currentUserData || {};
     const hash = window.location.hash.replace('#', '') || 'portal';
-    // Student-role accounts must never enter the admin portal
+    // Student/parent accounts always go to the student portal
     if (userData.role === 'student' && !hash.startsWith('student-portal')) {
         if (typeof navigateTo === 'function') navigateTo('student-portal', true);
         return;
@@ -248,6 +262,8 @@ window.logout = () => {
     const email = auth.currentUser?.email;
     window.AppLogger.log('LOGOUT', 'auth', { email });
     if (window._permissionListener) { window._permissionListener(); window._permissionListener = null; }
+    window._sessionPermKey = null;
+    window._permCheckEmail = null;
     auth.signOut().then(() => {
         window.location.hash = '';
         window.location.reload();

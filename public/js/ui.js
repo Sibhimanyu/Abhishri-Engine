@@ -468,6 +468,26 @@ window.addEventListener('click', (e) => {
 window.navigateTo = function (route, updateHash = true) {
     if (updateHash) window.location.hash = route;
 
+    // Check if staff permissions changed since login (students have no allowedUsers doc — skip)
+    if (window._sessionPermKey && window._permCheckEmail && !window._permCheckPending
+        && window.currentUserData?.role !== 'student') {
+        window._permCheckPending = true;
+        firestore.collection('allowedUsers').doc(window._permCheckEmail).get()
+            .then(snap => {
+                window._permCheckPending = false;
+                if (!snap.exists) { auth.signOut(); return; }
+                const fresh = snap.data();
+                const newKey = [!!fresh?.isAdmin, fresh?.permissionGroup || '', fresh?.isAdmin ? '' : JSON.stringify(fresh?.permissions || {})].join('|');
+                if (newKey !== window._sessionPermKey) {
+                    window._sessionPermKey = newKey; // prevent re-firing
+                    window.currentUserData = { ...fresh, displayName: window.currentUserData?.displayName, photoURL: window.currentUserData?.photoURL };
+                    AppDialog.toast('Your permissions have been updated. Reloading…', 'info');
+                    setTimeout(() => window.location.reload(), 1200);
+                }
+            })
+            .catch(() => { window._permCheckPending = false; });
+    }
+
     const parts = route.split('/');
     const mainRoute = parts[0];
     const subRoute = parts[1];

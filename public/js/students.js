@@ -99,15 +99,69 @@ window.studentDirectory = {
 
     handleSearch(query) {
         this.searchQuery = query;
-        this.rerender();
+        // Bypass toolbar rebuild — only update content
+        if (this.currentView === 'attendance') {
+            if (window.attendancePanel) window.attendancePanel.render();
+            else this._renderAttendanceContent();
+        } else if (this.currentView === 'manage') {
+            this._renderManageContent();
+        } else {
+            this.rerender();
+        }
     },
 
-    // Re-render the current view in place (used by filter/date change callbacks)
+    // Re-render the current view in place (used by filter/date change callbacks that need toolbar too)
     rerender() {
         if (this.currentView === 'manage') this.renderManage();
         else if (this.currentView === 'attendance') this.renderAttendance();
         else if (this.currentView === 'attendance_reports') this.renderAttendanceReports();
         if (typeof lucide !== 'undefined') lucide.createIcons();
+    },
+
+    // Rebuild only the manage table rows without touching the toolbar
+    _renderManageContent() {
+        const container = document.getElementById('student-content-manage');
+        if (!container) return;
+        const userData = window.currentUserData || {};
+        const isAdmin = userData.isAdmin;
+        const studentPerms = userData.permissions?.student_directory || {};
+        const q = this.searchQuery.toLowerCase();
+        const sortedIds = Object.keys(this.students).filter(id => (this.students[id].name || '').toLowerCase().includes(q))
+            .sort((a, b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
+        let html = `<div class="section-title">Admission Records</div><table class="console-table"><thead><tr><th>Student</th><th>Wing</th><th>Parent</th><th>Contact</th><th style="text-align:right" data-no-sort>Actions</th></tr></thead><tbody>`;
+        sortedIds.forEach(id => {
+            const s = this.students[id];
+            html += `<tr><td><strong>${s.name}</strong></td><td>${this.wingBadgeHtml(s.studentType || 'preschool')}</td><td>${s.fatherName || s.motherName || 'N/A'}</td><td>${s.fatherPhone || s.motherPhone || 'N/A'}</td>
+                <td style="text-align:right"><div class="table-actions" style="justify-content:flex-end">
+                    ${(isAdmin || studentPerms.edit) ? `<button class="btn-icon" onclick="window.studentDirectory.showStudentForm('${id}')"><i data-lucide="edit-3"></i></button>` : ''}
+                    ${(isAdmin || studentPerms.delete) ? `<button class="btn-icon text-danger" onclick="window.studentDirectory.deleteStudent('${id}')"><i data-lucide="trash-2"></i></button>` : ''}
+                </div></td></tr>`;
+        });
+        container.innerHTML = html + '</tbody></table>';
+        if (typeof lucide !== 'undefined') lucide.createIcons({ root: container });
+    },
+
+    // Rebuild only the attendance list rows without touching the toolbar
+    _renderAttendanceContent() {
+        const container = this._attTarget || document.getElementById('student-content-attendance');
+        if (!container) return;
+        const q = this.searchQuery.toLowerCase();
+        const sortedIds = Object.keys(this.students).filter(id => {
+            const s = this.students[id];
+            return (s.studentType || 'preschool') === this.currentWingFilter && (s.name || '').toLowerCase().includes(q);
+        }).sort((a,b) => (this.students[a].name || '').localeCompare(this.students[b].name || ''));
+        // Only rebuild the table body, not the whole view
+        const tbody = container.querySelector('tbody');
+        if (!tbody) { this.renderAttendance(); return; }
+        tbody.innerHTML = sortedIds.map(id => {
+            const s = this.students[id];
+            const att = this.attendance[id] || { status: 'none' };
+            return `<tr><td><strong>${s.name}</strong></td><td style="text-align:right"><div class="attendance-actions" style="justify-content:flex-end; gap:10px;">
+                <button class="btn-chip ${att.status === 'present' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'present')">PRESENT</button>
+                <button class="btn-chip btn-chip-danger ${att.status === 'absent' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'absent')">ABSENT</button>
+                <button class="btn-chip btn-chip-warning ${att.status === 'late' ? 'active' : ''}" onclick="window.studentDirectory.markAttendance('${id}', 'late')">LATE</button>
+            </div></td></tr>`;
+        }).join('');
     },
 
     renderDirectory() {
@@ -176,7 +230,6 @@ window.studentDirectory = {
         const untaggedCount = Object.values(this.students).filter(s => !s.studentType).length;
         let toolbarHtml = `<div class="search-box"><i data-lucide="search"></i><input type="text" placeholder="Search admissions..." oninput="window.studentDirectory.handleSearch(this.value)" value="${this.searchQuery}"><button class="search-clear" onclick="window.studentDirectory.handleSearch(''); this.previousElementSibling.value='';" title="Clear">×</button></div><div style="display:flex; gap:8px;">`;
         if (isAdmin && untaggedCount > 0) toolbarHtml += `<button class="btn btn-secondary" onclick="window.studentDirectory.migrateUntaggedStudents()" title="${untaggedCount} untagged"><i data-lucide="tag"></i></button>`;
-        if (isAdmin) toolbarHtml += `<button class="btn btn-secondary" onclick="window.studentDirectory.rebuildEmailIndex()" title="Rebuild login index"><i data-lucide="refresh-cw"></i></button>`;
         if (isAdmin || studentPerms.add) toolbarHtml += `<button class="btn btn-primary" onclick="window.studentDirectory.showStudentForm()"><i data-lucide="user-plus"></i> New Admission</button>`;
         toolbarHtml += '</div>';
         this._setToolbar(toolbarHtml);
@@ -672,7 +725,7 @@ window.studentDirectory = {
                     studentId = newDoc.id;
                 }
                 window.AppLogger.log(id ? 'EDIT_STUDENT' : 'ADD_STUDENT', 'student_directory', { name: data.name }, studentId);
-                updateStudentEmailIndex(studentId, data).catch(e => console.warn('Email index update failed:', e));
+                // No allowedUsers provisioning — students log in via direct student directory lookup
                 AppDialog.toast('Record saved', 'success'); return true;
             }
         });
@@ -737,47 +790,11 @@ window.studentDirectory = {
         });
     },
 
-    async rebuildEmailIndex() {
-        const all = Object.entries(this.students);
-        AppDialog.toast('Rebuilding index…', 'info');
-
-        // 1. Remove stale RTDB index from previous implementation
-        db.ref('studentEmailIndex').remove().catch(() => {});
-
-        // 2. Remove stale Firestore studentEmailIndex collection if it exists
-        try {
-            const oldFs = await firestore.collection('studentEmailIndex').get();
-            if (!oldFs.empty) {
-                let b = firestore.batch(); let n = 0;
-                oldFs.forEach(doc => { b.delete(doc.ref); if (++n % 490 === 0) { b.commit(); b = firestore.batch(); n = 0; } });
-                await b.commit();
-            }
-        } catch (e) { /* ignore */ }
-
-        // 3. Delete all existing system_enrollment student entries and rebuild fresh
-        try {
-            const stale = await firestore.collection('allowedUsers').where('addedBy', '==', 'system_enrollment').get();
-            if (!stale.empty) {
-                let b = firestore.batch(); let n = 0;
-                stale.forEach(doc => { b.delete(doc.ref); if (++n % 490 === 0) { b.commit(); b = firestore.batch(); n = 0; } });
-                await b.commit();
-            }
-        } catch (e) { console.warn('Could not clean old student entries:', e); }
-
-        // 4. Rebuild from all current students
-        for (const [studentId, data] of all) {
-            await updateStudentEmailIndex(studentId, data);
-        }
-
-        AppDialog.toast(`Done — ${all.length} students synced`, 'success');
-    },
-
     deleteStudent(id) {
         const s = this.students[id];
         AppDialog.confirm({
             title: 'Delete Student', msg: `Permanently delete ${s.name}?`, danger: true, onConfirm: async () => {
                 await firestore.collection('modules').doc('student_directory').collection('students').doc(id).delete();
-                deleteStudentEmailIndex(s).catch(() => {});
                 window.AppLogger.log('DELETE_STUDENT', 'student_directory', { name: s.name }, id); return true;
             }
         });
@@ -790,53 +807,3 @@ window.studentDirectory = {
     }
 };
 
-// Provision allowedUsers entries for every login email on a student record.
-// Role 'student' is filtered out of the People directory so it stays clean.
-async function updateStudentEmailIndex(studentId, data) {
-    // entries: [email, dashboardType, permissionGroup]
-    const entries = [];
-    if (data.studentType === 'tuition') {
-        if (data.studentEmail) entries.push([data.studentEmail, 'student', 'tuition_student']);
-        if (data.motherEmail)  entries.push([data.motherEmail,  'parent',  'parent']);
-        if (data.fatherEmail)  entries.push([data.fatherEmail,  'parent',  'parent']);
-    } else {
-        // Preschool — parents only
-        if (data.motherEmail) entries.push([data.motherEmail, 'parent', 'parent']);
-        if (data.fatherEmail) entries.push([data.fatherEmail, 'parent', 'parent']);
-    }
-
-    for (const [email, dashboardType, permissionGroup] of entries) {
-        try {
-            const ref = firestore.collection('allowedUsers').doc(email);
-            const existing = await ref.get();
-            const doc = {
-                isAdmin: false,
-                role: 'student',
-                permissions: {},
-                permissionGroup,
-                dashboardType,
-                linkedStudentId: studentId,
-                addedBy: 'system_enrollment',
-                addedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                email
-            };
-            if (!existing.exists || existing.data().role === 'student') {
-                await ref.set(doc, { merge: false });
-            } else if (existing.exists && existing.data().role === 'student' && !existing.data().linkedStudentId) {
-                await ref.update({ linkedStudentId: studentId, dashboardType, permissionGroup });
-            }
-        } catch (e) { console.warn(`Could not provision login for ${email}:`, e); }
-    }
-}
-
-async function deleteStudentEmailIndex(data) {
-    const emails = [data.studentEmail, data.motherEmail, data.fatherEmail].filter(Boolean);
-    for (const email of emails) {
-        try {
-            const doc = await firestore.collection('allowedUsers').doc(email).get();
-            if (doc.exists && doc.data().role === 'student' && doc.data().addedBy === 'system_enrollment') {
-                await firestore.collection('allowedUsers').doc(email).delete();
-            }
-        } catch (e) { console.warn(`Could not remove login for ${email}:`, e); }
-    }
-}

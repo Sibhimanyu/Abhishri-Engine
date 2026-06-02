@@ -41,6 +41,7 @@ window.adminPanel = {
         } else if (view === 'users') {
             titleEl.innerText = 'User Permissions';
             subtitleEl.innerText = 'Assign permission groups to control what each person sees when they log in';
+            window.adminPanel.renderUsersWithCleanup();
             if (window.staffDirectory) window.staffDirectory.renderUsers();
         } else if (view === 'attendance') {
             titleEl.innerText = 'Attendance Setup';
@@ -234,6 +235,61 @@ window.adminPanel = {
         }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
     },
 
+
+    async renderUsersWithCleanup() {
+        // Check for stale student entries (from the old provisioning system)
+        // and show a one-time cleanup banner if any are found.
+        try {
+            const stale = await firestore.collection('allowedUsers').where('role', '==', 'student').limit(1).get();
+            if (!stale.empty) {
+                const banner = document.getElementById('stale-student-banner');
+                if (!banner) {
+                    const usersPanel = document.getElementById('admin-content-users');
+                    if (usersPanel) {
+                        const div = document.createElement('div');
+                        div.id = 'stale-student-banner';
+                        div.style.cssText = 'background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);border-radius:14px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px;';
+                        div.innerHTML = `
+                            <i data-lucide="alert-triangle" style="width:20px;height:20px;color:#fbbf24;flex-shrink:0;"></i>
+                            <div style="flex:1;">
+                                <div style="font-weight:700;font-size:0.9rem;color:#fbbf24;">Old student login records found in allowedUsers</div>
+                                <div style="font-size:0.78rem;color:var(--text-dim);margin-top:2px;">Students now log in directly — these entries are no longer needed and can be safely removed.</div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" onclick="window.adminPanel.cleanupStudentAccounts(this)">
+                                <i data-lucide="trash-2" style="width:14px;height:14px;"></i> Remove Them
+                            </button>`;
+                        usersPanel.insertBefore(div, usersPanel.firstChild);
+                        if (window.lucide) lucide.createIcons({ root: div });
+                    }
+                }
+            }
+        } catch (e) { /* ignore — non-critical */ }
+    },
+
+    async cleanupStudentAccounts(btn) {
+        if (btn) btn.disabled = true;
+        AppDialog.confirm({
+            title: 'Remove Student Accounts',
+            msg: 'This will delete all student and parent entries from allowedUsers. They will still be able to log in — their access now comes directly from the student directory. This cannot be undone.',
+            danger: true,
+            confirmLabel: 'Remove All',
+            onConfirm: async () => {
+                let removed = 0;
+                let hasMore = true;
+                while (hasMore) {
+                    const batch = firestore.batch();
+                    const snap = await firestore.collection('allowedUsers').where('role', '==', 'student').limit(400).get();
+                    if (snap.empty) { hasMore = false; break; }
+                    snap.forEach(doc => { batch.delete(doc.ref); removed++; });
+                    await batch.commit();
+                }
+                document.getElementById('stale-student-banner')?.remove();
+                AppDialog.toast(`Removed ${removed} student account${removed !== 1 ? 's' : ''} from allowedUsers`, 'success');
+                if (window.staffDirectory) { window.staffDirectory._usersRendered = false; window.staffDirectory.renderUsers(); }
+                return true;
+            }
+        });
+    },
 
     quickAuthorize(email) {
         AppDialog.confirm({
