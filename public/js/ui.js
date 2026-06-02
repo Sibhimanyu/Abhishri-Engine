@@ -339,7 +339,7 @@ window.staffDataManager = {
             }
 
             const email = currentUser.email.toLowerCase();
-            
+
             // Try full sync first
             this._unsubscribe = firestore.collection('modules').doc('staff_directory').collection('staff')
                 .onSnapshot((snapshot) => {

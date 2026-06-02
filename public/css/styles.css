@@ -579,7 +579,8 @@ header {
     grid-template-columns: 1fr;
   }
 
-  .admin-toolbar, .console-toolbar {
+  .admin-toolbar,
+  .console-toolbar {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
@@ -655,10 +656,10 @@ header {
     margin-bottom: 6px;
     padding-top: 0;
   }
-  
+
   /* Ensure all scrolling list containers clear the bottom floating button */
-  .admin-content, 
-  .admin-list, 
+  .admin-content,
+  .admin-list,
   .whatsapp-subview,
   .wa-lists-body,
   .dashboard-grid,
@@ -1304,10 +1305,12 @@ header {
   transition: opacity 0.15s;
   flex-shrink: 0;
 }
+
 .search-box:focus-within .search-clear,
 .search-box:hover .search-clear {
   opacity: 0.6;
 }
+
 .search-clear:hover {
   opacity: 1 !important;
   color: var(--text-main);
@@ -2609,6 +2612,7 @@ header {
   #whatsapp-app .view-title h1 {
     padding-top: 20px;
   }
+
   #whatsapp-app .console-main {
     padding: 16px 16px 100px;
   }
@@ -3225,14 +3229,17 @@ header {
     grid-template-columns: 1fr !important;
   }
 }
+
 /* FINAL MOBILE OVERRIDES */
 @media (max-width: 600px) {
+
   /* Move User Widget to Bottom Right to avoid top title overlaps */
   .user-widget {
     top: auto !important;
     bottom: 24px !important;
     right: 24px !important;
   }
+
   .user-dropdown {
     top: auto !important;
     bottom: calc(100% + 8px) !important;
@@ -3245,11 +3252,15 @@ header {
   }
 
   /* Add heavy padding-bottom to lists for floating button clearance */
-  main, .console-main {
+  main,
+  .console-main {
     padding-bottom: 180px !important;
   }
 
-  .whatsapp-subview, .wa-lists-body, .admin-list, #whatsapp-content-chats {
+  .whatsapp-subview,
+  .wa-lists-body,
+  .admin-list,
+  #whatsapp-content-chats {
     padding-bottom: 200px !important;
     padding-top: 10px !important;
   }
@@ -3428,8 +3439,15 @@ header {
   color: white;
 }
 
-.btn-chip-danger.active { background: #f87171; border-color: #f87171; }
-.btn-chip-warning.active { background: #fbbf24; border-color: #fbbf24; }
+.btn-chip-danger.active {
+  background: #f87171;
+  border-color: #f87171;
+}
+
+.btn-chip-warning.active {
+  background: #fbbf24;
+  border-color: #fbbf24;
+}
 
 .fee-profile-header {
   background: var(--card-bg);
@@ -3576,7 +3594,7 @@ select.form-control {
 }
 
 .metric-card {
-  background: rgba(255,255,255,0.03);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--card-border);
   border-radius: 20px;
   padding: 20px;
@@ -3613,7 +3631,7 @@ select.form-control {
 /* ── Segment Controller ─────────────────────────────────────── */
 .segment-controller {
   display: flex;
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
   border-radius: 10px;
   padding: 3px;
   gap: 2px;
@@ -3621,7 +3639,10 @@ select.form-control {
   overflow-x: auto;
   scrollbar-width: none;
 }
-.segment-controller::-webkit-scrollbar { display: none; }
+
+.segment-controller::-webkit-scrollbar {
+  display: none;
+}
 
 .segment-btn {
   background: transparent;
@@ -3638,7 +3659,7 @@ select.form-control {
 
 .segment-btn.active,
 .segment-btn:hover {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--text-main);
 }
 
@@ -3651,8 +3672,9 @@ select.form-control {
 .btn-icon-danger {
   color: var(--accent-primary) !important;
 }
+
 .btn-icon-danger:hover {
-  background: rgba(232,105,102,0.12) !important;
+  background: rgba(232, 105, 102, 0.12) !important;
 }
 
 /* ── 2-column form grid ─────────────────────────────────────── */
@@ -3673,7 +3695,7 @@ select.form-control {
   }
 
   /* Users panel toolbar: stack vertically */
-  #users-panel-root > div[style*="display:flex"] {
+  #users-panel-root>div[style*="display:flex"] {
     flex-direction: column;
     align-items: stretch;
   }
@@ -3684,7 +3706,10 @@ select.form-control {
     scrollbar-width: none;
     flex-wrap: nowrap !important;
   }
-  #users-filter-bar::-webkit-scrollbar { display: none; }
+
+  #users-filter-bar::-webkit-scrollbar {
+    display: none;
+  }
 
   /* Hide less-critical table columns on narrow screens */
   #users-main-table th:nth-child(3),
@@ -3695,7 +3720,7 @@ select.form-control {
   }
 
   /* Permission modal 2-column grid → single column */
-  #granular-permissions-container > div {
+  #granular-permissions-container>div {
     grid-template-columns: 1fr !important;
   }
 

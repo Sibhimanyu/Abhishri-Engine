@@ -540,7 +540,8 @@
           <i data-lucide="line-chart"></i>
           <span>Income Insights</span>
         </div>
-        <div class="nav-item" onclick="window.feesManager.switchView('preschool_ledger')" id="nav-fees-preschool_ledger">
+        <div class="nav-item" onclick="window.feesManager.switchView('preschool_ledger')"
+          id="nav-fees-preschool_ledger">
           <i data-lucide="sun"></i>
           <span>Preschool Ledger</span>
         </div>
@@ -602,12 +603,12 @@
         <!-- Overview (Student Ledger) View -->
         <div id="fees-view-overview" class="fees-subview" style="display:none;">
           <div id="fees-content-overview" style="display:none;"></div>
-          </div>
-          <div id="fees-view-preschool_ledger" class="fees-subview" style="display:none;">
-            <div id="fees-content-preschool_ledger"></div>
-          </div>
-          <div id="fees-view-tuition_ledger" class="fees-subview" style="display:none;">
-            <div id="fees-content-tuition_ledger"></div>
+        </div>
+        <div id="fees-view-preschool_ledger" class="fees-subview" style="display:none;">
+          <div id="fees-content-preschool_ledger"></div>
+        </div>
+        <div id="fees-view-tuition_ledger" class="fees-subview" style="display:none;">
+          <div id="fees-content-tuition_ledger"></div>
         </div>
 
         <!-- Global Transactions View -->
@@ -707,7 +708,8 @@
             <div class="search-box">
               <i data-lucide="search" style="color: var(--text-dim); width: 20px;"></i>
               <input type="text" id="admin-search" placeholder="Search entities..." oninput="filterAdminList()">
-              <button class="search-clear" onclick="document.getElementById('admin-search').value=''; filterAdminList();" title="Clear">×</button>
+              <button class="search-clear"
+                onclick="document.getElementById('admin-search').value=''; filterAdminList();" title="Clear">×</button>
             </div>
             <div class="admin-actions">
               <button class="btn btn-secondary" onclick="toggleSelectAll()">
@@ -741,7 +743,9 @@
             <div class="search-box">
               <i data-lucide="search" style="color: var(--text-dim); width: 20px;"></i>
               <input type="text" id="scenes-search" placeholder="Search scenes..." oninput="filterScenesList()">
-              <button class="search-clear" onclick="document.getElementById('scenes-search').value=''; filterScenesList();" title="Clear">×</button>
+              <button class="search-clear"
+                onclick="document.getElementById('scenes-search').value=''; filterScenesList();"
+                title="Clear">×</button>
             </div>
             <button class="btn btn-primary" onclick="openCreateSceneModal()">
               <i data-lucide="plus"></i>
@@ -770,7 +774,8 @@
 
   <!-- STUDENT PORTAL (role: student) -->
   <div id="student-portal-app" class="view" style="height:100vh; overflow-y:auto; -webkit-overflow-scrolling:touch;">
-    <div id="student-portal-content" style="min-height:100%; background:var(--bg); display:flex; flex-direction:column; align-items:center; padding:60px 20px 40px;">
+    <div id="student-portal-content"
+      style="min-height:100%; background:var(--bg); display:flex; flex-direction:column; align-items:center; padding:60px 20px 40px;">
       <!-- Injected by student-portal.js -->
     </div>
   </div>

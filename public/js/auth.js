@@ -118,7 +118,7 @@ async function checkUserAccess(user, modal, pendingModal) {
             // Known account — staff, admin, or student
             if (pendingModal) pendingModal.classList.add('hidden');
             const data = { ...userDoc.data(), ...profile };
-            firestore.collection('allowedUsers').doc(email).update(profile).catch(() => {});
+            firestore.collection('allowedUsers').doc(email).update(profile).catch(() => { });
             grantAccess(user, modal, data);
 
         } else if (isAllowedDomain) {
@@ -161,7 +161,7 @@ async function checkUserAccess(user, modal, pendingModal) {
                 firestore.collection('pendingUsers').doc(email).set({
                     email, uid: user.uid, ...profile,
                     firstSeenAt: firebase.firestore.FieldValue.serverTimestamp()
-                }, { merge: true }).catch(() => {});
+                }, { merge: true }).catch(() => { });
 
                 if (modal) modal.classList.add('hidden');
                 if (pendingModal) {
@@ -210,30 +210,30 @@ function grantAccess(user, modal, userData) {
     // they don't have collection-level access to the student directory.
     const _canReadStudents = userData.isAdmin ||
         (userData.permissions?.student_directory &&
-         Object.values(userData.permissions.student_directory).some(Boolean));
+            Object.values(userData.permissions.student_directory).some(Boolean));
     if (window.studentDataManager && _canReadStudents) {
         window.studentDataManager.isSubscribed = false;
         window.studentDataManager.subscribe();
     }
 
     // Force re-init of modules to pick up new permissions
-    if (window.smartCampus && typeof window.smartCampus.initialize === 'function') { 
+    if (window.smartCampus && typeof window.smartCampus.initialize === 'function') {
         window.smartCampus.isSubscribed = false; // Note: SC uses areasListener/scenesListener instead of isSubscribed
         window.smartCampus.areasListener = null;
         window.smartCampus.scenesListener = null;
-        window.smartCampus.initialize(); 
+        window.smartCampus.initialize();
     }
-    if (window.studentDirectory && typeof window.studentDirectory.initialize === 'function') { 
-        window.studentDirectory.isSubscribed = false; 
-        window.studentDirectory.initialize(); 
+    if (window.studentDirectory && typeof window.studentDirectory.initialize === 'function') {
+        window.studentDirectory.isSubscribed = false;
+        window.studentDirectory.initialize();
     }
-    if (window.staffDirectory && typeof window.staffDirectory.initialize === 'function') { 
-        window.staffDirectory.isSubscribed = false; 
-        window.staffDirectory.initialize(); 
+    if (window.staffDirectory && typeof window.staffDirectory.initialize === 'function') {
+        window.staffDirectory.isSubscribed = false;
+        window.staffDirectory.initialize();
     }
-    if (window.feesManager && typeof window.feesManager.initialize === 'function') { 
-        window.feesManager.isSubscribed = false; 
-        window.feesManager.initialize(); 
+    if (window.feesManager && typeof window.feesManager.initialize === 'function') {
+        window.feesManager.isSubscribed = false;
+        window.feesManager.initialize();
     }
 
     updateUserWidget(user, userData);
