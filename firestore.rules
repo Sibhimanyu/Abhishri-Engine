@@ -54,7 +54,14 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('student_directory'));
       
       match /students/{studentId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'view'));
+        allow read: if isAuthenticated() && (
+          isAdmin() ||
+          getPerm('student_directory', 'view') ||
+          // Students and parents can read their own linked record
+          resource.data.studentEmail == request.auth.token.email ||
+          resource.data.motherEmail  == request.auth.token.email ||
+          resource.data.fatherEmail  == request.auth.token.email
+        );
         allow create: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'add'));
         allow update: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'edit'));
         allow delete: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'delete'));
@@ -120,12 +127,20 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('fees_accounting'));
       
       match /collections/{id} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
+        allow read: if isAuthenticated() && (
+          isAdmin() ||
+          getPerm('fees_accounting', 'view') ||
+          get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email)).data.linkedStudentId == resource.data.studentId
+        );
         allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
         allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
       }
       match /student_fees/{id} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'ledger'));
+        allow read: if isAuthenticated() && (
+          isAdmin() ||
+          getPerm('fees_accounting', 'ledger') ||
+          get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email)).data.linkedStudentId == id
+        );
         allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
       }
       match /transactions/{id} {
@@ -171,6 +186,24 @@ service cloud.firestore {
       }
     }
 
+    // --- Permission Groups (editable by admins) ---
+    match /permissionGroups/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // --- Pending Users (unknown sign-ins waiting for admin review) ---
+    match /pendingUsers/{email} {
+      allow create, update: if request.auth != null && request.auth.token.email.lower() == email.lower();
+      allow read, delete: if isAdmin();
+    }
+
+    // --- Student Email Index (legacy Firestore version — now cleared by Rebuild Index) ---
+    match /studentEmailIndex/{email} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
     // --- Global Collections ---
     match /allowedUsers/{email} {
       // Allow any authenticated user to check their own status
@@ -191,11 +224,17 @@ service cloud.firestore {
         ) || isAdmin()
       );
 
-      // Only admins can update or delete users
-      allow update: if isAdmin() && (
-        // Prevent accidental lockout: don't let admins remove their own admin status
-        // unless there is at least one other admin (simplified here to just blocking self-edit of isAdmin)
-        (request.resource.data.isAdmin == resource.data.isAdmin || request.auth.token.email.lower() != email.lower())
+      // Users can update their own sign-in metadata; admins can update everything
+      allow update: if (
+        // Allow self-update of sign-in metadata only
+        (request.auth.token.email.lower() == email.lower() &&
+         request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['displayName', 'photoURL', 'lastSignIn'])) ||
+        // Admins can update anything (with lockout protection)
+        (isAdmin() && (
+          resource.data.isAdmin == request.resource.data.isAdmin ||
+          request.auth.token.email.lower() != email.lower()
+        ))
       );
       allow delete: if isAdmin() && request.auth.token.email.lower() != email.lower();
     }

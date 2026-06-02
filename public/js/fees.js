@@ -16,7 +16,7 @@ window.feesManager = {
     logsLoading: false,
     isSubscribed: false,
     dataLoaded: false,
-    currentView: 'collections', // collections, overview, transactions, office_expenses, salaries, plans, student_fees, audit_logs
+    currentView: 'collections', // collections, preschool_ledger, tuition_ledger, transactions, office_expenses, salaries, plans, student_fees, audit_logs
     searchQuery: '',
     sortField: 'name',
     sortOrder: 'asc',
@@ -311,13 +311,14 @@ window.feesManager = {
         const isAdmin = userData.isAdmin;
 
         const mapping = {
-            'collections': 'view',
-            'overview': 'ledger',
-            'transactions': 'view',
-            'plans': 'config',
-            'office_expenses': 'exp_own',
-            'staff_wallets': 'wallet_view_own', // Changed from view to wallet_view_own
-            'salaries': 'salaries_view'
+            'collections':       'view',
+            'preschool_ledger':  'ledger',
+            'tuition_ledger':    'ledger',
+            'transactions':      'view',
+            'plans':             'config',
+            'office_expenses':   'exp_own',
+            'staff_wallets':     'wallet_view_own',
+            'salaries':          'salaries_view'
         };
 
         let hasRevenue = false;
@@ -334,9 +335,8 @@ window.feesManager = {
                 }
                 el.style.display = hasPerm ? 'flex' : 'none';
 
-                // Check group visibility
                 if (hasPerm) {
-                    if (['collections', 'overview', 'transactions', 'plans'].includes(view)) hasRevenue = true;
+                    if (['collections', 'preschool_ledger', 'tuition_ledger', 'transactions', 'plans'].includes(view)) hasRevenue = true;
                     if (['office_expenses', 'salaries', 'staff_wallets'].includes(view)) hasExpenditure = true;
                 }
             }
@@ -346,6 +346,13 @@ window.feesManager = {
         const expLabel = document.getElementById('label-fees-expenditure');
         if (revLabel) revLabel.style.display = hasRevenue ? 'block' : 'none';
         if (expLabel) expLabel.style.display = hasExpenditure ? 'block' : 'none';
+    },
+
+    clearSearch() {
+        this.searchQuery = '';
+        const inp = document.querySelector('#fees-toolbar .search-box input, #admin-audit-toolbar .search-box input');
+        if (inp) inp.value = '';
+        this.render();
     },
 
     switchView(viewName, studentId = null) {
@@ -364,14 +371,15 @@ window.feesManager = {
         const subtitle = document.getElementById('fees-screen-subtitle');
         if (subtitle) {
             const labels = {
-                collections: 'Income & Revenue Insights',
-                overview: 'Student Fee Ledger',
-                transactions: 'Recent Fee Collections',
-                office_expenses: 'Direct Office Expenditure',
-                staff_wallets: 'Staff Expense Wallets & Credits',
-                salaries: 'Payroll & Salary Management',
-                plans: 'Package Template Configuration',
-                audit_logs: 'System Activity Log'
+                collections:      'Income & Revenue Insights',
+                preschool_ledger: 'Preschool Student Accounts',
+                tuition_ledger:   'Tuition Student Accounts',
+                transactions:     'Recent Fee Collections',
+                office_expenses:  'Direct Office Expenditure',
+                staff_wallets:    'Staff Expense Wallets & Credits',
+                salaries:         'Payroll & Salary Management',
+                plans:            'Package Template Configuration',
+                audit_logs:       'System Activity Log'
             };
             subtitle.innerText = labels[viewName] || 'Financial Management';
         }
@@ -395,15 +403,16 @@ window.feesManager = {
         // Block views based on granular permissions
         if (!isAdmin) {
             const viewMapping = {
-                'collections': 'view',
-                'overview': 'ledger',
-                'student_fees': 'ledger',
-                'transactions': 'view',
-                'office_expenses': 'exp_own',
-                'staff_wallets': 'wallet_view_own',
-                'salaries': 'salaries_view',
-                'plans': 'config',
-                'audit_logs': 'view'
+                'collections':      'view',
+                'preschool_ledger': 'ledger',
+                'tuition_ledger':   'ledger',
+                'student_fees':     'ledger',
+                'transactions':     'view',
+                'office_expenses':  'exp_own',
+                'staff_wallets':    'wallet_view_own',
+                'salaries':         'salaries_view',
+                'plans':            'config',
+                'audit_logs':       'view'
             };
             const requiredPerm = viewMapping[this.currentView];
             if (requiredPerm && !feesPerms[requiredPerm]) {
@@ -426,13 +435,15 @@ window.feesManager = {
         const toolbar = this.currentView === 'audit_logs' && adminToolbar ? adminToolbar : feesToolbar;
 
         if (toolbar) {
+            const _typingInToolbar = toolbar.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+            if (!_typingInToolbar) {
             toolbar.innerHTML = '';
-            if (['overview', 'office_expenses', 'salaries', 'transactions', 'plans', 'audit_logs'].includes(this.currentView)) {
+            if (['preschool_ledger', 'tuition_ledger', 'office_expenses', 'salaries', 'transactions', 'plans', 'audit_logs'].includes(this.currentView)) {
                 const search = document.createElement('div');
                 search.className = 'search-box';
                 search.style.maxWidth = '300px';
                 search.style.marginRight = '12px';
-                search.innerHTML = `<i data-lucide="search"></i><input type="text" placeholder="Search..." value="${this.searchQuery}">`;
+                search.innerHTML = `<i data-lucide="search"></i><input type="text" placeholder="Search..." value="${this.searchQuery}"><button class="search-clear" onclick="window.feesManager.clearSearch()" title="Clear">×</button>`;
                 search.querySelector('input').oninput = (e) => { this.searchQuery = e.target.value.toLowerCase(); this.render(); };
                 toolbar.appendChild(search);
             }
@@ -466,10 +477,12 @@ window.feesManager = {
             } else if (this.currentView === 'plans' && (isAdmin || feesPerms.config)) {
                 const btn = document.createElement('button'); btn.className = 'btn btn-primary'; btn.innerHTML = '<i data-lucide="plus"></i> Create Fee Package'; btn.onclick = () => this.showAddPlanForm(); toolbar.appendChild(btn);
             }
+            } // end !_typingInToolbar
         }
 
         if (this.currentView === 'collections') this.renderCollections();
-        else if (this.currentView === 'overview') this.renderOverview();
+        else if (this.currentView === 'preschool_ledger') this.renderOverview('preschool');
+        else if (this.currentView === 'tuition_ledger')   this.renderOverview('tuition');
         else if (this.currentView === 'transactions') this.renderTransactions();
         else if (this.currentView === 'office_expenses') this.renderOfficeExpenses();
         else if (this.currentView === 'staff_wallets') this.renderStaffWallets();
@@ -561,8 +574,11 @@ window.feesManager = {
             </div>`;
     },
 
-    renderOverview() {
-        const container = document.getElementById('fees-content-overview');
+    renderOverview(wing = null) {
+        const containerId = wing === 'preschool' ? 'fees-content-preschool_ledger'
+                          : wing === 'tuition'   ? 'fees-content-tuition_ledger'
+                          : 'fees-content-overview';
+        const container = document.getElementById(containerId);
         if (!container || !this.dataLoaded) return;
 
         let html = `<table class="console-table"><thead><tr>
@@ -580,6 +596,7 @@ window.feesManager = {
 
         const sortedIds = Object.keys(this.students).filter(id => {
             const s = this.students[id];
+            if (wing && (s.studentType || 'preschool') !== wing) return false;
             return !q || (s.name || '').toLowerCase().includes(q);
         }).sort((a, b) => {
             const sA = this.students[a], fA = this.fees[a] || { total: 0, paid: 0, components: [], startMonth: 5 };
@@ -629,18 +646,23 @@ window.feesManager = {
             const paid = f.paid || 0;
             const diff = paid - expectedToDate;
 
+            const hasNoPlan = !this.fees[id] || (f.components || []).length === 0;
+
             let statusHtml = '';
-            if (diff >= 0) {
-                statusHtml = `<span class="status-pill status-success">Up to Date ${diff > 0 ? '(+₹' + diff.toLocaleString('en-IN') + ')' : ''}</span>`;
+            if (hasNoPlan) {
+                statusHtml = `<span class="status-pill" style="background:rgba(255,255,255,0.05); color:var(--text-dim); border:1px dashed rgba(255,255,255,0.12);">No Plan Set</span>`;
+            } else if (diff >= 0) {
+                statusHtml = `<span class="status-pill status-success">Up to Date${diff > 0 ? ' (+₹' + diff.toLocaleString('en-IN') + ')' : ''}</span>`;
             } else {
-                statusHtml = `<span class="status-pill status-danger" style="background:rgba(241,97,91,0.1); color:var(--accent-primary);">Pending: ₹${Math.abs(diff).toLocaleString('en-IN')}</span>`;
+                statusHtml = `<span class="status-pill status-danger" style="background:rgba(241,97,91,0.1); color:var(--accent-primary);">Pending ₹${Math.abs(diff).toLocaleString('en-IN')}</span>`;
             }
 
+            const dash = `<span style="color:var(--text-dim); opacity:0.4;">—</span>`;
             html += `<tr onclick="window.feesManager.switchView('student_fees', '${id}')" style="cursor:pointer;" class="clickable-row">
                 <td><strong>${s.name}</strong></td>
-                <td>₹${monthlyRate.toLocaleString('en-IN')}</td>
-                <td>₹${expectedToDate.toLocaleString('en-IN')}</td>
-                <td>₹${paid.toLocaleString('en-IN')}</td>
+                <td>${hasNoPlan ? dash : '₹' + monthlyRate.toLocaleString('en-IN')}</td>
+                <td>${hasNoPlan ? dash : '₹' + expectedToDate.toLocaleString('en-IN')}</td>
+                <td>${paid > 0 ? '₹' + paid.toLocaleString('en-IN') : (hasNoPlan ? dash : '₹0')}</td>
                 <td>${statusHtml}</td>
                 <td>
                     <button class="btn btn-ghost btn-sm" style="color:var(--accent-secondary); font-weight:700; padding-left:0;">
@@ -747,7 +769,7 @@ window.feesManager = {
             <th onclick="window.feesManager.setSort('details')" style="cursor:pointer;">Details ${this.getSortIcon('details')}</th>
             ${canSeeAll ? '<th onclick="window.feesManager.setSort(\'createdBy\')" style="cursor:pointer;">Logged By ' + this.getSortIcon('createdBy') + '</th>' : ''}
             <th onclick="window.feesManager.setSort('amount')" style="cursor:pointer;">Amount ${this.getSortIcon('amount')}</th>
-            <th style="text-align:right">Actions</th>
+            <th style="text-align:right" data-no-sort>Actions</th>
         </tr></thead><tbody>`;
 
         filtered.forEach(e => {
@@ -800,7 +822,7 @@ window.feesManager = {
                         <th>Total Credits</th>
                         <th>Total Expenses</th>
                         <th>Current Balance</th>
-                        <th style="text-align:right">Actions</th>
+                        <th style="text-align:right" data-no-sort>Actions</th>
                     </tr>
                 </thead>
                 <tbody>`;
@@ -1161,7 +1183,7 @@ window.feesManager = {
         const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
         const isLegacyRecord = f.academicStartYear === undefined;
         const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
-        const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(0, monthsPassed + 2));
+        const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(1, monthsPassed + 1));
 
         const monthlyTotal = (f.components || []).filter(c => c.frequency === 'monthly').reduce((a, b) => a + b.amount, 0);
         const oneTimeTotal = (f.components || []).filter(c => c.frequency !== 'monthly').reduce((a, b) => a + b.amount, 0);
@@ -1471,7 +1493,7 @@ window.feesManager = {
                                     <th style="padding:16px 24px;">Date</th>
                                     <th>Ref / Details</th>
                                     <th style="text-align:right;">Amount</th>
-                                    <th style="text-align:right; padding:16px 24px;">Action</th>
+                                    <th style="text-align:right; padding:16px 24px;" data-no-sort>Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1532,7 +1554,7 @@ window.feesManager = {
         const toolbar = document.getElementById('fees-toolbar');
         if (toolbar) {
             toolbar.innerHTML = `
-                <button class="btn btn-secondary" onclick="window.feesManager.switchView('overview')">
+                <button class="btn btn-secondary" onclick="window.feesManager.switchView(window.feesManager.students[window.feesManager.activeStudentId]?.studentType === 'tuition' ? 'tuition_ledger' : 'preschool_ledger')">
                     <i data-lucide="arrow-left"></i> Back to Ledger
                 </button>
                 <div style="margin-left:auto; display:flex; gap:10px;">

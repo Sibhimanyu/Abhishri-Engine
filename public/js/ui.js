@@ -480,6 +480,24 @@ window.navigateTo = function (route, updateHash = true) {
     const perms = userData.permissions || {};
     const isAdmin = userData.isAdmin;
 
+    // Student-role accounts are confined to the student portal
+    if (userData.role === 'student' && mainRoute !== 'student-portal') {
+        window.location.hash = 'student-portal';
+        const app = document.getElementById('student-portal-app');
+        if (app) app.classList.add('active');
+        if (window.studentPortal) window.studentPortal.initialize();
+        if (window.lucide) lucide.createIcons();
+        return;
+    }
+
+    if (mainRoute === 'student-portal') {
+        const app = document.getElementById('student-portal-app');
+        if (app) app.classList.add('active');
+        if (window.studentPortal) window.studentPortal.initialize();
+        if (window.lucide) lucide.createIcons();
+        return;
+    }
+
     const hasModPerm = (mod) => {
         if (isAdmin) return true;
         const p = perms[mod];
@@ -506,36 +524,35 @@ window.navigateTo = function (route, updateHash = true) {
             document.getElementById('admin-app').classList.add('active');
             window.smartCampus.subscribe();
             window.smartCampus.currentView = 'admin';
-            window.adminPanel.render();
-            window.adminPanel.renderUserManagement();
+            // Restore the last active tab from the URL, defaulting to 'entities'
+            switchAdminView(subRoute || 'entities');
         } else {
             AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
-    } else if (mainRoute === 'students') {
-        if (hasModPerm('student_directory')) {
-            document.getElementById('student-app').classList.add('active');
-            window.studentDirectory.subscribe();
-            if (subRoute && window.studentDirectory.switchView) window.studentDirectory.switchView(subRoute, parts[2]);
-            else window.studentDirectory.render();
-        } else {
-            AppDialog.toast('Access Denied', 'error');
-            window.location.hash = 'portal';
-        }
-    } else if (mainRoute === 'staff') {
-        if (hasModPerm('staff_directory')) {
-            document.getElementById('staff-app').classList.add('active');
+    } else if (mainRoute === 'people') {
+        if (hasModPerm('staff_directory') || hasModPerm('student_directory')) {
+            document.getElementById('people-app').classList.add('active');
             window.staffDirectory.subscribe();
-            const staffPerms = userData.permissions?.staff_directory || {};
-            const hasStaffDirectoryAccess = !!(isAdmin || staffPerms === true || staffPerms.view || staffPerms.add || staffPerms.edit || staffPerms.delete || staffPerms.attendance_mark || staffPerms.attendance_view || staffPerms.pulse);
-            const defaultStaffView = (staffPerms.attendance_self && !hasStaffDirectoryAccess) ? 'attendance' : 'directory';
-            if (subRoute && window.staffDirectory.switchView) window.staffDirectory.switchView(subRoute);
-            else if (window.staffDirectory.switchView) window.staffDirectory.switchView(defaultStaffView);
-            else window.staffDirectory.render();
+            window.studentDirectory.subscribe();
+            const view = subRoute || 'preschool';
+            if (window.staffDirectory.switchView) window.staffDirectory.switchView(view, parts[2]);
         } else {
             AppDialog.toast('Access Denied', 'error');
             window.location.hash = 'portal';
         }
+    } else if (mainRoute === 'attendance') {
+        if (hasModPerm('staff_directory') || hasModPerm('student_directory')) {
+            document.getElementById('attendance-app').classList.add('active');
+            window.attendancePanel.initialize();
+            if (subRoute) window.attendancePanel.switchView(subRoute);
+        } else {
+            AppDialog.toast('Access Denied', 'error');
+            window.location.hash = 'portal';
+        }
+    } else if (mainRoute === 'staff' || mainRoute === 'students') {
+        // Legacy redirects
+        window.location.hash = mainRoute === 'students' ? 'people/preschool' : 'people/staff';
     } else if (mainRoute === 'fees') {
         if (hasModPerm('fees_accounting')) {
             document.getElementById('fees-app').classList.add('active');
@@ -549,7 +566,7 @@ window.navigateTo = function (route, updateHash = true) {
             } else if (window.feesManager) {
                 const fp = perms.fees_accounting || {};
                 if (isAdmin || fp === true || fp.view) window.feesManager.switchView('collections');
-                else if (fp.ledger) window.feesManager.switchView('overview');
+                else if (fp.ledger) window.feesManager.switchView('preschool_ledger');
                 else if (fp.exp_all || fp.exp_own) window.feesManager.switchView('office_expenses');
                 else if (fp.salaries_view) window.feesManager.switchView('salaries');
                 else if (fp.wallet_view_own) window.feesManager.switchView('staff_wallets');
@@ -599,8 +616,8 @@ function renderPortalCards(userData) {
 
     const cards = [
         { id: 'card-smart-campus', access: hasModPerm('smart_campus') },
-        { id: 'card-students', access: hasModPerm('student_directory') },
-        { id: 'card-staff', access: hasModPerm('staff_directory') },
+        { id: 'card-people', access: hasModPerm('staff_directory') || hasModPerm('student_directory') },
+        { id: 'card-attendance', access: hasModPerm('staff_directory') || hasModPerm('student_directory') },
         { id: 'card-fees', access: hasModPerm('fees_accounting') },
         { id: 'card-admin', access: isAdmin },
         { id: 'card-whatsapp', access: hasModPerm('whatsapp_sender') }

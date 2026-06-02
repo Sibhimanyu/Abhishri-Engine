@@ -159,6 +159,7 @@ if (!window.whatsAppSender) {
                             <div class="wa-search-bar">
                                 <i data-lucide="search"></i>
                                 <input type="text" placeholder="Search conversations..." id="wa-search-input" oninput="window.whatsAppSender.filterConversations(this.value)">
+                                <button class="search-clear" onclick="document.getElementById('wa-search-input').value=''; window.whatsAppSender.filterConversations('');" title="Clear">×</button>
                             </div>
                         </div>
                         <div class="conversation-list" id="wa-conversation-list">
@@ -1063,9 +1064,10 @@ if (!window.whatsAppSender) {
                     <div style="display:flex; gap:12px;">
                         <div class="search-group" style="position:relative; width:260px;">
                             <i data-lucide="search" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--text-dim);"></i>
-                            <input type="text" id="wa-history-search" class="wa-input" placeholder="Search campaigns..." 
-                                style="padding-left:40px; border-radius:14px; background:rgba(255,255,255,0.03);"
+                            <input type="text" id="wa-history-search" class="wa-input" placeholder="Search campaigns..."
+                                style="padding-left:40px; padding-right:32px; border-radius:14px; background:rgba(255,255,255,0.03);"
                                 oninput="window.whatsAppSender._filterHistory()">
+                            <button class="search-clear" style="position:absolute; right:10px; top:50%; transform:translateY(-50%);" onclick="document.getElementById('wa-history-search').value=''; window.whatsAppSender._filterHistory();" title="Clear">×</button>
                         </div>
                         <button class="btn btn-secondary" onclick="window.whatsAppSender.loadHistory()" style="border-radius:14px; padding:0 20px;">
                             <i data-lucide="refresh-cw" style="width:16px;height:16px;"></i>
@@ -1812,9 +1814,10 @@ if (!window.whatsAppSender) {
                             <div style="display:flex; align-items:center; gap:16px;">
                                 <div class="search-group" style="position:relative; width:240px;">
                                     <i data-lucide="search" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--text-dim);"></i>
-                                    <input type="text" id="wa-report-search" class="wa-input" placeholder="Search recipients..." 
-                                        style="padding-left:40px; border-radius:12px; background:rgba(255,255,255,0.03);"
+                                    <input type="text" id="wa-report-search" class="wa-input" placeholder="Search recipients..."
+                                        style="padding-left:40px; padding-right:32px; border-radius:12px; background:rgba(255,255,255,0.03);"
                                         oninput="window.whatsAppSender._applyReportFilters()">
+                                    <button class="search-clear" style="position:absolute; right:10px; top:50%; transform:translateY(-50%);" onclick="document.getElementById('wa-report-search').value=''; window.whatsAppSender._applyReportFilters();" title="Clear">×</button>
                                 </div>
                                 <select id="wa-report-sort" onchange="window.whatsAppSender.viewBroadcastDetails('${broadcastId}', '${logId}')" 
                                     style="background:rgba(255,255,255,0.05); border:1px solid var(--border); border-radius:12px; padding:10px 16px; color:var(--text-main); font-size:0.85rem; font-weight:600; outline:none; cursor:pointer;">

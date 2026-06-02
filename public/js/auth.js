@@ -15,40 +15,25 @@ window.hideSplash = function () {
     }
 };
 
-// Video Event Listeners & Failsafe
+// Splash animation fallback
 document.addEventListener('DOMContentLoaded', () => {
-    const video = document.getElementById('splash-video');
-    if (video) {
-        video.addEventListener('timeupdate', () => {
-            if (video.duration > 0 && video.currentTime >= video.duration - 0.6) hideSplash();
-        });
-        video.addEventListener('ended', hideSplash);
-        video.addEventListener('error', () => {
-            console.warn('Splash video failed');
-            hideSplash();
+    const splashAnimation = document.getElementById('splash-animation');
+    if (splashAnimation) {
+        splashAnimation.addEventListener('error', () => {
+            console.warn('Splash animation failed to load');
         });
     }
-    setTimeout(hideSplash, 6000);
+    setTimeout(hideSplash, 4500);
 });
 
 // Auth State Observer
 auth.onAuthStateChanged(user => {
     const authModal = document.getElementById('login-modal');
     const pendingModal = document.getElementById('pending-approval-modal');
-    
+
     if (user) {
-        // Always ensure they are in RTDB users node for admin visibility
-        db.ref(`users/${user.uid}`).update({
-            email: user.email,
-            displayName: user.displayName || user.email.split('@')[0],
-            lastSignIn: Date.now(),
-            photoURL: user.photoURL || ''
-        });
-        
-        // User is signed in, check if they are authorized
         checkUserAccess(user, authModal, pendingModal);
     } else {
-        // No user is signed in
         if (authModal) authModal.classList.remove('hidden');
         if (pendingModal) pendingModal.classList.add('hidden');
         document.getElementById('user-widget').style.display = 'none';
@@ -116,67 +101,54 @@ function handleAuthError(error) {
     document.getElementById('login-error').innerText = error.message;
 }
 
-// ─── Access Control Engine (Firestore) ──────────────────────────────────────
+// ─── Access Control Engine (Firestore only) ─────────────────────────────────
 async function checkUserAccess(user, modal, pendingModal) {
     const email = user.email.toLowerCase();
+    const profile = {
+        displayName: user.displayName || user.email.split('@')[0],
+        photoURL: user.photoURL || '',
+        lastSignIn: firebase.firestore.FieldValue.serverTimestamp()
+    };
     const isAllowedDomain = email.endsWith('@abhishri.edu.in');
-    const isMasterEmail = email === 'admin@abhishri.edu.in';
 
     try {
         const userDoc = await firestore.collection('allowedUsers').doc(email).get();
 
         if (userDoc.exists) {
-            // User exists in whitelist
+            // Known account — staff, admin, or student
             if (pendingModal) pendingModal.classList.add('hidden');
-            const data = userDoc.data();
-            
-            // Trigger RTDB sync for the current UID immediately
-            // Wrap in try-catch so failure doesn't block login
-            try {
-                await db.ref(`authorized_users/${user.uid}`).update({
-                    email: email,
-                    isAdmin: !!data.isAdmin,
-                    permissions: data.permissions || {},
-                    updatedAt: firebase.database.ServerValue.TIMESTAMP
-                });
-            } catch (e) {
-                console.warn("RTDB Permission Sync delayed (rules may not be active yet)", e);
-            }
-
+            const data = { ...userDoc.data(), ...profile };
+            firestore.collection('allowedUsers').doc(email).update(profile).catch(() => {});
             grantAccess(user, modal, data);
+
         } else if (isAllowedDomain) {
-            // Auto-provision user with BASELINE permissions (No Admin, No Control)
+            // Auto-provision staff on allowed domain
             const newUserData = {
-                email: email,
-                isAdmin: false, // Security: Never auto-provision as admin
+                email,
+                isAdmin: false,
+                role: 'staff',
                 permissions: {
                     smart_campus: { view: true, control: false },
-                    staff_directory: { view: true, add: false, manage: false, delete: false, attendance: true, pulse: false },
+                    staff_directory: { view: true, add: false, manage: false, delete: false, attendance: true },
                     student_directory: { view: true, manage: false },
-                    student_performance: { view: true, log: false },
                     whatsapp_sender: { access: true, broadcast: false, manage: false, connect: false },
                     fees_accounting: { view: true, manage: false }
                 },
                 addedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                addedBy: 'system_auto_provision'
+                addedBy: 'system_auto_provision',
+                ...profile
             };
-
             await firestore.collection('allowedUsers').doc(email).set(newUserData);
-            
-            // Sync to RTDB for auto-provisioned user
-            try {
-                await db.ref(`authorized_users/${user.uid}`).update({
-                    email: email,
-                    isAdmin: false,
-                    permissions: newUserData.permissions,
-                    updatedAt: firebase.database.ServerValue.TIMESTAMP
-                });
-            } catch (e) { console.warn("Auto-provision RTDB sync delayed", e); }
-
             if (pendingModal) pendingModal.classList.add('hidden');
             grantAccess(user, modal, newUserData);
+
         } else {
-            // Block access but show pending modal
+            // Unknown — show pending approval
+            firestore.collection('pendingUsers').doc(email).set({
+                email, uid: user.uid, ...profile,
+                firstSeenAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true }).catch(() => {});
+
             if (modal) modal.classList.add('hidden');
             if (pendingModal) {
                 pendingModal.classList.remove('hidden');
@@ -192,9 +164,37 @@ async function checkUserAccess(user, modal, pendingModal) {
     }
 }
 
+
+
 function grantAccess(user, modal, userData) {
     if (modal) modal.classList.add('hidden');
     window.currentUserData = userData;
+
+    // Live listener — if an admin changes this user's role/group, apply immediately
+    if (window._permissionListener) window._permissionListener();
+    window._permissionListener = firestore.collection('allowedUsers')
+        .doc(user.email.toLowerCase())
+        .onSnapshot(snap => {
+            if (!snap.exists || !window.currentUserData) return;
+            const fresh = snap.data();
+            const cur = window.currentUserData;
+            const roleChanged  = fresh.role !== cur.role;
+            const groupChanged = fresh.permissionGroup !== cur.permissionGroup;
+            const adminChanged = !!fresh.isAdmin !== !!cur.isAdmin;
+            if (roleChanged || groupChanged || adminChanged) {
+                // Merge updated permissions into session, preserve display metadata
+                window.currentUserData = {
+                    ...fresh,
+                    displayName: cur.displayName || fresh.displayName,
+                    photoURL:    cur.photoURL    || fresh.photoURL
+                };
+                // Re-init modules with new permissions and re-route
+                if (window.staffDirectory)  { window.staffDirectory.isSubscribed = false; }
+                if (window.studentDirectory){ window.studentDirectory.isSubscribed = false; }
+                if (window.feesManager)     { window.feesManager.isSubscribed = false; }
+                handleRouting();
+            }
+        }, () => {});
 
     // Reset Central Data Managers
     if (window.studentDataManager) {
@@ -234,13 +234,20 @@ function grantAccess(user, modal, userData) {
 window.addEventListener('hashchange', handleRouting);
 
 function handleRouting() {
+    const userData = window.currentUserData || {};
     const hash = window.location.hash.replace('#', '') || 'portal';
+    // Student-role accounts must never enter the admin portal
+    if (userData.role === 'student' && !hash.startsWith('student-portal')) {
+        if (typeof navigateTo === 'function') navigateTo('student-portal', true);
+        return;
+    }
     if (typeof navigateTo === 'function') navigateTo(hash, false);
 }
 
 window.logout = () => {
     const email = auth.currentUser?.email;
     window.AppLogger.log('LOGOUT', 'auth', { email });
+    if (window._permissionListener) { window._permissionListener(); window._permissionListener = null; }
     auth.signOut().then(() => {
         window.location.hash = '';
         window.location.reload();
@@ -255,7 +262,18 @@ function updateUserWidget(user, userData) {
     if (!user) { widget.style.display = 'none'; return; }
 
     widget.style.display = 'block';
-    emailEl.innerText = userData.isAdmin ? `Admin (${user.email})` : user.email;
+    const roleLabel = userData.isAdmin ? 'Admin' : (userData.role === 'student' ? 'Student' : null);
+    emailEl.innerText = roleLabel ? `${roleLabel} (${user.email})` : user.email;
+
+    // Point "Portal Home" to the right place depending on role
+    const portalLink = document.querySelector('.user-dropdown .portal-link');
+    if (portalLink) {
+        if (userData.role === 'student') {
+            portalLink.setAttribute('onclick', "navigateTo('student-portal')");
+        } else {
+            portalLink.setAttribute('onclick', "navigateTo('portal')");
+        }
+    }
 
     if (user.photoURL) {
         avatarEl.innerHTML = `<img src="${user.photoURL}" alt="Avatar">`;

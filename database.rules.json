@@ -22,6 +22,10 @@
         ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/smart_campus/control').val() === true)"
       },
       "student_directory": {
+        "attendance": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/student_directory/manage').val() === true)"
+        },
         ".read": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/student_directory/view').val() === true)",
         ".write": "auth != null && (root.child('authorized_users/' + auth.uid + '/isAdmin').val() === true || root.child('authorized_users/' + auth.uid + '/permissions/student_directory/manage').val() === true)"
       },
