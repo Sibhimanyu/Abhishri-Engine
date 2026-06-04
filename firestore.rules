@@ -51,7 +51,7 @@ service cloud.firestore {
 
     // --- Student Directory Module ---
     match /modules/student_directory {
-      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('student_directory'));
+      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('student_directory') || getPerm('fees_accounting', 'exp_own'));
       
       match /students/{studentId} {
         allow read: if isAuthenticated() && (
@@ -76,7 +76,7 @@ service cloud.firestore {
 
     // --- Staff Directory Module ---
     match /modules/staff_directory {
-      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('staff_directory') || getPerm('fees_accounting', 'wallet_view_own'));
+      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('staff_directory') || getPerm('fees_accounting', 'wallet_view_own') || getPerm('fees_accounting', 'exp_own'));
       
       match /staff/{staffId} {
         allow read: if isAuthenticated() && (
@@ -165,6 +165,7 @@ service cloud.firestore {
           (getPerm('fees_accounting', 'exp_own') && resource.data.createdBy == request.auth.token.email.lower()) ||
           (getPerm('fees_accounting', 'wallet_view_own') && (
             resource.data.createdBy == request.auth.token.email.lower() ||
+            (resource.data.staffEmail != null && resource.data.staffEmail == request.auth.token.email.lower()) ||
             (resource.data.staffId != null && getStaffEmail(resource.data.staffId) == request.auth.token.email.lower())
           ))
         );

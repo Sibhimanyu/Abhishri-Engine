@@ -163,35 +163,23 @@ window.feesManager = {
             };
 
             // Listener A: Everything I created
-            const unsubA = firestore.collection('modules').doc('fees_accounting').collection('expenses')
-                .where('createdBy', '==', currentUserEmail)
-                .onSnapshot(processSnap, err => console.warn("Fees - Own Expenses sync failed:", err));
+            let unsubA = null;
+            if (canViewOwn || canViewWallet) {
+                unsubA = firestore.collection('modules').doc('fees_accounting').collection('expenses')
+                    .where('createdBy', '==', currentUserEmail)
+                    .onSnapshot(processSnap, err => console.warn("Fees - Own Expenses sync failed:", err));
+            }
 
-            // Listener B: Everything targeting my staffId (if wallet_view_own)
+            // Listener B: Everything targeting my staff email (if wallet_view_own)
             let unsubB = null;
             if (canViewWallet) {
-                // We need to find the staffId first. We can get it from this.staff if it was synced
-                const myStaffEntry = Object.values(this.staff).find(s => (s.email || '').toLowerCase() === currentUserEmail);
-                if (myStaffEntry) {
-                    unsubB = firestore.collection('modules').doc('fees_accounting').collection('expenses')
-                        .where('staffId', '==', myStaffEntry.id)
-                        .onSnapshot(processSnap, err => console.warn("Fees - Targeted Wallet Expenses sync failed:", err));
-                } else {
-                    // If staff record not yet loaded, wait and retry B once staff is ready
-                    this.staffDataWaitInterval = setInterval(() => {
-                        const sEntry = Object.values(this.staff).find(s => (s.email || '').toLowerCase() === currentUserEmail);
-                        if (sEntry) {
-                            clearInterval(this.staffDataWaitInterval);
-                            unsubB = firestore.collection('modules').doc('fees_accounting').collection('expenses')
-                                .where('staffId', '==', sEntry.id)
-                                .onSnapshot(processSnap, err => console.warn("Fees - Targeted Wallet Expenses retry failed:", err));
-                        }
-                    }, 2000);
-                }
+                unsubB = firestore.collection('modules').doc('fees_accounting').collection('expenses')
+                    .where('staffEmail', '==', currentUserEmail)
+                    .onSnapshot(processSnap, err => console.warn("Fees - Targeted Wallet Expenses sync failed:", err));
             }
 
             this._expensesUnsubscribe = () => {
-                unsubA();
+                if (unsubA) unsubA();
                 if (unsubB) unsubB();
                 if (this.staffDataWaitInterval) clearInterval(this.staffDataWaitInterval);
             };
@@ -886,6 +874,7 @@ window.feesManager = {
                     source: 'staff_wallet',
                     type: 'funding',
                     staffId: sid,
+                    staffEmail: (this.staff[sid]?.email || '').toLowerCase(),
                     amount,
                     details: details || 'Wallet Credit',
                     category: 'Wallet Funding',
@@ -938,6 +927,7 @@ window.feesManager = {
                     source: 'staff_wallet',
                     type: 'spend',
                     staffId: sid,
+                    staffEmail: (this.staff[sid]?.email || '').toLowerCase(),
                     amount,
                     details: details || 'Wallet Debit',
                     category: cat,
