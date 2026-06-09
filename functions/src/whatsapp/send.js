@@ -1,5 +1,5 @@
 
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const axios = require("axios");
@@ -32,14 +32,14 @@ function deepSanitize(obj, isInsideArray = false) {
 async function verifyAdmin(auth) {
   if (!auth || !auth.uid || !auth.token.email) throw new HttpsError("unauthenticated", "User must be logged in.");
   const email = auth.token.email.toLowerCase();
-  const userDoc = await admin.firestore().collection("allowedUsers").doc(email).get();
+  const userDoc = await admin.firestore().collection("allowed_users").doc(email).get();
   if (!userDoc.exists || (!userDoc.data().isAdmin && !userDoc.data().permissions?.whatsapp_sender)) {
     throw new HttpsError("permission-denied", "User does not have required permissions.");
   }
 }
 
 async function getWhatsAppConfig() {
-  const snapshot = await admin.firestore().collection("modules").doc("whatsapp_sender").collection("config").doc("main").get();
+  const snapshot = await admin.firestore().collection("whatsapp_config").doc("main").get();
   const config = snapshot.data();
   if (!config || !config.apiKey) throw new HttpsError("failed-precondition", "WhatsApp config missing.");
   return config;
@@ -50,16 +50,15 @@ exports.syncWhatsAppTemplates = onCall(async (request) => {
   const config = await getWhatsAppConfig();
   try {
     // New dlt_manager endpoint for reliable message_id
-    const url = `https://www.fast2sms.com/dev/dlt_manager/whatsapp?authorization=${encodeURIComponent(config.apiKey)}&type=template`;
-    const response = await axios.get(url, { headers: { "accept": "application/json" } });
-
-    if (!response.data?.success || !response.data?.data) {
+    const url = `https://api.fast2sms.com/dlt_manager/whatsapp?authorization=${encodeURIComponent(config.apiKey)}&type=template`;
+    const response = await axios.get(url, { headers: { authorization: config.apiKey } });
+    if (!response.data || !response.data.return) {
       throw new Error(response.data?.message || "Failed to fetch templates from Fast2SMS");
     }
 
     const fs = admin.firestore();
     const batch = fs.batch();
-    const coll = fs.collection("modules").doc("whatsapp_sender").collection("templates");
+    const coll = fs.collection("whatsapp_templates");
     let count = 0;
 
     for (const item of response.data.data) {
@@ -89,9 +88,13 @@ exports.checkWhatsAppWallet = onCall(async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
   try {
-    const response = await axios.get(`https://www.fast2sms.com/dev/wallet?authorization=${encodeURIComponent(config.apiKey)}`);
+    const response = await axios.post('https://www.fast2sms.com/dev/wallet', null, {
+      headers: { 'authorization': config.apiKey }
+    });
     return response.data;
-  } catch (error) { throw new HttpsError("internal", error.message); }
+  } catch (error) { 
+    throw new HttpsError("internal", error.response?.data?.message || error.message); 
+  }
 });
 
 exports.sendWhatsAppMessage = onCall(async (request) => {
@@ -105,46 +108,47 @@ exports.sendWhatsAppMessage = onCall(async (request) => {
     }, { headers: { "Authorization": config.apiKey, "Content-Type": "application/json" } });
     const messageId = response.data.request_id || response.data.messages?.[0]?.id || response.data.id;
     if (messageId) {
-      const ts = Date.now(), docId = sanitizeKey(messageId), recipientPhone = sanitizeKey(to), db = admin.database();
-      await db.ref(`modules/whatsapp_sender/conversations/${recipientPhone}/messages/${docId}`).set({ messageId, from: "business", to, message: text, type: "text", timestamp: ts, direction: "outbound", status: "processing" });
-      await db.ref(`modules/whatsapp_sender/conversations/${recipientPhone}/metadata`).update({ lastMessage: text, timestamp: ts, phoneNumber: to });
+      const ts = Date.now(), docId = sanitizeKey(messageId), recipientPhone = String(to).replace(/[^\d]/g, ""), db = admin.database();
+      await db.ref(`whatsapp_conversations/${recipientPhone}/messages/${docId}`).set({ messageId, from: "business", to, message: text, type: "text", timestamp: ts, direction: "outbound", status: "processing" });
+      await db.ref(`whatsapp_conversations/${recipientPhone}/metadata`).update({ lastMessage: text, timestamp: ts, phoneNumber: to });
     }
     return response.data;
   } catch (error) { throw new HttpsError("internal", error.message); }
 });
 
 exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) => {
-  await verifyAdmin(request.auth);
-  const config = await getWhatsAppConfig();
+  try {
+    await verifyAdmin(request.auth);
+    const config = await getWhatsAppConfig();
 
-  // Debug log to see exactly what the frontend is sending
-  logger.info("sendWhatsAppBroadcast Request Data:", request.data);
+    // Debug log to see exactly what the frontend is sending
+    logger.info("sendWhatsAppBroadcast Request Data:", request.data);
 
-  const { templateName, recipients, variables, broadcastId, contactsCount, excludedNumbers, headerImageUrl } = request.data;
-  const excludedSet = new Set((excludedNumbers || []).map(num => String(num).replace(/[^\d]/g, "")));
+    const { templateName, recipients, variables, broadcastId, contactsCount, excludedNumbers, headerImageUrl } = request.data;
+    const excludedSet = new Set((excludedNumbers || []).map(num => String(num).replace(/[^\d]/g, "")));
 
-  const db = admin.database(), fs = admin.firestore();
+    const db = admin.database(), fs = admin.firestore();
 
-  // 1. Fetch Template Data
-  let tData = {};
-  if (templateName) {
-    // Try exact document ID match first
-    const templateSnap = await fs.collection("modules").doc("whatsapp_sender").collection("templates").doc(templateName).get();
-    if (templateSnap.exists) {
-      tData = templateSnap.data();
-    } else {
-      // Fallback: search for a template with this name in its 'name' or 'template_name' field
-      const querySnap = await fs.collection("modules").doc("whatsapp_sender").collection("templates")
-        .where("template_name", "==", templateName).limit(1).get();
-      if (!querySnap.empty) {
-        tData = querySnap.docs[0].data();
+    // 1. Fetch Template Data
+    let tData = {};
+    if (templateName) {
+      // Try exact document ID match first
+      const templateSnap = await fs.collection("whatsapp_templates").doc(templateName).get();
+      if (templateSnap.exists) {
+        tData = templateSnap.data();
       } else {
-        const querySnap2 = await fs.collection("modules").doc("whatsapp_sender").collection("templates")
-          .where("name", "==", templateName).limit(1).get();
-        if (!querySnap2.empty) tData = querySnap2.docs[0].data();
+        // Fallback: search for a template with this name in its 'name' or 'template_name' field
+        const querySnap = await fs.collection("whatsapp_templates")
+          .where("template_name", "==", templateName).limit(1).get();
+        if (!querySnap.empty) {
+          tData = querySnap.docs[0].data();
+        } else {
+          const querySnap2 = await fs.collection("whatsapp_templates")
+            .where("name", "==", templateName).limit(1).get();
+          if (!querySnap2.empty) tData = querySnap2.docs[0].data();
+        }
       }
     }
-  }
 
   // 2. Extract Numeric ID (MUST be numeric for the GET API)
   const templateId = tData.message_id || tData.numericId || tData.id || tData.template_id;
@@ -156,6 +160,13 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
 
   let dispatchedCount = 0, failedCount = 0, excludedCount = 0;
   let processedContactsCount = 0, excludedContactsCount = 0, lastContactName = null;
+  let initialWalletBalance = null;
+  let finalWalletBalance = null;
+
+  try {
+    const wRes = await axios.post('https://www.fast2sms.com/dev/wallet', null, { headers: { 'authorization': config.apiKey } });
+    if (wRes.data && wRes.data.wallet !== undefined) initialWalletBalance = parseFloat(wRes.data.wallet);
+  } catch (e) { logger.warn("Failed to fetch initial wallet balance:", e.message); }
 
   const updateProgress = async (isFinal = false, statusOverride = null, currentName = null) => {
     if (!broadcastId) return;
@@ -167,9 +178,13 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
       processedContactsCount: processedContactsCount + excludedContactsCount,
       currentContactName: currentName || ""
     };
+    if (initialWalletBalance !== null) update.initialWalletBalance = initialWalletBalance;
+    if (finalWalletBalance !== null) update.finalWalletBalance = finalWalletBalance;
+    if (initialWalletBalance !== null && finalWalletBalance !== null) update.actualCost = initialWalletBalance - finalWalletBalance;
+
     if (statusOverride) update.status = statusOverride;
     else if (isFinal) { update.status = "dispatched"; update.currentContactName = ""; }
-    await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).update(update);
+    await fs.collection("whatsapp_history").doc(broadcastId).update(update);
   };
 
   // 1. Instant Initialization
@@ -225,7 +240,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
   }
 
   if (Object.keys(initialLogs).length > 0) {
-    await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(initialLogs);
+    await db.ref(`whatsapp_broadcast_logs`).update(initialLogs);
     await updateProgress();
   }
 
@@ -236,7 +251,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
   for (let i = 0; i < activeRecipients.length; i += BATCH_SIZE) {
     const chunk = activeRecipients.slice(i, i + BATCH_SIZE);
 
-    const stopSnap = await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).get();
+    const stopSnap = await fs.collection("whatsapp_history").doc(broadcastId).get();
     if (stopSnap.exists && stopSnap.data().stopRequested) { await updateProgress(true, "stopped"); return { success: true, stopped: true }; }
 
     const firstInChunk = chunk[0];
@@ -275,7 +290,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
         url: logUrl,
         timestamp: Date.now()
       };
-      await fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId).update({
+      await fs.collection("whatsapp_history").doc(broadcastId).update({
         debugBatches: admin.firestore.FieldValue.arrayUnion(batchInfo)
       }).catch(e => logger.error("Failed to save debugBatch:", e));
     }
@@ -286,26 +301,50 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
         const num = String(r.phone).replace(/[^\d]/g, "");
         processingUpdates[`${broadcastId}/${num}/status`] = "processing";
       });
-      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(processingUpdates);
+      await db.ref(`whatsapp_broadcast_logs`).update(processingUpdates);
 
       const response = await axios.get(apiUrl, { headers: { "accept": "application/json" } });
       const messageId = response.data.request_id || response.data.id || "batch_" + Date.now();
 
       // Store messageId -> broadcastId mapping for webhook lookup
       if (messageId && broadcastId) {
-        await db.ref(`modules/whatsapp_sender/batch_map/${messageId}`).set(broadcastId);
+        await db.ref(`whatsapp_batch_map/${messageId}`).set(broadcastId);
       }
 
       const successUpdates = {};
-      chunk.forEach(r => {
+      const conversationUpdates = {};
+      const ts = Date.now();
+      
+      chunk.forEach((r, idx) => {
         if (r.name !== lastContactName) { processedContactsCount++; lastContactName = r.name; }
         const num = String(r.phone).replace(/[^\d]/g, "");
         const logPath = `${broadcastId}/${num}`;
         successUpdates[`${logPath}/status`] = "sent";
-        successUpdates[`${logPath}/sentAt`] = Date.now();
+        successUpdates[`${logPath}/sentAt`] = ts;
         successUpdates[`${logPath}/messageId`] = messageId;
+        
+        // Populate conversation history
+        const docId = sanitizeKey(messageId) + "_" + idx;
+        const msgText = `📢 Broadcast: ${templateName}`;
+        
+        conversationUpdates[`whatsapp_conversations/${num}/messages/${docId}`] = { 
+            messageId, 
+            from: "business", 
+            to: r.phone, 
+            message: msgText, 
+            type: "template", 
+            timestamp: ts, 
+            direction: "outbound", 
+            status: "sent",
+            broadcastId: broadcastId
+        };
+        conversationUpdates[`whatsapp_conversations/${num}/metadata/lastMessage`] = msgText;
+        conversationUpdates[`whatsapp_conversations/${num}/metadata/timestamp`] = ts;
+        conversationUpdates[`whatsapp_conversations/${num}/metadata/phoneNumber`] = r.phone;
+        conversationUpdates[`whatsapp_conversations/${num}/metadata/displayName`] = r.name;
       });
-      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(successUpdates);
+      await db.ref(`/`).update(conversationUpdates);
+      await db.ref(`whatsapp_broadcast_logs`).update(successUpdates);
       dispatchedCount += chunk.length;
     } catch (error) {
       const errMsg = error.response?.data?.message || error.message;
@@ -319,11 +358,23 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
         failureUpdates[`${logPath}/timestamp`] = Date.now();
         failureUpdates[`${logPath}/error`] = errMsg;
       });
-      await db.ref(`modules/whatsapp_sender/broadcast_logs`).update(failureUpdates);
+      await db.ref(`whatsapp_broadcast_logs`).update(failureUpdates);
       failedCount += chunk.length;
     }
     await updateProgress();
   }
+
+  // Fetch final wallet balance with a delay for async billing
+  try {
+    await new Promise(r => setTimeout(r, 4000));
+    const wRes2 = await axios.post('https://www.fast2sms.com/dev/wallet', null, { headers: { 'authorization': config.apiKey } });
+    if (wRes2.data && wRes2.data.wallet !== undefined) finalWalletBalance = parseFloat(wRes2.data.wallet);
+  } catch (e) { logger.warn("Failed to fetch final wallet balance:", e.message); }
+
   await updateProgress(true);
   return { success: true, dispatchedCount };
+  } catch (error) {
+    logger.error("Unhandled error in sendWhatsAppBroadcast:", error);
+    throw new HttpsError("internal", error.message, error.stack);
+  }
 });
