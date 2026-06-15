@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { firestore } from '../firebase';
-import { ArrowLeft, Edit3, MapPin, Phone, Mail, User, Briefcase, HeartPulse, DollarSign, Wallet, Save, X, Calendar, Trash2, Loader } from 'lucide-react';
+import { ArrowLeft, Edit3, MapPin, Phone, Mail, User, Briefcase, HeartPulse, DollarSign, Wallet, Save, X, Calendar, Trash2, Loader, Star } from 'lucide-react';
+import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 import { useAuth } from '../context/AuthContext';
 
 export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
@@ -20,6 +21,12 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
     bloodGroup: '',
     worksInPreschool: false,
     worksInTuition: false,
+    dob: '',
+    birthTime: '',
+    birthCity: '',
+    nakshatra: '',
+    tamilMonth: '',
+    tamilDay: '',
     address: '',
     emergencyContact: ''
   });
@@ -52,6 +59,12 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
             bloodGroup: '',
             worksInPreschool: false,
             worksInTuition: false,
+            dob: '',
+            birthTime: '',
+            birthCity: '',
+            nakshatra: '',
+            tamilMonth: '',
+            tamilDay: '',
             address: '',
             emergencyContact: '',
         };
@@ -97,6 +110,12 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
         bloodGroup: profile.bloodGroup || '',
         worksInPreschool: !!profile.worksInPreschool,
         worksInTuition: !!profile.worksInTuition,
+        dob: profile.dob || '',
+        birthTime: profile.birthTime || '',
+        birthCity: profile.birthCity || '',
+        nakshatra: profile.nakshatra || '',
+        tamilMonth: profile.tamilMonth || '',
+        tamilDay: profile.tamilDay || '',
         address: profile.address || '',
         emergencyContact: profile.emergencyContact || ''
       });
@@ -121,6 +140,12 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
         joiningDate: editForm.joiningDate || '',
         worksInPreschool: !!editForm.worksInPreschool,
         worksInTuition: !!editForm.worksInTuition,
+        dob: editForm.dob || '',
+        birthTime: editForm.birthTime || '',
+        birthCity: editForm.birthCity || '',
+        nakshatra: editForm.nakshatra || '',
+        tamilMonth: editForm.tamilMonth || '',
+        tamilDay: editForm.tamilDay || '',
         bloodGroup: editForm.bloodGroup || '',
         address: editForm.address || '',
         emergencyContact: editForm.emergencyContact || '',
@@ -143,6 +168,33 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
       alert('Failed to update staff profile. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const [suggestingNakshatra, setSuggestingNakshatra] = useState(false);
+  const handleSuggestNakshatra = async () => {
+    if (!editForm.dob || !editForm.birthTime || !editForm.birthCity) {
+      alert("Please enter Date of Birth, Time of Birth, and Birth City first.");
+      return;
+    }
+    setSuggestingNakshatra(true);
+    try {
+      const result = await calculateNakshatra(editForm.dob, editForm.birthTime, editForm.birthCity);
+      if (result.nakshatra) {
+        setEditForm(prev => ({ 
+          ...prev, 
+          nakshatra: result.nakshatra, 
+          tamilMonth: result.tamilMonth,
+          tamilDay: result.tamilDay 
+        }));
+      } else {
+        alert("Could not fetch a suggestion. Please check your inputs.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to get suggestion.");
+    } finally {
+      setSuggestingNakshatra(false);
     }
   };
 

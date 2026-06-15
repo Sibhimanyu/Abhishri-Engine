@@ -143,9 +143,11 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
     }
   };
 
-  const handleSuggestNakshatra = async () => {
+  const handleSuggestNakshatra = async (isAuto = false) => {
+    if (typeof isAuto !== 'boolean') isAuto = false;
+
     if (!editForm.dob || !editForm.birthTime || !editForm.birthCity) {
-      alert("Please enter Date of Birth, Time of Birth, and Birth City first.");
+      if (!isAuto) alert("Please enter Date of Birth, Time of Birth, and Birth City first.");
       return;
     }
     setSuggestingNakshatra(true);
@@ -159,15 +161,24 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
           tamilDay: result.tamilDay 
         }));
       } else {
-        alert("Could not fetch a suggestion. Please check your inputs.");
+        if (!isAuto) alert("Could not fetch a suggestion. Please check your inputs.");
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to get suggestion.");
+      if (!isAuto) alert("Failed to get suggestion.");
     } finally {
       setSuggestingNakshatra(false);
     }
   };
+
+  React.useEffect(() => {
+    if (editForm.dob && editForm.birthTime && editForm.birthCity && editForm.birthCity.length >= 3) {
+      const timer = setTimeout(() => {
+        handleSuggestNakshatra(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [editForm.dob, editForm.birthTime, editForm.birthCity]);
 
   if (loading) {
     return (

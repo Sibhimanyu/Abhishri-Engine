@@ -93,9 +93,12 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
     }
   };
 
-  const handleSuggestNakshatra = async () => {
+  const handleSuggestNakshatra = async (isAuto = false) => {
+    // If it's a click event, ignore it as the boolean flag
+    if (typeof isAuto !== 'boolean') isAuto = false;
+    
     if (!formData.dob || !formData.birthTime || !formData.birthCity) {
-      alert("Please enter Date of Birth, Time of Birth, and Birth City first.");
+      if (!isAuto) alert("Please enter Date of Birth, Time of Birth, and Birth City first.");
       return;
     }
     setSuggestingNakshatra(true);
@@ -109,15 +112,24 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
           tamilDay: result.tamilDay 
         }));
       } else {
-        alert("Could not fetch a suggestion. Please check your inputs.");
+        if (!isAuto) alert("Could not fetch a suggestion. Please check your inputs.");
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to get suggestion.");
+      if (!isAuto) alert("Failed to get suggestion.");
     } finally {
       setSuggestingNakshatra(false);
     }
   };
+
+  React.useEffect(() => {
+    if (formData.dob && formData.birthTime && formData.birthCity && formData.birthCity.length >= 3) {
+      const timer = setTimeout(() => {
+        handleSuggestNakshatra(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [formData.dob, formData.birthTime, formData.birthCity]);
 
   const inputClass = "w-full bg-brand-bg border border-brand-card-border rounded-lg px-3 py-1.5 text-brand-text text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all";
 

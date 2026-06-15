@@ -41,7 +41,7 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingLoginsCount, setPendingLoginsCount] = useState(0);
   const [unreadWhatsAppCount, setUnreadWhatsAppCount] = useState(0);
-  const [tamilBirthdayStudents, setTamilBirthdayStudents] = useState([]);
+  const [tamilBirthdayMembers, setTamilBirthdayMembers] = useState([]);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const { currentUser, userData, loading } = useAuth();
 
@@ -76,10 +76,30 @@ function App() {
     
     let unsubscribe = () => {};
     import('firebase/firestore').then(({ collection, onSnapshot }) => {
-      const pendingRef = collection(firestore, 'unauthorized_logins');
-      unsubscribe = onSnapshot(pendingRef, (snap) => {
-        setPendingLoginsCount(snap.docs.length);
+      let allowedEmails = new Set();
+      let pendingDocs = [];
+
+      const updatePendingCount = () => {
+        const validPending = pendingDocs.filter(doc => !allowedEmails.has(doc.id.toLowerCase()));
+        setPendingLoginsCount(validPending.length);
+      };
+
+      const usersRef = collection(firestore, 'allowed_users');
+      const unsubUsers = onSnapshot(usersRef, (snap) => {
+        allowedEmails = new Set(snap.docs.map(d => d.id.toLowerCase()));
+        updatePendingCount();
       });
+
+      const pendingRef = collection(firestore, 'unauthorized_logins');
+      const unsubPending = onSnapshot(pendingRef, (snap) => {
+        pendingDocs = snap.docs;
+        updatePendingCount();
+      });
+
+      unsubscribe = () => {
+        unsubUsers();
+        unsubPending();
+      };
     });
     return () => unsubscribe();
   }, [userData?.isAdmin]);
@@ -109,7 +129,8 @@ function App() {
 
   // Tamil Birthday Fetcher
   React.useEffect(() => {
-    if (!hasStudentAccess) return;
+    // Only run if they have access to at least one directory
+    if (!hasStudentAccess && !hasStaffAccess) return;
 
     const fetchBirthdays = async () => {
       try {
@@ -117,26 +138,35 @@ function App() {
         const currentTamilDate = getCurrentTamilDate();
         if (!currentTamilDate) return;
 
-        const studentsRef = collection(firestore, 'students');
-        const q = query(
-          studentsRef, 
-          where('tamilMonth', '==', currentTamilDate.tamilMonth),
-          where('tamilDay', '==', currentTamilDate.tamilDay)
-        );
-        
-        const querySnapshot = await getDocs(q);
-        const bdayStudents = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          bdayStudents.push({ id: doc.id, name: data.name, ...currentTamilDate });
-        });
-        setTamilBirthdayStudents(bdayStudents);
+        const bdayMembers = [];
+
+        // Fetch Students
+        if (hasStudentAccess) {
+          const studentsRef = collection(firestore, 'students');
+          const qStud = query(studentsRef, where('tamilMonth', '==', currentTamilDate.tamilMonth), where('tamilDay', '==', currentTamilDate.tamilDay));
+          const snapStud = await getDocs(qStud);
+          snapStud.forEach((doc) => {
+            bdayMembers.push({ id: doc.id, name: doc.data().name, type: 'student', path: '/students', ...currentTamilDate });
+          });
+        }
+
+        // Fetch Staff
+        if (hasStaffAccess) {
+          const staffRef = collection(firestore, 'staff');
+          const qStaff = query(staffRef, where('tamilMonth', '==', currentTamilDate.tamilMonth), where('tamilDay', '==', currentTamilDate.tamilDay));
+          const snapStaff = await getDocs(qStaff);
+          snapStaff.forEach((doc) => {
+            bdayMembers.push({ id: doc.id, name: doc.data().name, type: 'staff', path: '/staff', ...currentTamilDate });
+          });
+        }
+
+        setTamilBirthdayMembers(bdayMembers);
       } catch (error) {
         console.error("Failed to fetch Tamil Birthdays", error);
       }
     };
     fetchBirthdays();
-  }, [hasStudentAccess]);
+  }, [hasStudentAccess, hasStaffAccess]);
 
   React.useEffect(() => {
     if (isDarkMode) {
@@ -321,9 +351,12 @@ function App() {
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="relative text-brand-text-dim hover:text-brand-text transition-colors p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
               >
-                <Bell size={20} />
-                {(pendingLoginsCount > 0 || unreadWhatsAppCount > 0 || tamilBirthdayStudents.length > 0) && (
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-brand-primary border-2 border-brand-sidebar rounded-full"></span>
+                <Bell size={20} className={(pendingLoginsCount > 0 || unreadWhatsAppCount > 0 || tamilBirthdayMembers.length > 0) ? 'text-brand-primary' : ''} />
+                {(pendingLoginsCount > 0 || unreadWhatsAppCount > 0 || tamilBirthdayMembers.length > 0) && (
+                  <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-primary border-2 border-brand-sidebar"></span>
+                  </span>
                 )}
               </button>
 
@@ -363,22 +396,22 @@ function App() {
                         </Link>
                       )}
 
-                      {tamilBirthdayStudents.map(student => (
+                      {tamilBirthdayMembers.map(member => (
                         <Link 
-                          key={student.id}
+                          key={`bday-${member.type}-${member.id}`}
                           onClick={() => setShowNotifications(false)}
-                          to="/students"
+                          to={member.path}
                           className="w-full text-left px-4 py-3 text-sm text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 border-b border-brand-card-border last:border-b-0"
                         >
                           <div className="mt-0.5 text-pink-500"><Cake size={16} /></div>
                           <div>
                             <p className="font-semibold text-pink-600 dark:text-pink-400">Tamil Birthday Today!</p>
-                            <p className="text-xs text-brand-text-dim mt-0.5">It is <b>{student.name}'s</b> Tamil Birthday today ({student.tamilMonth} {student.tamilDay}).</p>
+                            <p className="text-xs text-brand-text-dim mt-0.5">It is <b>{member.name}'s</b> ({member.type === 'staff' ? 'Staff' : 'Student'}) Tamil Birthday today ({member.tamilMonth} {member.tamilDay}).</p>
                           </div>
                         </Link>
                       ))}
 
-                      {(pendingLoginsCount === 0 && unreadWhatsAppCount === 0 && tamilBirthdayStudents.length === 0) && (
+                      {(pendingLoginsCount === 0 && unreadWhatsAppCount === 0 && tamilBirthdayMembers.length === 0) && (
                         <div className="px-4 py-6 text-center text-brand-text-dim text-sm">
                           No new notifications
                         </div>
