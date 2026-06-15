@@ -1,62 +1,183 @@
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function getComponentKey(c, month = null, academicYear = null) {
+  const yearPrefix = academicYear ? `${academicYear}-` : '';
+  const id = c.uid || c.name;
+  return month ? `${yearPrefix}${id}-${month}` : `${yearPrefix}${id}`;
+}
+
+async function reconcileStudent(studentId, db) {
+    const studentRef = db.collection("students").doc(studentId);
+    const planRef = studentRef.collection("fee_ledger").doc("plan_details");
+    const txRef = studentRef.collection("transactions");
+
+    const [planDoc, txSnap] = await Promise.all([
+        planRef.get(),
+        txRef.orderBy('timestamp', 'asc').get()
+    ]);
+
+    const f = planDoc.exists ? planDoc.data() : { components: [], billingCycle: 12, startMonth: 5 };
+    const components = f.components || [];
+
+    let totalPaid = 0;
+    let totalDiscounted = 0;
+
+    txSnap.docs.forEach(doc => {
+        const tx = doc.data();
+        if (tx.isVoided) return;
+        if (tx.type === 'void') return;
+
+        if (tx.type === 'discount' || (tx.type === 'void' && tx.category === 'Discount')) {
+            totalDiscounted += (tx.amount || 0);
+        } else if (tx.type === 'incoming') {
+            totalPaid += (tx.amount || 0);
+        }
+    });
+
+    const now = new Date();
+    const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
+    const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
+    const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
+    const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(1, monthsPassed + 1));
+
+    const allReqs = [];
+    components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount >= 0).forEach(c => {
+        allReqs.push({ uid: c.uid, name: c.name, baseAmount: c.baseAmount !== undefined ? c.baseAmount : c.amount, amount: c.amount, frequency: 'onetime', month: null });
+    });
+    
+    for (let i = 0; i < (f.billingCycle || 12); i++) {
+        const mIdx = (startMonth + i) % 12;
+        const mName = MONTHS[mIdx];
+        components.filter(c => (c.frequency || '').toLowerCase() === 'monthly').forEach(c => {
+            allReqs.push({ uid: c.uid, name: c.name, baseAmount: c.baseAmount !== undefined ? c.baseAmount : c.amount, amount: c.amount, frequency: 'monthly', month: mName, relativeIdx: i });
+        });
+    }
+
+    const structuralTotalDiscount = components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount < 0)
+        .reduce((acc, c) => acc + Math.abs(c.amount), 0);
+    
+    let remainingStructDiscount = structuralTotalDiscount;
+    const effectiveRequirements = allReqs.map(req => {
+        const deduction = Math.min(req.amount, remainingStructDiscount);
+        remainingStructDiscount -= deduction;
+        return { ...req, effectiveAmount: req.amount - deduction };
+    });
+
+    const expectedToDate = effectiveRequirements
+        .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && r.relativeIdx < installmentsExpected))
+        .reduce((acc, r) => acc + r.effectiveAmount, 0);
+
+    const annualNetFee = effectiveRequirements.reduce((acc, r) => acc + r.effectiveAmount, 0);
+
+    const componentPayments = {};
+    let remainingFunds = totalPaid + totalDiscounted;
+
+    effectiveRequirements.forEach(req => {
+        if (remainingFunds <= 0) return;
+        const primaryKey = getComponentKey(req, req.month, f.academicStartYear !== undefined ? academicStartYear : null);
+        const allocation = Math.min(remainingFunds, req.effectiveAmount);
+        if (allocation > 0) {
+            componentPayments[primaryKey] = allocation;
+            remainingFunds -= allocation;
+        }
+    });
+
+    const adjustedExpectedToDate = Math.max(0, expectedToDate - totalDiscounted);
+    const dueNow = Math.max(0, adjustedExpectedToDate - totalPaid);
+    const aheadBy = Math.max(0, totalPaid - adjustedExpectedToDate);
+    const annualAdjustedExpected = Math.max(0, annualNetFee - totalDiscounted);
+    const annualRemaining = Math.max(0, annualAdjustedExpected - totalPaid);
+
+    let status = 'clear';
+    if (dueNow > 0) status = 'arrears';
+    if (aheadBy > 0) status = 'ahead';
+    if (!planDoc.exists || components.length === 0) status = 'unconfigured';
+
+    const financialSummary = {
+        status,
+        dueNow,
+        aheadBy,
+        totalPaid,
+        totalDiscounted,
+        annualRemaining,
+        annualNetFee,
+        expectedToDate: adjustedExpectedToDate,
+        lastCalculated: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    const batch = db.batch();
+    
+    if (planDoc.exists) {
+        batch.update(planRef, {
+            paid: totalPaid,
+            discounted: totalDiscounted,
+            componentPayments: componentPayments,
+            total: annualNetFee,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+    }
+
+    batch.update(studentRef, {
+        financialSummary: financialSummary
+    });
+
+    await batch.commit();
+}
 
 /**
  * Trigger to keep student_fees summary in sync with transactions ledger.
  * Handles Create, Update, and Delete.
  */
-exports.syncStudentFeeTotals = onDocumentWritten("modules/fees_accounting/transactions/{transactionId}", async (event) => {
+exports.syncStudentFeeTotals = onDocumentWritten("students/{studentId}/transactions/{transactionId}", async (event) => {
     const db = admin.firestore();
     const dataBefore = event.data.before ? event.data.before.data() : null;
     const dataAfter = event.data.after ? event.data.after.data() : null;
 
-    const studentId = dataAfter ? dataAfter.studentId : (dataBefore ? dataBefore.studentId : null);
+    const studentId = event.params.studentId || (dataAfter ? dataAfter.studentId : (dataBefore ? dataBefore.studentId : null));
     if (!studentId) return;
 
-    const studentFeeRef = db.collection("modules").doc("fees_accounting").collection("student_fees").doc(studentId);
+    await reconcileStudent(studentId, db);
+});
 
-    return db.runTransaction(async (transaction) => {
-        const sfDoc = await transaction.get(studentFeeRef);
-        if (!sfDoc.exists) return;
+/**
+ * Trigger to keep student_fees summary in sync with the fee plan.
+ * Handles changes to the student's fee plan configuration.
+ */
+exports.syncFeePlanUpdates = onDocumentWritten("students/{studentId}/fee_ledger/plan_details", async (event) => {
+    const db = admin.firestore();
+    const studentId = event.params.studentId;
+    if (!studentId) return;
 
-        const sfData = sfDoc.data();
-        let newPaid = sfData.paid || 0;
-        let compPayments = sfData.componentPayments || {};
+    await reconcileStudent(studentId, db);
+});
 
-        // 1. Revert old transaction if it existed (Update/Delete)
-        if (dataBefore) {
-            newPaid -= (dataBefore.amount || 0);
-            if (dataBefore.breakdown) {
-                Object.entries(dataBefore.breakdown).forEach(([k, v]) => {
-                    compPayments[k] = Math.max(0, (compPayments[k] || 0) - v);
-                });
-            }
-        }
+async function performReconciliation() {
+    const db = admin.firestore();
+    const studentsSnap = await db.collection("students").get();
+    
+    // Process in batches
+    for (let i = 0; i < studentsSnap.docs.length; i += 50) {
+        const batchDocs = studentsSnap.docs.slice(i, i + 50);
+        await Promise.all(batchDocs.map(async (doc) => {
+            await reconcileStudent(doc.id, db);
+        }));
+    }
+}
 
-        // 2. Apply new transaction if it exists (Create/Update)
-        if (dataAfter) {
-            newPaid += (dataAfter.amount || 0);
-            if (dataAfter.breakdown) {
-                Object.entries(dataAfter.breakdown).forEach(([k, v]) => {
-                    compPayments[k] = (compPayments[k] || 0) + v;
-                });
-            }
-        }
-
-        transaction.update(studentFeeRef, {
-            paid: newPaid,
-            componentPayments: compPayments,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            lastTriggerSync: admin.firestore.FieldValue.serverTimestamp()
-        });
-    });
+exports.dailyFeeReconciliation = onSchedule("every day 00:00", async (event) => {
+    await performReconciliation();
 });
 
 /**
  * Trigger to keep staff wallet balances in sync with expenses.
  * Specifically handles source='staff_wallet'.
  */
-exports.syncStaffWalletBalance = onDocumentWritten("modules/fees_accounting/expenses/{expenseId}", async (event) => {
+exports.syncStaffWalletBalance = onDocumentWritten("expenses/{expenseId}", async (event) => {
     const db = admin.firestore();
     const dataBefore = event.data.before ? event.data.before.data() : null;
     const dataAfter = event.data.after ? event.data.after.data() : null;
@@ -70,7 +191,7 @@ exports.syncStaffWalletBalance = onDocumentWritten("modules/fees_accounting/expe
     const staffId = dataAfter ? dataAfter.staffId : (dataBefore ? dataBefore.staffId : null);
     if (!staffId) return;
 
-    const staffRef = db.collection("modules").doc("staff_directory").collection("staff").doc(staffId);
+    const staffRef = db.collection("staff").doc(staffId);
 
     return db.runTransaction(async (transaction) => {
         const staffDoc = await transaction.get(staffRef);
@@ -81,7 +202,6 @@ exports.syncStaffWalletBalance = onDocumentWritten("modules/fees_accounting/expe
         // 1. Revert old record (Update/Delete)
         if (isWalletBefore) {
             const amount = dataBefore.amount || 0;
-            // If it was funding, removing it decreases balance. If it was spend, removing it increases balance.
             if (dataBefore.type === 'funding') walletBalance -= amount;
             else if (dataBefore.type === 'spend') walletBalance += amount;
         }

@@ -3,54 +3,105 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
-    // Helper to check if user is authenticated
     function isAuthenticated() {
       return request.auth != null && request.auth.token.email != null;
     }
 
-    // Get user data from Firestore
     function getUserData() {
-      return firestore.get(/databases/(default)/documents/allowedUsers/$(request.auth.token.email.lower())).data;
+      let email = request.auth.token.email.lower();
+      return firestore.exists(/databases/(default)/documents/allowed_users/$(request.auth.uid))
+        ? firestore.get(/databases/(default)/documents/allowed_users/$(request.auth.uid)).data
+        : (
+            firestore.exists(/databases/(default)/documents/allowed_users/$(email))
+            ? firestore.get(/databases/(default)/documents/allowed_users/$(email)).data
+            : null
+          );
     }
 
-    // Check for admin
     function isAdmin() {
-      return getUserData() != null && getUserData().isAdmin == true;
+      let d = getUserData();
+      return d != null && (d.get('isAdmin', false) == true || d.get('role', '') == 'admin');
     }
 
-    // Check for specific module permission
-    function hasPerm(module, action) {
-      return getUserData() != null && (
-        getUserData().isAdmin == true || 
-        getUserData().permissions[module] == true || 
-        (getUserData().permissions[module] != null && getUserData().permissions[module][action] == true)
+    function isInternalStaff() {
+      let d = getUserData();
+      let role = d != null ? d.get('role', 'staff') : '';
+      return d != null && role != 'student' && role != 'parent' && role != 'unauthorized';
+    }
+
+    function getPerm(module, action) {
+      let d = getUserData();
+      let role = d != null ? d.get('role', 'staff') : 'staff';
+      let isPro = role == 'pro';
+      let isTeach = role == 'teacher';
+      let fallbackPerms = {
+        'staff_directory': {'view': true, 'manage': isPro, 'delete': false},
+        'student_directory': {'view': true, 'manage': isPro, 'delete': false},
+        'attendance': {'view': true, 'mark': isTeach || isPro, 'edit': isPro},
+        'fees_accounting': {'view': false, 'view_dashboard': false, 'config': false, 'ledger': false, 'trans_add': false, 'trans_delete': false, 'exp_own': true, 'exp_all': false, 'wallet_view_own': true, 'wallet_edit_own': false},
+        'whatsapp_sender': {'access': false, 'broadcast': false, 'manage': false},
+        'smart_campus': {'view': isPro, 'control': isPro, 'scenes': false, 'config': false}
+      };
+
+      return d != null && (
+        d.get('isAdmin', false) == true || 
+        d.get('role', '') == 'admin' ||
+        d.get('permissions', {}).get(module, {}).get(action, false) == true ||
+        (
+          firestore.exists(/databases/(default)/documents/permission_groups/$(role))
+            ? firestore.get(/databases/(default)/documents/permission_groups/$(role)).data.get('permissions', {}).get(module, {}).get(action, false) == true
+            : fallbackPerms.get(module, {}).get(action, false) == true
+        )
       );
     }
 
-    // WhatsApp Headers
     match /whatsapp_headers/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (hasPerm('whatsapp_sender', 'manage') || hasPerm('whatsapp_sender', 'broadcast'));
+      allow write: if isAuthenticated() && (getPerm('whatsapp_sender', 'manage') || getPerm('whatsapp_sender', 'broadcast')) && (
+        request.resource == null || (
+          request.resource.size < 5 * 1024 * 1024 &&
+          request.resource.contentType.matches('image/.*')
+        )
+      );
     }
 
-    // Expense Receipts
-    match /expenses/{allPaths=**} {
+    match /expenses/{userEmail}/{allPaths=**} {
       allow read: if isAuthenticated() && (
-        isAdmin() || 
-        hasPerm('fees_accounting', 'view') || 
-        hasPerm('fees_accounting', 'ledger') ||
-        hasPerm('fees_accounting', 'wallet_view_own')
+        (request.auth.token.email.lower() == userEmail.lower()) ||
+        isAdmin() ||
+        isInternalStaff() ||
+        getPerm('fees_accounting', 'exp_own') ||
+        getPerm('fees_accounting', 'exp_all')
       );
       allow write: if isAuthenticated() && (
-        isAdmin() || 
-        hasPerm('fees_accounting', 'trans_add') || 
-        hasPerm('fees_accounting', 'exp_own') || 
-        hasPerm('fees_accounting', 'exp_all') ||
-        hasPerm('fees_accounting', 'wallet_view_own')
+        (request.auth.token.email.lower() == userEmail.lower()) ||
+        isAdmin() ||
+        isInternalStaff() ||
+        getPerm('fees_accounting', 'exp_own') ||
+        getPerm('fees_accounting', 'exp_all')
+      ) && (
+        request.resource == null || (
+          request.resource.size < 10 * 1024 * 1024 &&
+          request.resource.contentType.matches('image/.*|application/pdf')
+        )
+      );
+    }
+    
+    // Legacy support for root expenses (if any)
+    match /expenses/{allPaths=**} {
+       allow read, write: if isAuthenticated() && isAdmin();
+    }
+
+    match /fees/staff_wallet/{allPaths=**} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all') || getPerm('fees_accounting', 'exp_own'));
+      allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all') || getPerm('fees_accounting', 'exp_own')) && (
+        request.resource == null || (
+          request.resource.size < 10 * 1024 * 1024 &&
+          request.resource.contentType.matches('image/.*|application/pdf')
+        )
       );
     }
 
-    // Default: Admins only for everything else
     match /{allPaths=**} {
       allow read, write: if isAuthenticated() && isAdmin();
     }

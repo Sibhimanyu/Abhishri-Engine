@@ -1,8 +1,7 @@
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 
-const STAFF_MODULE = admin.firestore().collection("modules").doc("staff_directory");
-const ATTENDANCE_CONFIG = STAFF_MODULE.collection("config").doc("attendance");
+const ATTENDANCE_CONFIG = admin.firestore().collection("configs").doc("attendance");
 
 function requireAuth(request) {
   if (!request.auth?.uid || !request.auth?.token?.email) {
@@ -11,7 +10,7 @@ function requireAuth(request) {
 }
 
 async function getAllowedUser(email) {
-  const snap = await admin.firestore().collection("allowedUsers").doc(email.toLowerCase()).get();
+  const snap = await admin.firestore().collection("allowed_users").doc(email.toLowerCase()).get();
   if (!snap.exists) throw new HttpsError("permission-denied", "User is not authorized.");
   return snap.data();
 }
@@ -82,7 +81,7 @@ function getTimeKey(timezone) {
 }
 
 async function getOwnStaffProfile(email) {
-  const snap = await STAFF_MODULE.collection("staff")
+  const snap = await admin.firestore().collection("staff")
       .where("email", "==", email.toLowerCase())
       .limit(1)
       .get();

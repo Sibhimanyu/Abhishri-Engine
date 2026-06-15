@@ -3,44 +3,227 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check if user is authenticated
+    // --- Helper Functions ---
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper to get staff email by ID (used for wallet security)
-    function getStaffEmail(staffId) {
-      return get(/databases/$(database)/documents/modules/staff_directory/staff/$(staffId)).data.email.lower();
+    function getUserDoc() {
+      return exists(/databases/$(database)/documents/allowed_users/$(request.auth.uid)) 
+        ? get(/databases/$(database)/documents/allowed_users/$(request.auth.uid)).data 
+        : (
+            (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_users/$(request.auth.token.email.lower())))
+            ? get(/databases/$(database)/documents/allowed_users/$(request.auth.token.email.lower())).data
+            : (
+                (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_users/$(request.auth.token.email)))
+                ? get(/databases/$(database)/documents/allowed_users/$(request.auth.token.email)).data
+                : null
+              )
+          );
     }
 
-    // Rules for the new modular structure
-    match /modules/whatsapp_sender {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
-      
-      match /config/{configId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
-        allow write: if isAuthenticated() && isAdmin();
-      }
-      
-      match /lists/{listId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'manage'));
-        
-        match /members/{memberId} {
-          allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
-          allow write: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'manage'));
-        }
-      }
-      
-      match /history/{historyId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'manage'));
-      }
+    function isAdmin() {
+      let doc = getUserDoc();
+      return isAuthenticated() && doc != null && (doc.get('isAdmin', false) == true || doc.get('role', '') == 'admin');
+    }
 
-      match /templates/{templateId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access'));
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'manage'));
-      }
+    function getRole() {
+      let doc = getUserDoc();
+      return (doc != null && doc.get('role', null) != null) ? doc.get('role', 'staff') : 'staff';
+    }
+
+    function isInternalStaff() {
+      let doc = getUserDoc();
+      let role = doc != null ? doc.get('role', 'staff') : '';
+      return doc != null && role != 'student' && role != 'parent' && role != 'unauthorized';
+    }
+
+    function isOwnEmail(field) {
+      return request.auth.token.email != null && field.lower() == request.auth.token.email.lower();
+    }
+
+    function hasAnyPerm(module) {
+      let doc = getUserDoc();
+      return doc != null && (doc.get('isAdmin', false) == true || doc.get('permissionGroup', null) != null);
+    }
+
+    function getPerm(module, action) {
+      let doc = getUserDoc();
+      let hasDirectPerm = doc != null && doc.get('permissions', null) != null && doc.get('permissions', {}).get(module, {}).get(action, false) == true;
+      let role = (doc != null && doc.get('role', null) != null) ? doc.get('role', 'staff') : 'staff';
+      let pGroup = /databases/$(database)/documents/permission_groups/$(role);
+      
+      let isPro = role == 'pro';
+      let isTeach = role == 'teacher';
+      let fallbackPerms = {
+        'staff_directory': {'view': true, 'manage': isPro, 'delete': false},
+        'student_directory': {'view': true, 'manage': isPro, 'delete': false},
+        'attendance': {'view': true, 'mark': isTeach || isPro, 'edit': isPro},
+        'fees_accounting': {'view': false, 'view_dashboard': false, 'config': false, 'ledger': false, 'trans_add': false, 'trans_delete': false, 'exp_own': true, 'exp_all': false, 'wallet_view_own': true, 'wallet_edit_own': false},
+        'whatsapp_sender': {'access': false, 'broadcast': false, 'manage': false},
+        'smart_campus': {'view': isPro, 'control': isPro, 'scenes': false, 'config': false}
+      };
+      let hasFallback = fallbackPerms.get(module, {}).get(action, false) == true;
+
+      return doc != null && (
+        doc.get('isAdmin', false) == true || 
+        hasDirectPerm || 
+        (
+          exists(pGroup) ? get(pGroup).data.get('permissions', {}).get(module, {}).get(action, false) == true : hasFallback
+        )
+      );
+    }
+
+    function getStaffEmail(staffId) {
+      return exists(/databases/$(database)/documents/allowed_users/$(staffId)) ? get(/databases/$(database)/documents/allowed_users/$(staffId)).data.get('email', '').lower() : '';
+    }
+
+    function isParentOf(studentId) {
+      let email = request.auth.token.email;
+      let inRoot = exists(/databases/$(database)/documents/students/$(studentId));
+      let inStudent = exists(/databases/$(database)/documents/modules/student_directory/students/$(studentId));
+      let inPreschool = exists(/databases/$(database)/documents/modules/preschool_directory/students/$(studentId));
+      let inTuition = exists(/databases/$(database)/documents/modules/tuition_directory/students/$(studentId));
+      
+      let doc = inRoot ? get(/databases/$(database)/documents/students/$(studentId)) :
+                inStudent ? get(/databases/$(database)/documents/modules/student_directory/students/$(studentId)) :
+                inPreschool ? get(/databases/$(database)/documents/modules/preschool_directory/students/$(studentId)) :
+                inTuition ? get(/databases/$(database)/documents/modules/tuition_directory/students/$(studentId)) :
+                null;
+                
+      return doc != null && (
+        doc.data.get('studentEmail', '') == email ||
+        doc.data.get('motherEmail', '')  == email ||
+        doc.data.get('fatherEmail', '')  == email
+      );
+    }
+
+    // --- System Configurations & Aggregates ---
+    match /configs/{configId} {
+      allow read: if isAuthenticated() && (
+        configId != 'whatsapp_main' || 
+        isAdmin() || 
+        getPerm('whatsapp_sender', 'access') || 
+        getPerm('whatsapp_sender', 'manage') || 
+        getPerm('whatsapp_sender', 'broadcast')
+      );
+      allow write: if isAdmin() || (
+        configId == 'whatsapp_main' && getPerm('whatsapp_sender', 'manage')
+      );
+    }
+    
+    match /attendance_aggregates/{aggregateId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || getPerm('attendance', 'mark') || getPerm('attendance', 'edit');
+    }
+
+    // --- Flattened Root Collections (New Architecture) ---
+    match /students/{studentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('student_directory', 'view') ||
+        getPerm('fees_accounting', 'ledger') || getPerm('fees_accounting', 'view') ||
+        getPerm('attendance', 'view') || getPerm('attendance', 'mark') || getPerm('attendance', 'edit') ||
+        (resource != null && (
+          resource.data.studentEmail == request.auth.token.email ||
+          resource.data.motherEmail  == request.auth.token.email ||
+          resource.data.fatherEmail  == request.auth.token.email
+        ))
+      );
+      allow create, update: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'manage'));
+      allow delete: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'delete'));
+    }
+
+    match /staff/{staffId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        getPerm('staff_directory', 'view') || 
+        getPerm('fees_accounting', 'wallet_view_own') || 
+        getPerm('fees_accounting', 'exp_own') ||
+        getPerm('attendance', 'view') || getPerm('attendance', 'mark') || getPerm('attendance', 'edit') ||
+        (resource != null && isOwnEmail(resource.data.get('email', '')))
+      );
+      allow write: if isAdmin();
+    }
+
+    match /{path=**}/transactions/{id} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger'));
+    }
+
+    match /students/{studentId}/transactions/{id} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(studentId));
+      allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
+      allow update: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete') || (getPerm('fees_accounting', 'trans_add') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isVoided'])));
+      allow delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
+    }
+
+    match /students/{studentId}/fee_ledger/{id} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(studentId));
+      allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
+    }
+
+    match /expenses/{id} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        getPerm('fees_accounting', 'exp_all') || 
+        (resource != null && getPerm('fees_accounting', 'exp_own') && isOwnEmail(resource.data.get('createdBy', ''))) || 
+        (resource != null && isInternalStaff() && (
+          isOwnEmail(resource.data.get('createdBy', '')) ||
+          isOwnEmail(resource.data.get('staffEmail', '')) ||
+          (resource.data.get('staffId', '') != '' && getStaffEmail(resource.data.get('staffId', '')) == request.auth.token.email.lower())
+        )) ||
+        (resource != null && getPerm('fees_accounting', 'wallet_view_own') && (
+          isOwnEmail(resource.data.get('createdBy', '')) || 
+          isOwnEmail(resource.data.get('staffEmail', '')) || 
+          (resource.data.get('staffId', '') != '' && getStaffEmail(resource.data.get('staffId', '')) == request.auth.token.email.lower())
+        ))
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        getPerm('fees_accounting', 'exp_all') || 
+        getPerm('fees_accounting', 'exp_own') || 
+        getPerm('fees_accounting', 'wallet_edit_own') ||
+        (isInternalStaff() && isOwnEmail(request.resource.data.get('createdBy', '')))
+      );
+      allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all') || getPerm('fees_accounting', 'wallet_edit_own'));
+    }
+
+    match /fee_plans/{id} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'config'));
+      allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
+    }
+
+    match /student_fees/{id} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(id));
+      allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
+    }
+
+    match /collections/{id} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || (resource != null && isParentOf(resource.data.get('studentId', ''))));
+      allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
+      allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete') || getPerm('fees_accounting', 'trans_add'));
+    }
+
+    match /salaries/{id} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_view') || (getPerm('fees_accounting', 'wallet_view_own') && request.auth.token.email.lower() == getStaffEmail(id)));
+      allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_process')); 
+    }
+
+    match /staff_wallets/{id} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view'));
+      allow write: if isAuthenticated() && isAdmin();
+    }
+
+    match /permission_groups/{role} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+
+
+    match /configs/whatsapp_main/templates/{templateId} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access') || getPerm('whatsapp_sender', 'manage') || getPerm('whatsapp_sender', 'broadcast'));
+      allow write: if isAdmin() || getPerm('whatsapp_sender', 'manage');
     }
 
     // --- Audit Logs (System Wide) ---
@@ -49,219 +232,36 @@ service cloud.firestore {
       allow create: if isAuthenticated(); 
     }
 
-    // --- Student Directory Module ---
-    match /modules/student_directory {
-      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('student_directory') || getPerm('fees_accounting', 'exp_own'));
-      
-      match /students/{studentId} {
-        allow read: if isAuthenticated() && (
-          isAdmin() ||
-          getPerm('student_directory', 'view') ||
-          // Students and parents can read their own linked record
-          resource.data.studentEmail == request.auth.token.email ||
-          resource.data.motherEmail  == request.auth.token.email ||
-          resource.data.fatherEmail  == request.auth.token.email
-        );
-        allow create: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'add'));
-        allow update: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'edit'));
-        allow delete: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'delete'));
-      }
 
-      match /performance_logs/{logId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'view'));
-        allow create: if isAuthenticated() && (isAdmin() || getPerm('student_performance', 'log'));
-        allow delete: if isAdmin();
-      }
-    }
-
-    // --- Staff Directory Module ---
-    match /modules/staff_directory {
-      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('staff_directory') || getPerm('fees_accounting', 'wallet_view_own') || getPerm('fees_accounting', 'exp_own'));
-      
-      match /staff/{staffId} {
-        allow read: if isAuthenticated() && (
-          isAdmin() || 
-          getPerm('staff_directory', 'view') || 
-          resource.data.email.lower() == request.auth.token.email.lower()
-        );
-        allow create: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'add'));
-        allow update: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'edit'));
-        allow delete: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'delete'));
-      }
-
-      match /performance_logs/{logId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'view'));
-        allow create: if isAuthenticated() && (isAdmin() || getPerm('staff_directory', 'pulse'));
-        allow delete: if isAdmin();
-      }
-
-      match /config/{configId} {
-        allow read: if isAuthenticated() && isAdmin();
-        allow write: if isAuthenticated() && isAdmin();
-      }
-    }
-
-    match /modules/smart_campus {
-      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('smart_campus'));
-      
-      match /areas/{areaId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'view'));
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'control'));
-      }
-      match /scenes/{sceneId} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'view'));
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'scenes'));
-      }
-      match /config/{id} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'view'));
-        allow write: if isAuthenticated() && isAdmin();
-      }
-      match /logs/{id} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('smart_campus', 'view'));
-        allow write: if isAuthenticated();
-      }
-    }
-
-    // --- Fees & Accounting Module ---
-    match /modules/fees_accounting {
-      allow read: if isAuthenticated() && (isAdmin() || hasAnyPerm('fees_accounting'));
-      
-      match /collections/{id} {
-        allow read: if isAuthenticated() && (
-          isAdmin() ||
-          getPerm('fees_accounting', 'view') ||
-          // Student/parent can read their own fee transactions via student directory email match
-          get(/databases/$(database)/documents/modules/student_directory/students/$(resource.data.studentId)).data.studentEmail == request.auth.token.email ||
-          get(/databases/$(database)/documents/modules/student_directory/students/$(resource.data.studentId)).data.motherEmail  == request.auth.token.email ||
-          get(/databases/$(database)/documents/modules/student_directory/students/$(resource.data.studentId)).data.fatherEmail  == request.auth.token.email
-        );
-        allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
-        allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
-      }
-      match /student_fees/{id} {
-        allow read: if isAuthenticated() && (
-          isAdmin() ||
-          getPerm('fees_accounting', 'ledger') ||
-          // Student/parent can read their own fee plan via student directory email match
-          get(/databases/$(database)/documents/modules/student_directory/students/$(id)).data.studentEmail == request.auth.token.email ||
-          get(/databases/$(database)/documents/modules/student_directory/students/$(id)).data.motherEmail  == request.auth.token.email ||
-          get(/databases/$(database)/documents/modules/student_directory/students/$(id)).data.fatherEmail  == request.auth.token.email
-        );
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
-      }
-      match /transactions/{id} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
-        allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
-        allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
-      }
-      match /plans/{id} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
-      }
-      match /expenses/{id} {
-        allow read: if isAuthenticated() && (
-          isAdmin() || 
-          getPerm('fees_accounting', 'exp_all') || 
-          (getPerm('fees_accounting', 'exp_own') && resource.data.createdBy == request.auth.token.email.lower()) ||
-          (getPerm('fees_accounting', 'wallet_view_own') && (
-            resource.data.createdBy == request.auth.token.email.lower() ||
-            (resource.data.staffEmail != null && resource.data.staffEmail == request.auth.token.email.lower()) ||
-            (resource.data.staffId != null && getStaffEmail(resource.data.staffId) == request.auth.token.email.lower())
-          ))
-        );
-        allow create: if isAuthenticated() && (
-          isAdmin() || 
-          getPerm('fees_accounting', 'exp_all') || 
-          getPerm('fees_accounting', 'exp_own')
-        ) && request.resource.data.createdBy == request.auth.token.email.lower() && request.resource.data.source == 'office';
-        
-        allow update, delete: if isAuthenticated() && (
-          isAdmin() || 
-          getPerm('fees_accounting', 'exp_all') ||
-          (getPerm('fees_accounting', 'wallet_edit_own') && resource.data.createdBy == request.auth.token.email.lower() && resource.data.source == 'staff_wallet')
-        );
-      }
-
-      match /salaries/{id} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_view'));
-        allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_process'));
-      }
-
-      match /{allPaths=**} {
-        allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view'));
-        allow write: if isAuthenticated() && isAdmin();
-      }
-    }
-
-    // --- Permission Groups (editable by admins) ---
-    match /permissionGroups/{id} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    // --- Pending Users (unknown sign-ins waiting for admin review) ---
-    match /pendingUsers/{email} {
-      allow create, update: if request.auth != null && request.auth.token.email.lower() == email.lower();
-      allow read, delete: if isAdmin();
-    }
-
-    // --- Student Email Index (legacy Firestore version — now cleared by Rebuild Index) ---
-    match /studentEmailIndex/{email} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-
-    // --- Global Collections ---
-    match /allowedUsers/{email} {
-      // Allow any authenticated user to check their own status
-      allow read: if request.auth != null && (request.auth.token.email.lower() == email.lower() || isAdmin());
-      
-      // Allow creation if:
-      // 1. User is auto-provisioning themselves from an allowed domain (RESTRICTED)
-      // 2. An existing admin is manually authorizing a new email
-      allow create: if request.auth != null && (
-        (
-          request.auth.token.email.lower() == email.lower() && 
-          email.lower().matches('.*@abhishri\\.edu\\.in') &&
-          // SECURITY FIX: Prevent self-elevation
-          request.resource.data.isAdmin == false &&
-          // SECURITY FIX: Ensure they only get baseline permissions
-          request.resource.data.permissions.smart_campus.control == false &&
-          request.resource.data.permissions.whatsapp_sender.manage == false
-        ) || isAdmin()
+    
+    // --- Users (Unified Staff & Auth) ---
+    match /allowed_users/{id} {
+      allow read: if isAuthenticated() && (
+        id == request.auth.uid || 
+        id == request.auth.token.email ||
+        id == request.auth.token.email.lower() ||
+        (resource != null && resource.data.get('email', '') != '' && resource.data.get('email', '').lower() == request.auth.token.email.lower()) ||
+        isAdmin() || 
+        getPerm('staff_directory', 'view') || 
+        getPerm('fees_accounting', 'wallet_view_own') || 
+        getPerm('fees_accounting', 'exp_own')
       );
-
-      // Users can update their own sign-in metadata; admins can update everything
-      allow update: if (
-        // Allow self-update of sign-in metadata only
-        (request.auth.token.email.lower() == email.lower() &&
-         request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['displayName', 'photoURL', 'lastSignIn'])) ||
-        // Admins can update anything (with lockout protection)
-        (isAdmin() && (
-          resource.data.isAdmin == request.resource.data.isAdmin ||
-          request.auth.token.email.lower() != email.lower()
-        ))
+      allow write: if isAdmin() || (
+        (getPerm('staff_directory', 'manage') || getPerm('staff_directory', 'add')) && 
+        (!request.resource.data.keys().hasAll(['isAdmin']) || request.resource.data.isAdmin == false)
       );
-      allow delete: if isAdmin() && request.auth.token.email.lower() != email.lower();
+      allow delete: if isAdmin() || getPerm('staff_directory', 'delete');
     }
-
-    // Helper for Admin check
-    function isAdmin() {
-      return request.auth != null && 
-        get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.isAdmin == true;
+    
+    // --- Unauthorized Logins ---
+    match /unauthorized_logins/{id} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if isAdmin();
     }
-
-    // Helper for granular permission check
-    function getPerm(module, action) {
-      let p = get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.permissions[module];
-      return p == true || (p != null && p[action] == true);
-    }
-
-    // Helper to check if any permission exists for a module
-    function hasAnyPerm(module) {
-      let p = get(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email.lower())).data.permissions[module];
-      return p == true || (p != null && p.keys().size() > 0);
+    
+    // Default fallback
+    match /{document=**} {
+      allow read, write: if isAdmin();
     }
   }
 }

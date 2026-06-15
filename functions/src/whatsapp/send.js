@@ -29,19 +29,52 @@ function deepSanitize(obj, isInsideArray = false) {
   return obj;
 }
 
+async function getAllowedUser(auth) {
+  if (!auth?.uid) return null;
+  const db = admin.firestore();
+  const uidDoc = await db.collection("allowed_users").doc(auth.uid).get();
+  if (uidDoc.exists) return uidDoc.data();
+  const email = auth.token?.email?.toLowerCase();
+  if (email) {
+    const emailDoc = await db.collection("allowed_users").doc(email).get();
+    if (emailDoc.exists) return emailDoc.data();
+  }
+  return null;
+}
+
+function hasWhatsAppAccess(user) {
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  const wa = user.permissions?.whatsapp_sender;
+  if (wa?.access || wa?.manage || wa?.broadcast) return true;
+  return false;
+}
+
 async function verifyAdmin(auth) {
   if (!auth || !auth.uid || !auth.token.email) throw new HttpsError("unauthenticated", "User must be logged in.");
-  const email = auth.token.email.toLowerCase();
-  const userDoc = await admin.firestore().collection("allowed_users").doc(email).get();
-  if (!userDoc.exists || (!userDoc.data().isAdmin && !userDoc.data().permissions?.whatsapp_sender)) {
-    throw new HttpsError("permission-denied", "User does not have required permissions.");
+  const user = await getAllowedUser(auth);
+  if (!hasWhatsAppAccess(user)) {
+    const role = user?.role || "staff";
+    const roleDoc = await admin.firestore().collection("permission_groups").doc(role).get();
+    const roleWa = roleDoc.data()?.permissions?.whatsapp_sender;
+    if (!roleWa?.access && !roleWa?.manage && !roleWa?.broadcast) {
+      throw new HttpsError("permission-denied", "User does not have required permissions.");
+    }
   }
 }
 
 async function getWhatsAppConfig() {
-  const snapshot = await admin.firestore().collection("whatsapp_config").doc("main").get();
+  const snapshot = await admin.firestore().collection("configs").doc("whatsapp_main").get();
   const config = snapshot.data();
-  if (!config || !config.apiKey) throw new HttpsError("failed-precondition", "WhatsApp config missing.");
+  if (!config.apiKey || !config.wabaId || !config.phoneNumberId) {
+    throw new HttpsError("failed-precondition", "WhatsApp config is incomplete");
+  }
+  
+  // Sanitize to prevent accidental whitespace or quotes from copy-pasting
+  config.apiKey = String(config.apiKey).trim().replace(/^["']|["']$/g, '');
+  config.wabaId = String(config.wabaId).trim().replace(/^["']|["']$/g, '');
+  config.phoneNumberId = String(config.phoneNumberId).trim().replace(/^["']|["']$/g, '');
+  
   return config;
 }
 
@@ -50,15 +83,15 @@ exports.syncWhatsAppTemplates = onCall(async (request) => {
   const config = await getWhatsAppConfig();
   try {
     // New dlt_manager endpoint for reliable message_id
-    const url = `https://api.fast2sms.com/dlt_manager/whatsapp?authorization=${encodeURIComponent(config.apiKey)}&type=template`;
+    const url = `https://www.fast2sms.com/dev/dlt_manager/whatsapp?authorization=${encodeURIComponent(config.apiKey)}&type=template`;
     const response = await axios.get(url, { headers: { authorization: config.apiKey } });
-    if (!response.data || !response.data.return) {
+    if (!response.data || (!response.data.return && !response.data.success)) {
       throw new Error(response.data?.message || "Failed to fetch templates from Fast2SMS");
     }
 
     const fs = admin.firestore();
     const batch = fs.batch();
-    const coll = fs.collection("whatsapp_templates");
+    const coll = fs.collection("configs").doc("whatsapp_main").collection("templates");
     let count = 0;
 
     for (const item of response.data.data) {
@@ -79,8 +112,9 @@ exports.syncWhatsAppTemplates = onCall(async (request) => {
     if (count > 0) await batch.commit();
     return { success: true, count };
   } catch (error) {
-    logger.error("Sync Error:", error);
-    throw new HttpsError("internal", error.message);
+    logger.error("Sync Error:", error.response ? error.response.data : error.message);
+    const msg = error.response?.data?.message || error.message;
+    throw new HttpsError("unknown", msg);
   }
 });
 
@@ -93,7 +127,7 @@ exports.checkWhatsAppWallet = onCall(async (request) => {
     });
     return response.data;
   } catch (error) { 
-    throw new HttpsError("internal", error.response?.data?.message || error.message); 
+    throw new HttpsError("unknown", error.response?.data?.message || error.message); 
   }
 });
 
@@ -133,17 +167,17 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
     let tData = {};
     if (templateName) {
       // Try exact document ID match first
-      const templateSnap = await fs.collection("whatsapp_templates").doc(templateName).get();
+      const templateSnap = await fs.collection("configs").doc("whatsapp_main").collection("templates").doc(templateName).get();
       if (templateSnap.exists) {
         tData = templateSnap.data();
       } else {
         // Fallback: search for a template with this name in its 'name' or 'template_name' field
-        const querySnap = await fs.collection("whatsapp_templates")
+        const querySnap = await fs.collection("configs").doc("whatsapp_main").collection("templates")
           .where("template_name", "==", templateName).limit(1).get();
         if (!querySnap.empty) {
           tData = querySnap.docs[0].data();
         } else {
-          const querySnap2 = await fs.collection("whatsapp_templates")
+          const querySnap2 = await fs.collection("configs").doc("whatsapp_main").collection("templates")
             .where("name", "==", templateName).limit(1).get();
           if (!querySnap2.empty) tData = querySnap2.docs[0].data();
         }

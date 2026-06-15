@@ -15,7 +15,7 @@ async function processIncoming(db, report) {
   const from = report.from;
   const type = report.message_type || report.type || "text";
   const timestamp = (report.timestamp > 10000000000 ? report.timestamp : report.timestamp * 1000);
-  const conversationId = sanitizeKey(from);
+  const conversationId = String(from).replace(/[^\d]/g, "");
 
   let textBody = "";
   let previewText = "";
@@ -46,7 +46,7 @@ async function processIncoming(db, report) {
     previewText = `📎 ${type} message`;
   }
 
-  const conversationRef = db.ref(`modules/whatsapp_sender/conversations/${conversationId}`);
+  const conversationRef = db.ref(`whatsapp_conversations/${conversationId}`);
   const existingCheck = await conversationRef.child("messages").orderByChild("messageId").equalTo(messageId).once("value");
 
   if (!existingCheck.exists()) {
@@ -86,17 +86,17 @@ async function processStatus(db, fs, report) {
   // New efficient lookup:
   // 1. Find the broadcastId from the batchId (Fast2SMS request ID)
   let broadcastId = null;
-  const batchMapSnap = await db.ref(`modules/whatsapp_sender/batch_map/${batchId}`).once("value");
+  const batchMapSnap = await db.ref(`whatsapp_batch_map/${batchId}`).once("value");
   if (batchMapSnap.exists()) {
     broadcastId = batchMapSnap.val();
   } else if (metaMessageId) {
     // Fallback: try mapping from metaMessageId if possible (requires storing it in batch_map too, but let's try lookup)
-    const metaMapSnap = await db.ref(`modules/whatsapp_sender/batch_map/${metaMessageId}`).once("value");
+    const metaMapSnap = await db.ref(`whatsapp_batch_map/${metaMessageId}`).once("value");
     if (metaMapSnap.exists()) broadcastId = metaMapSnap.val();
   }
 
   if (broadcastId) {
-    const broadcastLogsRef = db.ref(`modules/whatsapp_sender/broadcast_logs/${broadcastId}`);
+    const broadcastLogsRef = db.ref(`whatsapp_broadcast_logs/${broadcastId}`);
     const incomingRecipient = recipientPhone ? String(recipientPhone).replace(/[^\d]/g, "") : null;
     
     // Efficiently find the specific recipient(s) within the broadcast
@@ -161,13 +161,13 @@ async function processStatus(db, fs, report) {
           if (metaMessageId && metaMessageId !== logData.messageId) {
             rtdbUpdate.metaMessageId = metaMessageId;
             // Also map the metaMessageId to this broadcastId for future webhooks
-            updates.push(db.ref(`modules/whatsapp_sender/batch_map/${metaMessageId}`).set(broadcastId));
+            updates.push(db.ref(`whatsapp_batch_map/${metaMessageId}`).set(broadcastId));
           }
           
           updates.push(logRef.update(rtdbUpdate));
 
           // Update aggregated stats in Firestore history
-          const historyRecordRef = fs.collection("modules").doc("whatsapp_sender").collection("history").doc(broadcastId);
+          const historyRecordRef = fs.collection("whatsapp_history").doc(broadcastId);
           const historyUpdate = {};
           if (status === "sent" && currentStatus === "processing") historyUpdate.sentCount = admin.firestore.FieldValue.increment(1);
           else if (status === "delivered") {
@@ -183,8 +183,8 @@ async function processStatus(db, fs, report) {
           if (Object.keys(historyUpdate).length > 0) updates.push(historyRecordRef.update(historyUpdate));
 
           // Update conversation record
-          const conversationId = sanitizeKey(logData.recipientId);
-          const messagesRef = db.ref(`modules/whatsapp_sender/conversations/${conversationId}/messages`);
+          const conversationId = String(logData.recipientId).replace(/[^\d]/g, "");
+          const messagesRef = db.ref(`whatsapp_conversations/${conversationId}/messages`);
           
           updates.push(messagesRef.once("value").then(convoSnap => {
             const msgPromises = [];
@@ -205,7 +205,7 @@ async function processStatus(db, fs, report) {
     }
   } else {
     // Legacy search for old structure logs if still coming in
-    const logsRef = db.ref(`modules/whatsapp_sender/broadcast_logs`);
+    const logsRef = db.ref(`whatsapp_broadcast_logs`);
     let logQuery = await logsRef.orderByChild("messageId").equalTo(batchId).once("value");
     if (!logQuery.exists() && metaMessageId) {
       logQuery = await logsRef.orderByChild("messageId").equalTo(metaMessageId).once("value");
@@ -266,7 +266,7 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
 
   try {
     const db = admin.database(), fs = admin.firestore(), body = request.body;
-    await db.ref("modules/whatsapp_sender/debug_webhooks").push({ timestamp: admin.database.ServerValue.TIMESTAMP, payload: body });
+    await db.ref("whatsapp_debug_webhooks").push({ timestamp: admin.database.ServerValue.TIMESTAMP, payload: body });
 
     if (body.whatsapp_reports && Array.isArray(body.whatsapp_reports)) {
       for (const report of body.whatsapp_reports) {
