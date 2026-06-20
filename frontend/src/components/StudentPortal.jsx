@@ -4,7 +4,8 @@ import { ref, get } from 'firebase/database';
 import { signOut } from 'firebase/auth';
 import { firestore, rtdb, auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Calendar, Wallet, CheckCircle, XCircle, Clock, Moon, Sun, MinusCircle } from 'lucide-react';
+import { LogOut, Calendar, Wallet, CheckCircle, XCircle, Clock, Moon, Sun, MinusCircle, CalendarDays } from 'lucide-react';
+import SchoolCalendar from './SchoolCalendar';
 
 export default function StudentPortal() {
   const { currentUser, userData } = useAuth();
@@ -15,6 +16,7 @@ export default function StudentPortal() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [activePortalTab, setActivePortalTab] = useState('overview');
 
   const isStudent = userData?.dashboardType === 'student' || userData?.role === 'student';
 
@@ -254,69 +256,109 @@ export default function StudentPortal() {
           </div>
         </div>
 
-        {/* Extended Parent View Components */}
-        {!isStudent && (
+        {/* Navigation Tabs */}
+        <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-2xl border border-brand-card-border/40">
+          <button 
+            onClick={() => setActivePortalTab('overview')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 text-xs font-black uppercase tracking-wider rounded-xl transition-all ${
+              activePortalTab === 'overview' 
+                ? 'bg-brand-card text-brand-primary shadow-sm border border-brand-card-border/40 font-bold' 
+                : 'text-brand-text-dim hover:text-brand-text'
+            }`}
+          >
+            Overview
+          </button>
+          <button 
+            onClick={() => setActivePortalTab('calendar')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 text-xs font-black uppercase tracking-wider rounded-xl transition-all ${
+              activePortalTab === 'calendar' 
+                ? 'bg-brand-card text-brand-primary shadow-sm border border-brand-card-border/40 font-bold' 
+                : 'text-brand-text-dim hover:text-brand-text'
+            }`}
+          >
+            <CalendarDays size={14} /> School Calendar
+          </button>
+        </div>
+
+        {activePortalTab === 'overview' ? (
           <>
-            {/* Attendance Calendar */}
-            <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-brand-text uppercase tracking-widest text-xs">28-Day Heatmap</h3>
-                <span className="text-2xl font-black text-brand-text">{attPct}%</span>
-              </div>
-              <div className="flex justify-between mb-2">
-                <div className="text-center"><span className="text-green-500 font-bold text-lg">{presentCount}</span><p className="text-[10px] text-brand-text-dim uppercase font-bold">Present</p></div>
-                <div className="text-center"><span className="text-red-500 font-bold text-lg">{absentCount}</span><p className="text-[10px] text-brand-text-dim uppercase font-bold">Absent</p></div>
-                <div className="text-center"><span className="text-yellow-500 font-bold text-lg">{lateCount}</span><p className="text-[10px] text-brand-text-dim uppercase font-bold">Late</p></div>
-              </div>
-              {renderCalendar()}
-            </div>
-
-            {/* Fee Breakdown */}
-            {fees && fees.components && (
-              <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm">
-                <h3 className="font-bold text-brand-text uppercase tracking-widest text-xs mb-6">Annual Plan Breakdown</h3>
-                <div className="space-y-3 mb-6">
-                  {fees.components.filter(c => c.amount > 0).map((c, i) => (
-                    <div key={i} className="flex justify-between items-center border-b border-brand-card-border pb-3 last:border-0 last:pb-0">
-                      <span className="text-sm font-semibold text-brand-text">{c.name}</span>
-                      <div className="text-right">
-                        <span className="text-sm font-bold text-brand-text">₹{(c.amount * (c.frequency === 'monthly' ? fees.billingCycle : 1)).toLocaleString()}</span>
-                        <p className="text-[10px] text-brand-text-dim">{c.frequency === 'monthly' ? `₹${c.amount}/mo × ${fees.billingCycle}` : 'One-time'}</p>
-                      </div>
-                    </div>
-                  ))}
+            {/* Extended Parent View Components */}
+            {!isStudent && (
+              <>
+                {/* Attendance Calendar */}
+                <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm">
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="font-bold text-brand-text uppercase tracking-widest text-xs">28-Day Heatmap</h3>
+                    <span className="text-2xl font-black text-brand-text">{attPct}%</span>
+                  </div>
+                  <div className="flex justify-between mb-2">
+                    <div className="text-center"><span className="text-green-500 font-bold text-lg">{presentCount}</span><p className="text-[10px] text-brand-text-dim uppercase font-bold">Present</p></div>
+                    <div className="text-center"><span className="text-red-500 font-bold text-lg">{absentCount}</span><p className="text-[10px] text-brand-text-dim uppercase font-bold">Absent</p></div>
+                    <div className="text-center"><span className="text-yellow-500 font-bold text-lg">{lateCount}</span><p className="text-[10px] text-brand-text-dim uppercase font-bold">Late</p></div>
+                  </div>
+                  {renderCalendar()}
                 </div>
-                <div className="bg-black/5 dark:bg-white/5 rounded-xl p-4 flex justify-between items-center">
-                  <span className="font-bold text-brand-text">Total Expected</span>
-                  <span className="font-black text-xl text-brand-text">₹{fees.totalAnnual.toLocaleString()}</span>
-                </div>
-              </div>
-            )}
 
-            {/* Recent Payments */}
-            {transactions.length > 0 && (
-              <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm">
-                <h3 className="font-bold text-brand-text uppercase tracking-widest text-xs mb-6">Recent Payments</h3>
-                <div className="space-y-4">
-                  {transactions.map(tx => {
-                    const date = tx.timestamp?.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp || Date.now());
-                    return (
-                      <div key={tx.id} className="flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-green-500/10 text-green-500 flex items-center justify-center"><CheckCircle size={18}/></div>
-                          <div>
-                            <p className="text-sm font-bold text-brand-text">{tx.description || tx.method || 'Payment'}</p>
-                            <p className="text-xs text-brand-text-dim">{date.toLocaleDateString()}</p>
+                {/* Fee Breakdown */}
+                {fees && fees.components && (
+                  <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm">
+                    <h3 className="font-bold text-brand-text uppercase tracking-widest text-xs mb-6">Annual Plan Breakdown</h3>
+                    <div className="space-y-3 mb-6">
+                      {fees.components.filter(c => c.amount > 0).map((c, i) => (
+                        <div key={i} className="flex justify-between items-center border-b border-brand-card-border pb-3 last:border-0 last:pb-0">
+                          <span className="text-sm font-semibold text-brand-text">{c.name}</span>
+                          <div className="text-right">
+                            <span className="text-sm font-bold text-brand-text">₹{(c.amount * (c.frequency === 'monthly' ? fees.billingCycle : 1)).toLocaleString()}</span>
+                            <p className="text-[10px] text-brand-text-dim">{c.frequency === 'monthly' ? `₹${c.amount}/mo × ${fees.billingCycle}` : 'One-time'}</p>
                           </div>
                         </div>
-                        <span className="font-black text-green-500">+ ₹{tx.amount.toLocaleString()}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                      ))}
+                    </div>
+                    <div className="bg-black/5 dark:bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                      <span className="font-bold text-brand-text">Total Expected</span>
+                      <span className="font-black text-xl text-brand-text">₹{fees.totalAnnual.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Payments */}
+                {transactions.length > 0 && (
+                  <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm">
+                    <h3 className="font-bold text-brand-text uppercase tracking-widest text-xs mb-6">Recent Payments</h3>
+                    <div className="space-y-4">
+                      {transactions.map(tx => {
+                        const date = tx.timestamp?.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp || Date.now());
+                        return (
+                          <div key={tx.id} className="flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-green-500/10 text-green-500 flex items-center justify-center"><CheckCircle size={18}/></div>
+                              <div>
+                                <p className="text-sm font-bold text-brand-text">{tx.description || tx.method || 'Payment'}</p>
+                                <p className="text-xs text-brand-text-dim">{date.toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                            <span className="font-black text-green-500">+ ₹{tx.amount.toLocaleString()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {isStudent && (
+              <div className="bg-brand-card border border-brand-card-border p-8 rounded-3xl shadow-sm text-center py-12">
+                <CalendarDays size={48} className="text-brand-primary/40 mx-auto mb-4" />
+                <p className="text-sm font-bold text-brand-text mb-1">Welcome to your Portal!</p>
+                <p className="text-xs text-brand-text-dim max-w-sm mx-auto">Click on the "School Calendar" tab above to check upcoming school holidays and events.</p>
               </div>
             )}
           </>
+        ) : (
+          <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm">
+            <SchoolCalendar />
+          </div>
         )}
       </main>
     </div>

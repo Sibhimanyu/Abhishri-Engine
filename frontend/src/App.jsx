@@ -16,7 +16,8 @@ import StaffDirectory from './components/StaffDirectory';
 import GlobalSearch from './components/GlobalSearch';
 import MainDashboard from './components/MainDashboard';
 import { getCurrentTamilDate } from './utils/astrologyApi';
-import { MessageCircle, Cake } from 'lucide-react';
+import { MessageCircle, Cake, CalendarDays } from 'lucide-react';
+import SchoolCalendar from './components/SchoolCalendar';
 
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 
@@ -176,7 +177,6 @@ function App() {
     }
   }, [isDarkMode]);
 
-
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     ...(hasStudentAccess ? [{ id: 'students', label: 'Students', icon: Users }] : []),
@@ -186,8 +186,73 @@ function App() {
     ...(hasWaAccess ? [{ id: 'whatsapp', label: 'Communications', icon: MessageSquare }] : []),
     ...(hasFeeCollectionAccess ? [{ id: 'fee-collection', label: 'Fee Collection', icon: CreditCard }] : []),
     ...(hasAccountingAccess ? [{ id: 'accounting', label: 'Accounting', icon: Landmark }] : []),
+    { id: 'calendar', label: 'School Calendar', icon: CalendarDays },
     ...(isMaster ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];
+
+  if (location.pathname.startsWith('/public-calendar')) {
+    return (
+      <div className="min-h-screen w-full bg-[#fdf8ef] text-brand-text font-sans flex flex-col transition-colors duration-300">
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&family=Playfair+Display:wght@600;700;900&display=swap');
+
+          body {
+            background-color: #fdf8ef !important;
+            font-family: 'Open Sans', sans-serif !important;
+            color: #334155 !important;
+          }
+
+          :root {
+            --bg-color: #fdf8ef !important;
+            --card-bg: #ffffff !important;
+            --card-border: #e2d9c8 !important;
+            --text-color: #334155 !important;
+            --text-dim-color: #64748b !important;
+          }
+
+          h1, h2, h3, h4, .month-title, .tracking-tight {
+            font-family: 'Playfair Display', Georgia, serif !important;
+            color: #1e293b !important;
+            font-weight: 700 !important;
+          }
+
+          .bg-brand-primary {
+            background-color: #ef5e58 !important;
+          }
+          .text-brand-primary {
+            color: #ef5e58 !important;
+          }
+          .border-brand-primary {
+            border-color: #ef5e58 !important;
+          }
+          .ring-brand-primary {
+            --tw-ring-color: #ef5e58 !important;
+          }
+        `}</style>
+
+        {/* Public Standalone Header matching main website */}
+        <header className="bg-[#fdf8ef] border-b border-[#e2d9c8] h-16 sm:h-24 flex items-center justify-between px-4 sm:px-12 shrink-0 transition-colors duration-300">
+          <div className="flex items-center gap-3">
+            <img src="/logo-coral.png" alt="Abhishri Academy Logo" className="h-10 sm:h-16 w-auto object-contain" />
+          </div>
+          <div className="flex items-center gap-4">
+            <a 
+              href="https://abhishriacademy.in/" 
+              className="bg-[#ef5e58] hover:bg-[#d9534f] text-white px-4 py-2 sm:px-6 sm:py-3 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-wider transition-colors shadow-sm"
+              style={{ fontFamily: "'Open Sans', sans-serif" }}
+            >
+              Visit Website
+            </a>
+          </div>
+        </header>
+
+        {/* Content Wrapper */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-12 max-w-6xl mx-auto w-full">
+          <SchoolCalendar />
+        </main>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -493,6 +558,7 @@ function App() {
             <Route path="/whatsapp/*" element={<WhatsAppManager />} />
             <Route path="/fee-collection/*" element={<FeeCollection />} />
             <Route path="/accounting/*" element={<Accounting />} />
+            <Route path="/calendar" element={<SchoolCalendar />} />
 
             <Route path="/settings/*" element={<SettingsAdmin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
