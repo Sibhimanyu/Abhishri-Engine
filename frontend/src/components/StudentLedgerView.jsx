@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, updateDoc, onSnapshot, limit } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, PlusCircle, Printer, AlertTriangle, Layers, ListChecks, Settings2, X, Check, Trash2, Plus, IndianRupee, MessageCircle } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Printer, AlertTriangle, Layers, ListChecks, Settings2, X, Check, Trash2, Plus, IndianRupee, MessageCircle, Edit2 } from 'lucide-react';
 import PaymentReceipt from './PaymentReceipt';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -21,8 +21,10 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
 
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isDiscountOpen, setIsDiscountOpen] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', description: '' });
-  const [discountForm, setDiscountForm] = useState({ amount: '', description: '' });
+  const [isEditPaymentOpen, setIsEditPaymentOpen] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', description: '', date: '' });
+  const [discountForm, setDiscountForm] = useState({ amount: '', description: '', date: '' });
+  const [editPaymentForm, setEditPaymentForm] = useState({ id: '', amount: '', method: 'Cash', description: '', date: '', type: '' });
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [selectedDues, setSelectedDues] = useState([]);
   
@@ -67,8 +69,8 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           const txs = [];
           txSnap.forEach(d => txs.push({ id: d.id, ...d.data() }));
           txs.sort((a, b) => {
-            const da = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp || 0);
-            const db = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp || 0);
+            const da = a.timestamp?.toDate ? a.timestamp.toDate() : (a.timestamp ? new Date(a.timestamp) : new Date());
+            const db = b.timestamp?.toDate ? b.timestamp.toDate() : (b.timestamp ? new Date(b.timestamp) : new Date());
             return db - da;
           });
           setTransactions(txs);
@@ -409,6 +411,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         category: tx.category || 'General Fees',
         type: 'void',
         breakdown: breakdown,
+        breakdownNames: tx.breakdownNames || {},
         voidRefId: tx.id,
         timestamp: serverTimestamp(),
         addedBy: userData?.email || 'Unknown'
@@ -513,6 +516,8 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       // We ONLY write to the 'transactions' collection. 
       // The `syncStudentFeeTotals` Cloud Function handles updating the `student_fees` document 
       // via an onSnapshot trigger, and our UI syncs via its own onSnapshot.
+      const timestampValue = paymentForm.date ? new Date(paymentForm.date) : serverTimestamp();
+
       await addDoc(collection(firestore, 'students', studentId, 'transactions'), {
         studentId: studentId,
         studentName: student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown',
@@ -523,12 +528,12 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         type: 'incoming',
         breakdown: breakdown,
         breakdownNames: breakdownNames,
-        timestamp: serverTimestamp(),
+        timestamp: timestampValue,
         addedBy: userData?.email || 'Unknown'
       });
 
       setIsPaymentOpen(false);
-      setPaymentForm({ amount: '', method: 'Cash', description: '' });
+      setPaymentForm({ amount: '', method: 'Cash', description: '', date: '' });
 
     } catch (err) {
       console.error(err);
@@ -548,12 +553,14 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     try {
       const pAmt = Number(discountForm.amount);
       
+      const timestampValue = discountForm.date ? new Date(discountForm.date) : serverTimestamp();
+      
       const txData = {
         amount: pAmt,
         method: 'Concession',
         description: discountForm.description || 'Fee Concession / Discount',
-        date: new Date().toISOString(),
-        timestamp: serverTimestamp(),
+        date: discountForm.date ? new Date(discountForm.date).toISOString() : new Date().toISOString(),
+        timestamp: timestampValue,
         category: 'Discount',
         type: 'discount',
         addedBy: userData?.email || 'Unknown'
@@ -572,11 +579,60 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       });
 
       setIsDiscountOpen(false);
-      setDiscountForm({ amount: '', description: '' });
+      setDiscountForm({ amount: '', description: '', date: '' });
       setSelectedDues([]);
     } catch (err) {
       console.error(err);
       alert("Failed to grant discount.");
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const handleEditTransaction = (tx) => {
+    let dateStr = '';
+    if (tx.timestamp) {
+      const d = tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp);
+      // Check if it's a valid date, otherwise keep empty
+      if (!isNaN(d.getTime())) {
+        dateStr = d.toISOString().split('T')[0];
+      }
+    }
+    setEditPaymentForm({
+      id: tx.id,
+      amount: Math.abs(tx.amount).toString(),
+      method: tx.method || 'Cash',
+      description: tx.description || '',
+      date: dateStr,
+      type: tx.type
+    });
+    setIsEditPaymentOpen(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editPaymentForm.amount || isNaN(editPaymentForm.amount) || Number(editPaymentForm.amount) <= 0) {
+      return alert("Please enter a valid amount.");
+    }
+    setIsProcessingPayment(true);
+    try {
+      const pAmt = editPaymentForm.type === 'void' ? -Number(editPaymentForm.amount) : Number(editPaymentForm.amount);
+      const timestampValue = editPaymentForm.date ? new Date(editPaymentForm.date) : serverTimestamp();
+      
+      const { breakdown, breakdownNames } = allocateFunds(Math.abs(pAmt), compPayments, []);
+
+      await updateDoc(doc(firestore, 'students', studentId, 'transactions', editPaymentForm.id), {
+        amount: pAmt,
+        method: editPaymentForm.method,
+        description: editPaymentForm.description || '',
+        timestamp: timestampValue,
+        breakdown: breakdown,
+        breakdownNames: breakdownNames
+      });
+      setIsEditPaymentOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to edit transaction.");
     } finally {
       setIsProcessingPayment(false);
     }
@@ -803,7 +859,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
               </thead>
               <tbody className="divide-y divide-brand-card-border text-brand-text font-medium">
                 {transactions.length > 0 ? transactions.slice(0, txLimit).map((t) => {
-                  const d = t.timestamp?.toDate ? t.timestamp.toDate() : new Date(t.timestamp || 0);
+                  const d = t.timestamp?.toDate ? t.timestamp.toDate() : (t.timestamp ? new Date(t.timestamp) : new Date());
                   const isDynamicallyVoided = transactions.some(v => v.type === 'void' && v.voidRefId === t.id);
                   return (
                     <tr key={t.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
@@ -865,6 +921,15 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                           >
                             <Printer size={16} />
                           </button>
+                          {canLogPayment && (
+                            <button 
+                              onClick={() => handleEditTransaction(t)}
+                              className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors"
+                              title="Edit Transaction"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          )}
                           {canLogPayment && !isDynamicallyVoided && t.type !== 'void' && (
                             <button 
                               onClick={() => handleVoidTransaction(t)}
@@ -1093,6 +1158,16 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-brand-text-dim mb-1">Discount Date (Optional for Backdating)</label>
+                <input 
+                  type="date" 
+                  value={discountForm.date || ''} 
+                  onChange={(e) => setDiscountForm({...discountForm, date: e.target.value})}
+                  className="w-full bg-brand-bg border border-brand-card-border rounded-md px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                />
+              </div>
+
               {overdueItems.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-brand-text-dim mb-2">Discount Allocation Checklist (Optional)</label>
@@ -1197,6 +1272,16 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-brand-text-dim mb-1">Payment Date (Optional for Backdating)</label>
+                <input 
+                  type="date" 
+                  value={paymentForm.date || ''} 
+                  onChange={(e) => setPaymentForm({...paymentForm, date: e.target.value})}
+                  className="w-full bg-brand-bg border border-brand-card-border rounded-md px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                />
+              </div>
+
               {overdueItems.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-brand-text-dim mb-2">Pending Dues Checklist (Optional)</label>
@@ -1275,6 +1360,89 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                   className="bg-brand-primary hover:bg-brand-primary-hover text-white px-6 py-2 rounded-md font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   {isProcessingPayment ? 'Saving...' : 'Confirm Payment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Payment Modal */}
+      {isEditPaymentOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-brand-card border border-brand-card-border rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-brand-card-border flex items-center justify-between bg-black/5 dark:bg-white/5">
+              <h2 className="text-lg font-bold text-brand-text flex items-center gap-2">
+                <Edit2 className="text-blue-500" /> Edit Transaction
+              </h2>
+              <button onClick={() => setIsEditPaymentOpen(false)} className="text-brand-text-dim hover:text-brand-text transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-brand-text-dim mb-1">Amount (₹) <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  min="1"
+                  required
+                  value={editPaymentForm.amount} 
+                  onChange={(e) => setEditPaymentForm({...editPaymentForm, amount: e.target.value})}
+                  className="w-full bg-brand-bg border border-brand-card-border rounded-md px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-brand-text-dim mb-1">Date</label>
+                <input 
+                  type="date" 
+                  value={editPaymentForm.date || ''} 
+                  onChange={(e) => setEditPaymentForm({...editPaymentForm, date: e.target.value})}
+                  className="w-full bg-brand-bg border border-brand-card-border rounded-md px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-brand-text-dim mb-1">Method</label>
+                <select 
+                  value={editPaymentForm.method} 
+                  onChange={(e) => setEditPaymentForm({...editPaymentForm, method: e.target.value})}
+                  className="w-full bg-brand-bg border border-brand-card-border rounded-md px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="GPay/UPI">GPay / UPI</option>
+                  <option value="Bank Transfer">Bank Transfer / NEFT</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Card">Card</option>
+                  <option value="Concession">Concession</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-brand-text-dim mb-1">Description</label>
+                <input 
+                  type="text" 
+                  value={editPaymentForm.description} 
+                  onChange={(e) => setEditPaymentForm({...editPaymentForm, description: e.target.value})}
+                  className="w-full bg-brand-bg border border-brand-card-border rounded-md px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                />
+              </div>
+
+              <div className="pt-4 border-t border-brand-card-border flex justify-end gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setIsEditPaymentOpen(false)}
+                  className="px-4 py-2 rounded-md font-medium text-brand-text-dim hover:text-brand-text hover:bg-black/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isProcessingPayment}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isProcessingPayment ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

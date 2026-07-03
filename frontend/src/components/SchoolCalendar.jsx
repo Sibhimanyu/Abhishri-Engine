@@ -30,12 +30,12 @@ export default function SchoolCalendar() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
 
+  // Check if we are embedded or viewed standalone
+  const isPublic = window.location.pathname.startsWith('/public-calendar');
+
   const isStaffOrAdmin = !isPublic && (userData?.isAdmin || 
     ['admin', 'staff', 'teacher', 'pro'].includes(userData?.role) || 
     Object.keys(userData?.permissions || {}).length > 0);
-
-  // Check if we are embedded or viewed standalone
-  const isPublic = window.location.pathname.startsWith('/public-calendar');
 
   useEffect(() => {
     // Listen to school_calendar collection
@@ -241,8 +241,7 @@ export default function SchoolCalendar() {
 
   return (
     <div className="space-y-6">
-      {/* Calendar Header Card */}
-      <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="bg-brand-card border border-brand-card-border p-4 sm:p-6 rounded-3xl shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-brand-primary/10 rounded-2xl text-brand-primary">
             <CalendarDays size={24} />
@@ -292,10 +291,11 @@ export default function SchoolCalendar() {
       </div>
 
       {/* Agenda/List View (Highly readable in portrait/mobile formats) */}
-      <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm">
-        <h3 className="text-xs font-black text-brand-text uppercase tracking-widest mb-4 flex items-center gap-1.5">
-          <CalendarCheck size={14} className="text-brand-primary" />
-          Agenda & Events for {monthNames[month]} {year}
+      <div className="bg-brand-card border border-brand-card-border p-4 sm:p-6 rounded-3xl shadow-sm">
+        <h3 className="text-[10px] sm:text-xs font-black text-brand-text uppercase tracking-wider sm:tracking-widest mb-4 flex items-center flex-wrap gap-1.5 leading-normal">
+          <CalendarCheck size={14} className="text-brand-primary shrink-0" />
+          <span className="hidden sm:inline">Agenda & Events for {monthNames[month]} {year}</span>
+          <span className="sm:hidden">{monthNames[month]} {year} Agenda</span>
         </h3>
         
         {monthEvents.length > 0 ? (
@@ -335,7 +335,7 @@ export default function SchoolCalendar() {
 
       {/* Legend & Summary Info */}
       <div className="grid md:grid-cols-3 gap-4">
-        <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm md:col-span-2">
+        <div className="bg-brand-card border border-brand-card-border p-4 sm:p-6 rounded-3xl shadow-sm md:col-span-2">
           <h3 className="text-xs font-black text-brand-text uppercase tracking-widest mb-4">Calendar Legend</h3>
           <div className="flex flex-wrap gap-3">
             {legendItems.map((item) => (
@@ -350,7 +350,7 @@ export default function SchoolCalendar() {
           </div>
         </div>
 
-        <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm flex flex-col justify-between">
+        <div className="bg-brand-card border border-brand-card-border p-4 sm:p-6 rounded-3xl shadow-sm flex flex-col justify-between">
           <div>
             <h3 className="text-xs font-black text-brand-text uppercase tracking-widest mb-2 flex items-center gap-1.5">
               <Sparkles size={12} className="text-brand-primary" /> Notice
