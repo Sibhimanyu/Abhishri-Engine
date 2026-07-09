@@ -16,9 +16,10 @@ async function reconcileStudent(studentId, db) {
     const planRef = studentRef.collection("fee_ledger").doc("plan_details");
     const txRef = studentRef.collection("transactions");
 
-    const [planDoc, txSnap] = await Promise.all([
+    const [planDoc, txSnap, studentDoc] = await Promise.all([
         planRef.get(),
-        txRef.orderBy('timestamp', 'asc').get()
+        txRef.orderBy('timestamp', 'asc').get(),
+        studentRef.get()
     ]);
 
     const f = planDoc.exists ? planDoc.data() : { components: [], billingCycle: 12, startMonth: 5 };
@@ -111,20 +112,46 @@ async function reconcileStudent(studentId, db) {
     };
 
     const batch = db.batch();
-    
+
     if (planDoc.exists) {
-        batch.update(planRef, {
-            paid: totalPaid,
-            discounted: totalDiscounted,
-            componentPayments: componentPayments,
-            total: annualNetFee,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        const existing = planDoc.data();
+        const planChanged = existing.paid !== totalPaid ||
+            existing.discounted !== totalDiscounted ||
+            existing.total !== annualNetFee ||
+            JSON.stringify(existing.componentPayments || {}) !== JSON.stringify(componentPayments);
+
+        // Only write when values actually change: plan_details is watched by
+        // syncFeePlanUpdates, so an unconditional write (e.g. via serverTimestamp)
+        // would re-trigger this function on every run, looping forever.
+        if (planChanged) {
+            batch.update(planRef, {
+                paid: totalPaid,
+                discounted: totalDiscounted,
+                componentPayments: componentPayments,
+                total: annualNetFee,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
     }
 
-    batch.update(studentRef, {
-        financialSummary: financialSummary
-    });
+    const existingSummary = studentDoc.exists ? (studentDoc.data().financialSummary || {}) : {};
+    const summaryChanged = existingSummary.status !== status ||
+        existingSummary.dueNow !== dueNow ||
+        existingSummary.aheadBy !== aheadBy ||
+        existingSummary.totalPaid !== totalPaid ||
+        existingSummary.totalDiscounted !== totalDiscounted ||
+        existingSummary.annualRemaining !== annualRemaining ||
+        existingSummary.annualNetFee !== annualNetFee ||
+        existingSummary.expectedToDate !== adjustedExpectedToDate;
+
+    // No trigger currently watches students/{studentId} for updates, but guard
+    // anyway so this can never become the same kind of self-retriggering loop
+    // that plan_details had (see planChanged above).
+    if (summaryChanged) {
+        batch.update(studentRef, {
+            financialSummary: financialSummary
+        });
+    }
 
     await batch.commit();
 }
