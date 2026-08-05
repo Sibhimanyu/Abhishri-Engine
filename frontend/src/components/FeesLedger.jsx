@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, doc, getDocs, setDoc, collectionGroup, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDocs, setDoc, collectionGroup } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Search, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -22,18 +22,17 @@ export default function FeesLedger({ wing }) {
   useEffect(() => {
     setLoading(true);
 
-    const q = wing 
-      ? query(collection(firestore, 'students'), where('programType', '==', wing))
-      : collection(firestore, 'students');
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(collection(firestore, 'students'), (snapshot) => {
       const studentList = [];
       snapshot.forEach(d => {
         const s = d.data();
+        const sType = s.programType || s.studentType || 'preschool';
+        if (wing && sType !== wing) return;
+
         const f = s.financialSummary || {};
 
         let status = f.status || 'unconfigured';
-        
+
         studentList.push({
           id: d.id,
           name: s.name || 'Unknown',

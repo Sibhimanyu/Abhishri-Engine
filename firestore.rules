@@ -101,11 +101,9 @@ service cloud.firestore {
     // --- System Configurations & Aggregates ---
     match /configs/{configId} {
       allow read: if isAuthenticated() && (
-        configId != 'whatsapp_main' || 
-        isAdmin() || 
-        getPerm('whatsapp_sender', 'access') || 
-        getPerm('whatsapp_sender', 'manage') || 
-        getPerm('whatsapp_sender', 'broadcast')
+        configId == 'whatsapp_main'
+          ? (isAdmin() || getPerm('whatsapp_sender', 'manage'))
+          : isAdmin()
       );
       allow write: if isAdmin() || (
         configId == 'whatsapp_main' && getPerm('whatsapp_sender', 'manage')
@@ -247,8 +245,9 @@ service cloud.firestore {
         getPerm('fees_accounting', 'exp_own')
       );
       allow write: if isAdmin() || (
-        (getPerm('staff_directory', 'manage') || getPerm('staff_directory', 'add')) && 
-        (!request.resource.data.keys().hasAll(['isAdmin']) || request.resource.data.isAdmin == false)
+        (getPerm('staff_directory', 'manage') || getPerm('staff_directory', 'add')) &&
+        (!request.resource.data.keys().hasAll(['isAdmin']) || request.resource.data.isAdmin == false) &&
+        (!request.resource.data.keys().hasAll(['role']) || request.resource.data.role != 'admin')
       );
       allow delete: if isAdmin() || getPerm('staff_directory', 'delete');
     }

@@ -50,6 +50,10 @@ const authTriggers = require("./src/auth/triggers");
 exports.onUserCreated = authTriggers.onUserCreated;
 exports.onUserDeleted = authTriggers.onUserDeleted;
 
+const permissionsMirror = require("./src/auth/permissionsMirror");
+exports.onAllowedUserWrite = permissionsMirror.onAllowedUserWrite;
+exports.onPermissionGroupWrite = permissionsMirror.onPermissionGroupWrite;
+
 // --- Student Triggers ---
 const studentTriggers = require("./src/students/triggers");
 exports.onStudentDeleted = studentTriggers.onStudentDeleted;

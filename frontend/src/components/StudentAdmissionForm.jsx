@@ -1,3 +1,6 @@
+import React, { useState } from 'react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { firestore } from '../firebase';
 import { ArrowLeft, UserPlus, Save, X, User, Users, HeartPulse, Phone, Loader, Star } from 'lucide-react';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 

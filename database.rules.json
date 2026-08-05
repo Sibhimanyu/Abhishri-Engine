@@ -1,18 +1,20 @@
 {
   "rules": {
+    ".read": false,
+    ".write": false,
     "users": {
-      ".read": "auth != null",
       "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
         ".write": "auth != null && auth.uid == $uid"
       }
     },
     "whatsapp_debug_webhooks": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      ".read": "auth != null && root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true",
+      ".write": false
     },
     "whatsapp_conversations": {
-      ".read": "auth != null",
-      ".write": "auth != null",
+      ".read": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('access').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('broadcast').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('manage').val() === true)",
+      ".write": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('access').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('broadcast').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('manage').val() === true)",
       "$recipientId": {
         "metadata": {
           ".indexOn": ["timestamp"]
@@ -23,37 +25,45 @@
       }
     },
     "whatsapp_broadcast_logs": {
-      ".read": "auth != null",
-      ".write": "auth != null",
+      ".read": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('manage').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('broadcast').val() === true)",
+      ".write": false,
       "$broadcastId": {
         ".indexOn": ["messageId", "timestamp"]
       }
     },
     "whatsapp_batch_map": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      ".read": false,
+      ".write": false
     },
     "modules": {
       "smart_campus": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('smart_campus').child('view').val() === true)",
+        ".write": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('smart_campus').child('control').val() === true)"
       },
       "student_directory": {
+        ".read": false,
+        ".write": false,
         "attendance": {
-          ".read": "auth != null",
-          ".write": "auth != null"
-        },
-        ".read": "auth != null",
-        ".write": "auth != null"
+          ".read": "auth != null && root.child('rtdb_permissions').child(auth.uid).exists()",
+          ".write": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('attendance').child('mark').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('attendance').child('edit').val() === true)"
+        }
       },
       "staff_directory": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": false,
+        ".write": false,
+        "attendance": {
+          ".read": "auth != null && root.child('rtdb_permissions').child(auth.uid).exists()",
+          ".write": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('attendance').child('mark').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('attendance').child('edit').val() === true)"
+        }
       },
       "fees_accounting": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": false,
+        ".write": false
       }
+    },
+    "rtdb_permissions": {
+      ".read": false,
+      ".write": false
     }
   }
 }
