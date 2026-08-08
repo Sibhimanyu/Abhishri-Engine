@@ -319,6 +319,22 @@ service cloud.firestore {
       allow write: if isAuthenticated() && (isAdmin() || isInternalStaff());
     }
 
+    // --- App Feedback (complaints / suggestions / modification requests) ---
+    match /feedback/{id} {
+      // Admins see everything to review; a submitter can also see their own past submissions.
+      allow read: if isAuthenticated() && (isAdmin() || isOwnEmail(resource.data.get('submittedBy', '')));
+      // Anyone can file feedback, but only attributed to themselves — same anti-spoofing
+      // pattern as audit_logs, and the status/adminNote fields are admin-managed only.
+      allow create: if isAuthenticated() &&
+        isOwnEmail(request.resource.data.get('submittedBy', '')) &&
+        request.resource.data.get('type', '') in ['complaint', 'suggestion', 'modification'] &&
+        request.resource.data.get('message', '') is string &&
+        request.resource.data.get('message', '').size() > 0 &&
+        request.resource.data.get('status', '') == 'new';
+      // Only admins triage/update status or add a note; only admins delete.
+      allow update, delete: if isAuthenticated() && isAdmin();
+    }
+
     // Default fallback
     match /{document=**} {
       allow read, write: if isAdmin();

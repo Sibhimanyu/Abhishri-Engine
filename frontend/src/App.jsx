@@ -19,6 +19,7 @@ import { getCurrentTamilDate } from './utils/astrologyApi';
 import { MessageCircle, Cake, CalendarDays, ChefHat } from 'lucide-react';
 import SchoolCalendar from './components/SchoolCalendar';
 import WeeklyMenu from './components/WeeklyMenu';
+import FeedbackWidget from './components/FeedbackWidget';
 
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 
@@ -43,6 +44,7 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingLoginsCount, setPendingLoginsCount] = useState(0);
   const [unreadWhatsAppCount, setUnreadWhatsAppCount] = useState(0);
+  const [newFeedbackCount, setNewFeedbackCount] = useState(0);
   const [tamilBirthdayMembers, setTamilBirthdayMembers] = useState([]);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const { currentUser, userData, loading } = useAuth();
@@ -102,6 +104,22 @@ function App() {
         unsubUsers();
         unsubPending();
       };
+    });
+    return () => unsubscribe();
+  }, [userData?.isAdmin]);
+
+  // New Feedback Listener (admin only)
+  React.useEffect(() => {
+    if (!userData?.isAdmin) return;
+
+    let unsubscribe = () => {};
+    import('firebase/firestore').then(({ collection, query, where, onSnapshot }) => {
+      const q = query(collection(firestore, 'feedback'), where('status', '==', 'new'));
+      unsubscribe = onSnapshot(q, (snap) => {
+        setNewFeedbackCount(snap.size);
+      }, (err) => {
+        console.warn('Failed to load feedback count:', err);
+      });
     });
     return () => unsubscribe();
   }, [userData?.isAdmin]);
@@ -412,6 +430,8 @@ function App() {
             >
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
+
+            <FeedbackWidget isAdmin={isMaster} newCount={newFeedbackCount} />
 
             <div className="relative">
               <button 
