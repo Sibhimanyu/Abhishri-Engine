@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, ShieldCheck, MapPin, MessageCircle, LayoutGrid } from 'lucide-react';
+import { Shield, ShieldCheck, MapPin, MessageCircle, LayoutGrid, ScrollText } from 'lucide-react';
 import AdminUserPermissions from './AdminUserPermissions';
 import AdminAttendanceSetup from './AdminAttendanceSetup';
 import AdminWhatsAppConfig from './AdminWhatsAppConfig';
 import AdminEntities from './AdminEntities';
+import AdminAuditLog from './AdminAuditLog';
 export default function SettingsAdmin() {
   const { userData } = useAuth();
   const [activeTab, setActiveTab] = useState('users');
@@ -27,6 +28,7 @@ export default function SettingsAdmin() {
     { id: 'entities', label: 'Entities', icon: LayoutGrid, show: isMaster },
     { id: 'attendance', label: 'Attendance Setup', icon: MapPin, show: isMaster },
     { id: 'whatsapp', label: 'WhatsApp Config', icon: MessageCircle, show: isMaster },
+    { id: 'audit', label: 'Audit Log', icon: ScrollText, show: isMaster },
   ];
   const tabs = allTabs.filter(t => t.show);
 
@@ -60,6 +62,7 @@ export default function SettingsAdmin() {
         {activeTab === 'entities' && isMaster && <AdminEntities />}
         {activeTab === 'attendance' && isMaster && <AdminAttendanceSetup />}
         {activeTab === 'whatsapp' && isMaster && <AdminWhatsAppConfig />}
+        {activeTab === 'audit' && isMaster && <AdminAuditLog />}
       </div>
     </div>
   );

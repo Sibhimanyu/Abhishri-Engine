@@ -261,7 +261,13 @@ service cloud.firestore {
     // --- Audit Logs (System Wide) ---
     match /audit_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated(); 
+      // Require honest attribution — otherwise any authenticated user could inject an
+      // unattributed or spoofed entry blaming another user's email for an action they
+      // didn't perform, undermining the log's value as a record of what actually happened.
+      allow create: if isAuthenticated() &&
+        request.resource.data.get('action', '') is string &&
+        request.resource.data.get('action', '') != '' &&
+        isOwnEmail(request.resource.data.get('performedBy', ''));
     }
 
 
