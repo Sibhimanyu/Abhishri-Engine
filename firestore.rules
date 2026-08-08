@@ -192,11 +192,29 @@ service cloud.firestore {
           )
         )
       );
-      allow update, delete: if isAuthenticated() && (
+      allow update: if isAuthenticated() && (
         isAdmin() ||
         getPerm('fees_accounting', 'exp_all') ||
-        // "wallet_edit_own" only covers the caller's own records, despite the missing check previously.
-        (getPerm('fees_accounting', 'wallet_edit_own') && resource != null && isOwnEmail(resource.data.get('createdBy', '')))
+        (
+          // "exp_own"/"wallet_edit_own" holders may edit only records THEY created, and can't
+          // reassign ownership or re-target a staff_wallet expense at someone else's staffId —
+          // otherwise "edit your own expense" would reopen the wallet-spoofing hole create closes.
+          (getPerm('fees_accounting', 'exp_own') || getPerm('fees_accounting', 'wallet_edit_own')) &&
+          resource != null && isOwnEmail(resource.data.get('createdBy', '')) &&
+          isOwnEmail(request.resource.data.get('createdBy', '')) &&
+          (
+            request.resource.data.get('source', '') != 'staff_wallet' ||
+            getStaffEmail(request.resource.data.get('staffId', '')) == request.auth.token.email.lower()
+          )
+        )
+      );
+      allow delete: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'exp_all') ||
+        (
+          (getPerm('fees_accounting', 'exp_own') || getPerm('fees_accounting', 'wallet_edit_own')) &&
+          resource != null && isOwnEmail(resource.data.get('createdBy', ''))
+        )
       );
     }
 
