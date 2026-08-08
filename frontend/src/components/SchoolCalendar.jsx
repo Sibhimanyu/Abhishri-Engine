@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { 
-  Calendar as CalendarIcon, 
+import { logAudit } from '../utils/auditLog';
+import {
+  Calendar as CalendarIcon,
   ChevronLeft, 
   ChevronRight, 
   Plus, 
@@ -91,9 +92,20 @@ export default function SchoolCalendar() {
 
     try {
       const docRef = doc(firestore, 'school_calendar', selectedDateStr);
+      const hadExisting = !!events[selectedDateStr];
       if (dayType === 'regular_day' && !title && !description) {
         // If it's a regular day with no contents, delete it to keep DB clean
         await deleteDoc(docRef);
+        if (hadExisting) {
+          logAudit({
+            action: 'CALENDAR_DAY_CLEARED',
+            module: 'school_calendar',
+            targetId: selectedDateStr,
+            targetName: selectedDateStr,
+            performedBy: userData?.email,
+            details: { previous: events[selectedDateStr] }
+          });
+        }
       } else {
         await setDoc(docRef, {
           type: dayType,
@@ -102,6 +114,15 @@ export default function SchoolCalendar() {
           updatedAt: new Date().toISOString(),
           updatedBy: userData?.displayName || userData?.email || 'Staff'
         }, { merge: true });
+
+        logAudit({
+          action: hadExisting ? 'CALENDAR_DAY_UPDATED' : 'CALENDAR_DAY_SET',
+          module: 'school_calendar',
+          targetId: selectedDateStr,
+          targetName: selectedDateStr,
+          performedBy: userData?.email,
+          details: { type: dayType, title: title.trim() }
+        });
       }
       setShowEditModal(false);
     } catch (error) {
@@ -115,7 +136,18 @@ export default function SchoolCalendar() {
     if (window.confirm("Are you sure you want to clear the custom status for this day?")) {
       try {
         const docRef = doc(firestore, 'school_calendar', selectedDateStr);
+        const previous = events[selectedDateStr];
         await deleteDoc(docRef);
+
+        logAudit({
+          action: 'CALENDAR_DAY_CLEARED',
+          module: 'school_calendar',
+          targetId: selectedDateStr,
+          targetName: selectedDateStr,
+          performedBy: userData?.email,
+          details: { previous: previous || null }
+        });
+
         setShowEditModal(false);
       } catch (error) {
         console.error("Error deleting calendar event:", error);

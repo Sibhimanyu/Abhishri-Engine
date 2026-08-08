@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { firestore } from '../firebase';
+import { useAuth } from '../context/AuthContext';
+import { logAudit } from '../utils/auditLog';
 import { ArrowLeft, UserPlus, Save, X, User, Briefcase, Phone, DollarSign, HeartPulse, Loader, Star } from 'lucide-react';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 
 export default function StaffOnboardingForm({ onBack, onSuccess }) {
+  const { currentUser } = useAuth();
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
@@ -94,6 +97,15 @@ export default function StaffOnboardingForm({ onBack, onSuccess }) {
         walletEnabled: true,
         staffEmail: emailKey,
       }, { merge: true });
+
+      logAudit({
+        action: 'STAFF_ONBOARDED',
+        module: 'staff_directory',
+        targetId: emailKey,
+        targetName: formData.name,
+        performedBy: currentUser?.email,
+        details: { designation: formData.designation, worksInPreschool: formData.worksInPreschool, worksInTuition: formData.worksInTuition }
+      });
 
       alert('Staff member registered successfully!');
       if (onSuccess) {

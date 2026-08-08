@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { firestore } from '../firebase';
+import { useAuth } from '../context/AuthContext';
+import { logAudit } from '../utils/auditLog';
 import { ArrowLeft, Edit3, MapPin, Phone, User, Users, HeartPulse, FileText, AlertTriangle, Save, X, UserCheck, Star, Loader } from 'lucide-react';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 
 export default function StudentProfile({ studentId, studentType, onBack, canEdit }) {
+  const { currentUser } = useAuth();
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -132,9 +135,28 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
       setSaving(true);
       const directoryPath = studentType === 'preschool' ? 'preschool_directory' : 'tuition_directory';
       const docRef = doc(firestore, 'students', studentId);
+
+      const changedFields = {};
+      Object.keys(editForm).forEach(key => {
+        if ((student?.[key] ?? '') !== editForm[key]) {
+          changedFields[key] = { from: student?.[key] ?? null, to: editForm[key] };
+        }
+      });
+
       await updateDoc(docRef, editForm);
       setStudent({ id: studentId, ...editForm });
       setIsEditing(false);
+
+      if (Object.keys(changedFields).length > 0) {
+        logAudit({
+          action: 'STUDENT_UPDATED',
+          module: 'student_directory',
+          targetId: studentId,
+          targetName: editForm.name,
+          performedBy: currentUser?.email,
+          details: { changedFields }
+        });
+      }
     } catch (err) {
       console.error('Failed to update student profile:', err);
       alert('Failed to update student profile. Please try again.');

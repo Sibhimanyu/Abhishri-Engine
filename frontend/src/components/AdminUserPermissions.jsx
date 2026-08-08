@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, orderBy } from 'firebase/firestore';
 import { firestore } from '../firebase';
+import { useAuth } from '../context/AuthContext';
+import { logAudit } from '../utils/auditLog';
 import { ShieldCheck, Search, UserPlus, X, Check, AlertCircle, Clock, Loader } from 'lucide-react';
 
 export default function AdminUserPermissions() {
+  const { currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -85,14 +88,32 @@ export default function AdminUserPermissions() {
     if (!editingUser?.email) return alert('Email is required');
     setSaving(true);
     const emailKey = editingUser.email.toLowerCase().trim();
+    const existingUser = users.find(u => u.id === emailKey || u.email?.toLowerCase() === emailKey);
+    const newRole = editingUser.role || 'staff';
+    const newIsAdmin = !!editingUser.isAdmin;
     try {
       await setDoc(doc(firestore, 'allowed_users', emailKey), {
         email: emailKey,
         displayName: editingUser.displayName || '',
-        role: editingUser.role || 'staff',
-        isAdmin: !!editingUser.isAdmin,
+        role: newRole,
+        isAdmin: newIsAdmin,
         updatedAt: new Date().toISOString()
       }, { merge: true });
+
+      // This is the privilege-escalation surface — log every access-level change with an
+      // explicit before/after on role and isAdmin, not just "something was edited".
+      logAudit({
+        action: existingUser ? 'USER_ACCESS_UPDATED' : 'USER_ACCESS_CREATED',
+        module: 'staff_directory',
+        targetId: emailKey,
+        targetName: editingUser.displayName || emailKey,
+        performedBy: currentUser?.email,
+        details: {
+          role: { from: existingUser?.role ?? null, to: newRole },
+          isAdmin: { from: existingUser?.isAdmin ?? false, to: newIsAdmin }
+        }
+      });
+
       setIsModalOpen(false);
       setEditingUser(null);
     } catch (err) {

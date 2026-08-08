@@ -5,6 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { firestore, storage } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Plus, X, Upload, Wallet, Receipt, ExternalLink, Building2, Trash2, Pencil } from 'lucide-react';
+import { logAudit } from '../utils/auditLog';
 import imageCompression from 'browser-image-compression';
 
 export default function FeesMyExpenses() {
@@ -243,12 +244,26 @@ export default function FeesMyExpenses() {
         // Source/staffId are intentionally left untouched on edit — reassigning a staff_wallet
         // expense to a different staffId is what create's anti-spoofing check exists to prevent,
         // and there's no legitimate reason to change payment source after the fact.
+        const newAmount = parseFloat(expenseData.amount);
         await updateDoc(doc(firestore, 'expenses', editingExpense.id), {
-          amount: parseFloat(expenseData.amount),
+          amount: newAmount,
           category: expenseData.category,
           details: expenseData.details,
           attachmentUrl,
           timestamp: isToday ? serverTimestamp() : new Date(expenseData.date)
+        });
+
+        logAudit({
+          action: 'EXPENSE_EDITED',
+          module: 'fees_accounting',
+          targetId: editingExpense.id,
+          targetName: expenseData.details || expenseData.category,
+          performedBy: email,
+          details: {
+            amount: { from: editingExpense.amount ?? null, to: newAmount },
+            category: { from: editingExpense.category ?? null, to: expenseData.category },
+            details: { from: editingExpense.details ?? null, to: expenseData.details }
+          }
         });
       } else {
         const payload = {
@@ -267,7 +282,16 @@ export default function FeesMyExpenses() {
           payload.staffEmail = email;
         }
 
-        await addDoc(collection(firestore, 'expenses'), payload);
+        const newExpenseRef = await addDoc(collection(firestore, 'expenses'), payload);
+
+        logAudit({
+          action: 'EXPENSE_LOGGED',
+          module: 'fees_accounting',
+          targetId: newExpenseRef.id,
+          targetName: expenseData.details || expenseData.category,
+          performedBy: email,
+          details: { source: expenseData.source, amount: payload.amount, category: expenseData.category }
+        });
       }
 
       setIsLogExpenseOpen(false);
@@ -285,6 +309,14 @@ export default function FeesMyExpenses() {
     setDeletingId(expense.id);
     try {
       await deleteDoc(doc(firestore, 'expenses', expense.id));
+      logAudit({
+        action: 'EXPENSE_DELETED',
+        module: 'fees_accounting',
+        targetId: expense.id,
+        targetName: expense.details || expense.category,
+        performedBy: email,
+        details: { source: expense.source, amount: expense.amount, category: expense.category }
+      });
     } catch (err) {
       console.error("Error deleting expense:", err);
       alert("Failed to delete expense. You can only delete expenses you personally logged.");

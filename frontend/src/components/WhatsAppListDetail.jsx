@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { firestore } from '../firebase';
+import { useAuth } from '../context/AuthContext';
+import { logAudit } from '../utils/auditLog';
 import { Users, Upload, Edit, Trash2, ArrowLeft, UserPlus, Search, X, Loader, Phone, Download } from 'lucide-react';
 import Papa from 'papaparse';
 
 export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
+  const { currentUser } = useAuth();
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -60,6 +63,14 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
     setSaving(true);
     try {
       await deleteDoc(doc(firestore, 'whatsapp_lists', list.id));
+      logAudit({
+        action: 'WHATSAPP_LIST_DELETED',
+        module: 'whatsapp_sender',
+        targetId: list.id,
+        targetName: list.name,
+        performedBy: currentUser?.email,
+        details: { memberCount: members.length }
+      });
       onListDeleted();
     } catch (err) {
       console.error(err);
@@ -119,11 +130,21 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
 
   const handleDeleteMember = async (memberId) => {
     if (!window.confirm("Remove this member from the list?")) return;
+    const member = members.find(m => m.id === memberId);
     try {
       await deleteDoc(doc(firestore, 'whatsapp_lists', list.id, 'members', memberId));
       await setDoc(doc(firestore, 'whatsapp_lists', list.id), {
         count: Math.max(0, members.length - 1)
       }, { merge: true });
+
+      logAudit({
+        action: 'WHATSAPP_CONTACT_REMOVED',
+        module: 'whatsapp_sender',
+        targetId: memberId,
+        targetName: member?.name || member?.phone || memberId,
+        performedBy: currentUser?.email,
+        details: { listId: list.id, listName: list.name, phone: member?.phone || null }
+      });
     } catch (err) {
       console.error(err);
       alert('Failed to remove member');
@@ -162,6 +183,16 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
             await setDoc(doc(firestore, 'whatsapp_lists', list.id), {
               count: members.length + count
             }, { merge: true });
+
+            logAudit({
+              action: 'WHATSAPP_CONTACTS_IMPORTED',
+              module: 'whatsapp_sender',
+              targetId: list.id,
+              targetName: list.name,
+              performedBy: currentUser?.email,
+              details: { importedCount: count, fileName: file.name }
+            });
+
             alert(`Successfully imported ${count} contacts!`);
           } else {
             alert('No valid contacts found. Please ensure your CSV has "Name" and "Phone" columns.');

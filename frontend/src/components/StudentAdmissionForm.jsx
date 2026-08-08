@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { firestore } from '../firebase';
+import { useAuth } from '../context/AuthContext';
+import { logAudit } from '../utils/auditLog';
 import { ArrowLeft, UserPlus, Save, X, User, Users, HeartPulse, Phone, Loader, Star } from 'lucide-react';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 
 export default function StudentAdmissionForm({ studentType, onBack }) {
+  const { currentUser } = useAuth();
   const [saving, setSaving] = useState(false);
   const [suggestingNakshatra, setSuggestingNakshatra] = useState(false);
   const [formData, setFormData] = useState({
@@ -78,12 +81,21 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
       const directoryPath = formData.studentType === 'preschool' ? 'preschool_directory' : 'tuition_directory';
       const studentsRef = collection(firestore, 'students');
       
-      await addDoc(studentsRef, {
+      const newStudentRef = await addDoc(studentsRef, {
         ...formData,
         nakshatra: nakshatraToSave,
         tamilMonth: tamilMonthToSave,
         tamilDay: tamilDayToSave,
         createdAt: serverTimestamp()
+      });
+
+      logAudit({
+        action: 'STUDENT_CREATED',
+        module: 'student_directory',
+        targetId: newStudentRef.id,
+        targetName: formData.name,
+        performedBy: currentUser?.email,
+        details: { studentType: formData.studentType, admissionForClass: formData.admissionForClass }
       });
 
       alert('Student admission registered successfully!');

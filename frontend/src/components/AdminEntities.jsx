@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue, update } from 'firebase/database';
 import { rtdb } from '../firebase';
+import { useAuth } from '../context/AuthContext';
+import { logAudit } from '../utils/auditLog';
 import { LayoutGrid, EyeOff, Eye, Search, CheckSquare } from 'lucide-react';
 
 export default function AdminEntities() {
+  const { currentUser } = useAuth();
   const [areas, setAreas] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -43,15 +46,25 @@ export default function AdminEntities() {
 
   const updateVisibility = async (hide) => {
     if (selectedItems.size === 0) return;
-    
+
     const updates = {};
+    const affectedNames = [];
     selectedItems.forEach(uniqueId => {
       const [areaId, devKey] = uniqueId.split('|||');
       updates[`modules/smart_campus/areas/${areaId}/devices/${devKey}/hidden`] = hide ? true : null;
+      affectedNames.push(areas[areaId]?.devices?.[devKey]?.name || devKey);
     });
 
     try {
       await update(ref(rtdb), updates);
+      logAudit({
+        action: hide ? 'ENTITIES_HIDDEN' : 'ENTITIES_UNHIDDEN',
+        module: 'smart_campus',
+        targetId: null,
+        targetName: `${affectedNames.length} device(s)`,
+        performedBy: currentUser?.email,
+        details: { devices: affectedNames }
+      });
       setSelectedItems(new Set());
     } catch (err) {
       console.error("Failed to update visibility", err);
