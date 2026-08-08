@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { collection, query, where, onSnapshot, getDocs, doc, addDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { firestore, storage } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { Plus, X, Upload, Wallet, Receipt, ExternalLink, Building2, Trash2 } from 'lucide-react';
+import { Plus, X, Upload, Wallet, Receipt, ExternalLink, Building2, Trash2, Pencil } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 
 export default function FeesMyExpenses() {
@@ -40,6 +40,7 @@ export default function FeesMyExpenses() {
   const [isSaving, setIsSaving] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [editingExpense, setEditingExpense] = useState(null); // the expense doc being edited, or null when logging a new one
 
   const email = currentUser?.email?.toLowerCase();
 
@@ -187,13 +188,39 @@ export default function FeesMyExpenses() {
     };
   }, [email]);
 
+  const resetExpenseForm = (dateStr) => {
+    setExpenseData({ source: 'office', amount: '', category: 'Office Supplies', details: '', date: dateStr, file: null });
+    setEditingExpense(null);
+  };
+
+  const handleOpenEdit = (expense) => {
+    const dateStr = expense.timestamp?.toDate
+      ? expense.timestamp.toDate().toISOString().split('T')[0]
+      : new Date(expense.timestamp || Date.now()).toISOString().split('T')[0];
+    setExpenseData({
+      source: expense.source || 'office',
+      amount: String(expense.amount ?? ''),
+      category: expense.category || 'Office Supplies',
+      details: expense.details || '',
+      date: dateStr,
+      file: null // keep the existing attachment unless the user picks a new one
+    });
+    setEditingExpense(expense);
+    setIsLogExpenseOpen(true);
+  };
+
+  const closeExpenseModal = () => {
+    setIsLogExpenseOpen(false);
+    resetExpenseForm(new Date().toISOString().split('T')[0]);
+  };
+
   const handleLogExpense = async (e) => {
     e.preventDefault();
     if (!expenseData.amount || isSaving) return;
     setIsSaving(true);
-    
+
     try {
-      let attachmentUrl = '';
+      let attachmentUrl = editingExpense?.attachmentUrl || '';
       if (expenseData.file) {
         let fileToUpload = expenseData.file;
         if (fileToUpload.type.startsWith('image/')) {
@@ -208,33 +235,46 @@ export default function FeesMyExpenses() {
         const snap = await uploadBytes(storageRef, fileToUpload, { cacheControl: 'public,max-age=31536000' });
         attachmentUrl = await getDownloadURL(snap.ref);
       }
-      
+
       const today = new Date().toISOString().split('T')[0];
       const isToday = expenseData.date === today;
-      
-      const payload = {
-        source: expenseData.source,
-        type: expenseData.source === 'office' ? 'spend' : 'expense',
-        amount: parseFloat(expenseData.amount),
-        category: expenseData.category,
-        details: expenseData.details,
-        attachmentUrl: attachmentUrl,
-        createdBy: email,
-        timestamp: isToday ? serverTimestamp() : new Date(expenseData.date)
-      };
 
-      if (expenseData.source === 'staff_wallet') {
-        payload.staffId = staffId;
-        payload.staffEmail = email;
+      if (editingExpense) {
+        // Source/staffId are intentionally left untouched on edit — reassigning a staff_wallet
+        // expense to a different staffId is what create's anti-spoofing check exists to prevent,
+        // and there's no legitimate reason to change payment source after the fact.
+        await updateDoc(doc(firestore, 'expenses', editingExpense.id), {
+          amount: parseFloat(expenseData.amount),
+          category: expenseData.category,
+          details: expenseData.details,
+          attachmentUrl,
+          timestamp: isToday ? serverTimestamp() : new Date(expenseData.date)
+        });
+      } else {
+        const payload = {
+          source: expenseData.source,
+          type: expenseData.source === 'office' ? 'spend' : 'expense',
+          amount: parseFloat(expenseData.amount),
+          category: expenseData.category,
+          details: expenseData.details,
+          attachmentUrl: attachmentUrl,
+          createdBy: email,
+          timestamp: isToday ? serverTimestamp() : new Date(expenseData.date)
+        };
+
+        if (expenseData.source === 'staff_wallet') {
+          payload.staffId = staffId;
+          payload.staffEmail = email;
+        }
+
+        await addDoc(collection(firestore, 'expenses'), payload);
       }
-      
-      await addDoc(collection(firestore, 'expenses'), payload);
-      
+
       setIsLogExpenseOpen(false);
-      setExpenseData({ source: 'office', amount: '', category: 'Office Supplies', details: '', date: today, file: null });
+      resetExpenseForm(today);
     } catch (err) {
       console.error("Error logging expense:", err);
-      alert("Failed to log expense. Please try again.");
+      alert(editingExpense ? "Failed to save changes. Please try again." : "Failed to log expense. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -303,8 +343,8 @@ export default function FeesMyExpenses() {
       <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm overflow-hidden relative">
         <div className="p-4 md:p-6 border-b border-brand-card-border flex justify-between items-center bg-black/5 dark:bg-white/5">
           <h2 className="text-lg font-bold text-brand-text">Expense History</h2>
-          <button 
-            onClick={() => setIsLogExpenseOpen(true)}
+          <button
+            onClick={() => { setEditingExpense(null); setIsLogExpenseOpen(true); }}
             className="flex justify-center items-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-md font-medium text-sm transition-colors shadow-sm"
           >
             <Plus size={16} /> Log Expense
@@ -372,18 +412,28 @@ export default function FeesMyExpenses() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         {t.createdBy === email ? (
-                          <button
-                            onClick={() => handleDeleteExpense(t)}
-                            disabled={deletingId === t.id}
-                            title="Delete this expense"
-                            className="inline-flex justify-end items-center gap-1 text-red-500 hover:text-red-600 font-medium transition-colors disabled:opacity-50"
-                          >
-                            {deletingId === t.id ? (
-                              <div className="w-3.5 h-3.5 border-2 border-red-300 border-t-red-500 rounded-full animate-spin" />
-                            ) : (
-                              <Trash2 size={14} />
-                            )}
-                          </button>
+                          <div className="inline-flex items-center gap-3">
+                            <button
+                              onClick={() => handleOpenEdit(t)}
+                              disabled={deletingId === t.id}
+                              title="Edit this expense"
+                              className="inline-flex items-center gap-1 text-brand-primary hover:text-brand-primary-hover font-medium transition-colors disabled:opacity-50"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteExpense(t)}
+                              disabled={deletingId === t.id}
+                              title="Delete this expense"
+                              className="inline-flex items-center gap-1 text-red-500 hover:text-red-600 font-medium transition-colors disabled:opacity-50"
+                            >
+                              {deletingId === t.id ? (
+                                <div className="w-3.5 h-3.5 border-2 border-red-300 border-t-red-500 rounded-full animate-spin" />
+                              ) : (
+                                <Trash2 size={14} />
+                              )}
+                            </button>
+                          </div>
                         ) : '-'}
                       </td>
                     </tr>
@@ -400,8 +450,8 @@ export default function FeesMyExpenses() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-brand-bg rounded-2xl w-full max-w-md overflow-hidden shadow-2xl border border-brand-card-border">
             <div className="px-6 py-4 border-b border-brand-card-border flex justify-between items-center bg-brand-card">
-              <h2 className="text-lg font-bold text-brand-text">Log New Expense</h2>
-              <button onClick={() => setIsLogExpenseOpen(false)} className="text-brand-text-dim hover:text-brand-text transition-colors">
+              <h2 className="text-lg font-bold text-brand-text">{editingExpense ? 'Edit Expense' : 'Log New Expense'}</h2>
+              <button onClick={closeExpenseModal} className="text-brand-text-dim hover:text-brand-text transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -411,20 +461,21 @@ export default function FeesMyExpenses() {
 
                 <div>
                   <label className="block text-sm font-bold text-brand-text mb-1.5">Payment Source *</label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={`grid grid-cols-2 gap-3 ${editingExpense ? 'opacity-60 pointer-events-none' : ''}`}>
                     <label className={`border rounded-lg p-3 cursor-pointer transition-colors flex flex-col gap-1 items-start ${expenseData.source === 'office' ? 'border-brand-primary bg-brand-primary/10' : 'border-brand-card-border hover:bg-black/5'}`}>
-                      <input type="radio" name="source" value="office" className="hidden" checked={expenseData.source === 'office'} onChange={() => setExpenseData({...expenseData, source: 'office'})} />
+                      <input type="radio" name="source" value="office" className="hidden" checked={expenseData.source === 'office'} onChange={() => setExpenseData({...expenseData, source: 'office'})} disabled={!!editingExpense} />
                       <Building2 size={18} className={expenseData.source === 'office' ? 'text-brand-primary' : 'text-brand-text-dim'} />
                       <span className="font-bold text-brand-text text-sm mt-1">School Acct</span>
                       <span className="text-[10px] text-brand-text-dim leading-tight">Paid by school. Logged by {staffName}.</span>
                     </label>
                     <label className={`border rounded-lg p-3 cursor-pointer transition-colors flex flex-col gap-1 items-start ${expenseData.source === 'staff_wallet' ? 'border-brand-secondary bg-brand-secondary/10' : 'border-brand-card-border hover:bg-black/5'}`}>
-                      <input type="radio" name="source" value="staff_wallet" className="hidden" checked={expenseData.source === 'staff_wallet'} onChange={() => setExpenseData({...expenseData, source: 'staff_wallet'})} />
+                      <input type="radio" name="source" value="staff_wallet" className="hidden" checked={expenseData.source === 'staff_wallet'} onChange={() => setExpenseData({...expenseData, source: 'staff_wallet'})} disabled={!!editingExpense} />
                       <Wallet size={18} className={expenseData.source === 'staff_wallet' ? 'text-brand-secondary' : 'text-brand-text-dim'} />
                       <span className="font-bold text-brand-text text-sm mt-1">My Wallet</span>
                       <span className="text-[10px] text-brand-text-dim leading-tight">Paid from my wallet balance.</span>
                     </label>
                   </div>
+                  {editingExpense && <p className="text-[11px] text-brand-text-dim mt-1.5">Payment source can't be changed after logging — delete and re-log instead if needed.</p>}
                 </div>
 
                 <div>
@@ -480,7 +531,9 @@ export default function FeesMyExpenses() {
                     />
                     <Upload size={24} className="text-brand-text-dim mb-2" />
                     <span className="text-sm font-medium text-brand-text text-center">
-                      {expenseData.file ? expenseData.file.name : "Click or drag to upload receipt"}
+                      {expenseData.file
+                        ? expenseData.file.name
+                        : (editingExpense?.attachmentUrl ? "Receipt already attached — click or drag to replace" : "Click or drag to upload receipt")}
                     </span>
                   </div>
                 </div>
@@ -488,7 +541,7 @@ export default function FeesMyExpenses() {
 
               <div className="mt-8 flex justify-end gap-3">
                 <button
-                  type="button" onClick={() => setIsLogExpenseOpen(false)}
+                  type="button" onClick={closeExpenseModal}
                   className="px-5 py-2 rounded-lg font-bold text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                   disabled={isSaving}
                 >
@@ -501,7 +554,7 @@ export default function FeesMyExpenses() {
                 >
                   {isSaving ? (
                     <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Saving...</>
-                  ) : "Confirm & Log"}
+                  ) : (editingExpense ? "Save Changes" : "Confirm & Log")}
                 </button>
               </div>
             </form>
