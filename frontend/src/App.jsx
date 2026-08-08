@@ -16,8 +16,9 @@ import StaffDirectory from './components/StaffDirectory';
 import GlobalSearch from './components/GlobalSearch';
 import MainDashboard from './components/MainDashboard';
 import { getCurrentTamilDate } from './utils/astrologyApi';
-import { MessageCircle, Cake, CalendarDays } from 'lucide-react';
+import { MessageCircle, Cake, CalendarDays, ChefHat } from 'lucide-react';
 import SchoolCalendar from './components/SchoolCalendar';
+import WeeklyMenu from './components/WeeklyMenu';
 
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 
@@ -187,6 +188,7 @@ function App() {
     ...(hasFeeCollectionAccess ? [{ id: 'fee-collection', label: 'Fee Collection', icon: CreditCard }] : []),
     ...(hasAccountingAccess ? [{ id: 'accounting', label: 'Accounting', icon: Landmark }] : []),
     { id: 'calendar', label: 'School Calendar', icon: CalendarDays },
+    { id: 'weekly-menu', label: 'Weekly Menu', icon: ChefHat },
     ...(isMaster ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];
 
@@ -559,6 +561,7 @@ function App() {
             <Route path="/fee-collection/*" element={<FeeCollection />} />
             <Route path="/accounting/*" element={<Accounting />} />
             <Route path="/calendar" element={<SchoolCalendar />} />
+            <Route path="/weekly-menu" element={<WeeklyMenu />} />
 
             <Route path="/settings/*" element={<SettingsAdmin />} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -312,7 +312,13 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAuthenticated() && (isAdmin() || isInternalStaff());
     }
-    
+
+    // --- Weekly Menus ---
+    match /weekly_menus/{menuId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isAdmin() || isInternalStaff());
+    }
+
     // Default fallback
     match /{document=**} {
       allow read, write: if isAdmin();
