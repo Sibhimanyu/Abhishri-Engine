@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { collection, query, where, onSnapshot, getDocs, doc, addDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs, doc, addDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { firestore, storage } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { Plus, X, Upload, Wallet, Receipt, ExternalLink, Building2 } from 'lucide-react';
+import { Plus, X, Upload, Wallet, Receipt, ExternalLink, Building2, Trash2 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 
 export default function FeesMyExpenses() {
@@ -39,6 +39,7 @@ export default function FeesMyExpenses() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const email = currentUser?.email?.toLowerCase();
 
@@ -239,6 +240,19 @@ export default function FeesMyExpenses() {
     }
   };
 
+  const handleDeleteExpense = async (expense) => {
+    if (!window.confirm(`Delete this expense${expense.details ? ` ("${expense.details}")` : ''}? This cannot be undone.`)) return;
+    setDeletingId(expense.id);
+    try {
+      await deleteDoc(doc(firestore, 'expenses', expense.id));
+    } catch (err) {
+      console.error("Error deleting expense:", err);
+      alert("Failed to delete expense. You can only delete expenses you personally logged.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -307,12 +321,13 @@ export default function FeesMyExpenses() {
                 <th className="px-6 py-4 text-right">Amount</th>
                 <th className="px-6 py-4 text-right">Date</th>
                 <th className="px-6 py-4 text-right">Receipt</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {expenses.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-brand-text-dim">
+                  <td colSpan="7" className="px-6 py-8 text-center text-brand-text-dim">
                     You haven't logged any expenses yet.
                   </td>
                 </tr>
@@ -352,6 +367,22 @@ export default function FeesMyExpenses() {
                             className="inline-flex justify-end items-center gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-700 font-medium transition-colors"
                           >
                             <ExternalLink size={14} /> View
+                          </button>
+                        ) : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {t.createdBy === email ? (
+                          <button
+                            onClick={() => handleDeleteExpense(t)}
+                            disabled={deletingId === t.id}
+                            title="Delete this expense"
+                            className="inline-flex justify-end items-center gap-1 text-red-500 hover:text-red-600 font-medium transition-colors disabled:opacity-50"
+                          >
+                            {deletingId === t.id ? (
+                              <div className="w-3.5 h-3.5 border-2 border-red-300 border-t-red-500 rounded-full animate-spin" />
+                            ) : (
+                              <Trash2 size={14} />
+                            )}
                           </button>
                         ) : '-'}
                       </td>
