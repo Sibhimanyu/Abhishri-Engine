@@ -135,14 +135,20 @@ async function reconcileStudent(studentId, db) {
     }
 
     const existingSummary = studentDoc.exists ? (studentDoc.data().financialSummary || {}) : {};
-    const summaryChanged = existingSummary.status !== status ||
+    // Require studentDoc.exists: when the student was just deleted (e.g. onStudentDeleted
+    // deleting plan_details, which re-triggers this via syncFeePlanUpdates), the parent doc
+    // is already gone. Without this guard, `existingSummary` defaults to {} and every field
+    // compares as "changed", so batch.update below always fires on a nonexistent document
+    // and throws NOT_FOUND, failing every student deletion.
+    const summaryChanged = studentDoc.exists && (
+        existingSummary.status !== status ||
         existingSummary.dueNow !== dueNow ||
         existingSummary.aheadBy !== aheadBy ||
         existingSummary.totalPaid !== totalPaid ||
         existingSummary.totalDiscounted !== totalDiscounted ||
         existingSummary.annualRemaining !== annualRemaining ||
         existingSummary.annualNetFee !== annualNetFee ||
-        existingSummary.expectedToDate !== adjustedExpectedToDate;
+        existingSummary.expectedToDate !== adjustedExpectedToDate);
 
     // No trigger currently watches students/{studentId} for updates, but guard
     // anyway so this can never become the same kind of self-retriggering loop
@@ -219,8 +225,18 @@ exports.syncStaffWalletBalance = onDocumentWritten("expenses/{expenseId}", async
     if (!staffId) return;
 
     const staffRef = db.collection("staff").doc(staffId);
+    // Firestore triggers are at-least-once: the same write event can be delivered more than
+    // once (retries, infra hiccups). Without a dedupe marker, a redelivery re-reads the
+    // current balance and re-applies the same delta again, permanently drifting the wallet.
+    // Record event.id (stable across redeliveries of the same event) in a side collection and
+    // bail if we've already applied it — writing the marker onto `expenses` itself would
+    // re-trigger this same function.
+    const dedupeRef = db.collection("_wallet_sync_events").doc(event.id);
 
     return db.runTransaction(async (transaction) => {
+        const dedupeDoc = await transaction.get(dedupeRef);
+        if (dedupeDoc.exists) return;
+
         const staffDoc = await transaction.get(staffRef);
         if (!staffDoc.exists) return;
 
@@ -244,5 +260,6 @@ exports.syncStaffWalletBalance = onDocumentWritten("expenses/{expenseId}", async
             walletBalance: walletBalance,
             lastWalletSync: admin.firestore.FieldValue.serverTimestamp()
         });
+        transaction.set(dedupeRef, { appliedAt: admin.firestore.FieldValue.serverTimestamp() });
     });
 });

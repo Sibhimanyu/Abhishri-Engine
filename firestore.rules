@@ -177,13 +177,27 @@ service cloud.firestore {
         ))
       );
       allow create: if isAuthenticated() && (
-        isAdmin() || 
-        getPerm('fees_accounting', 'exp_all') || 
-        getPerm('fees_accounting', 'exp_own') || 
-        getPerm('fees_accounting', 'wallet_edit_own') ||
-        (isInternalStaff() && isOwnEmail(request.resource.data.get('createdBy', '')))
+        isAdmin() ||
+        getPerm('fees_accounting', 'exp_all') ||
+        (
+          // Non-"exp_all" holders may only create records attributed to themselves.
+          (getPerm('fees_accounting', 'exp_own') || getPerm('fees_accounting', 'wallet_edit_own') || isInternalStaff()) &&
+          isOwnEmail(request.resource.data.get('createdBy', '')) &&
+          // A staff_wallet-sourced expense (which the syncStaffWalletBalance trigger uses to
+          // credit/debit staff/{staffId}.walletBalance) must target the caller's OWN staff record —
+          // otherwise any staff account could fund/drain another staff member's wallet.
+          (
+            request.resource.data.get('source', '') != 'staff_wallet' ||
+            getStaffEmail(request.resource.data.get('staffId', '')) == request.auth.token.email.lower()
+          )
+        )
       );
-      allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all') || getPerm('fees_accounting', 'wallet_edit_own'));
+      allow update, delete: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'exp_all') ||
+        // "wallet_edit_own" only covers the caller's own records, despite the missing check previously.
+        (getPerm('fees_accounting', 'wallet_edit_own') && resource != null && isOwnEmail(resource.data.get('createdBy', '')))
+      );
     }
 
     match /fee_plans/{id} {
@@ -199,7 +213,9 @@ service cloud.firestore {
     match /collections/{id} {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || (resource != null && isParentOf(resource.data.get('studentId', ''))));
       allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
-      allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete') || getPerm('fees_accounting', 'trans_add'));
+      // "trans_add" is meant to let a role record NEW collections, not edit/delete existing
+      // receipts — that must go through "trans_delete" (matching students/{id}/transactions).
+      allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
     }
 
     match /salaries/{id} {
@@ -246,10 +262,19 @@ service cloud.firestore {
       );
       allow write: if isAdmin() || (
         (getPerm('staff_directory', 'manage') || getPerm('staff_directory', 'add')) &&
+        // Direct "permissions" overrides are admin-only — otherwise any manager/add-holder
+        // could grant themselves (or anyone) arbitrary module permissions (e.g. fees delete/config)
+        // without ever touching the isAdmin/role fields this rule already guards.
+        !request.resource.data.keys().hasAny(['permissions']) &&
         (!request.resource.data.keys().hasAll(['isAdmin']) || request.resource.data.isAdmin == false) &&
         (!request.resource.data.keys().hasAll(['role']) || request.resource.data.role != 'admin')
       );
-      allow delete: if isAdmin() || getPerm('staff_directory', 'delete');
+      // A non-admin "delete" holder still cannot remove an admin's own access record (lockout/DoS guard).
+      allow delete: if isAdmin() || (
+        getPerm('staff_directory', 'delete') &&
+        resource.data.get('isAdmin', false) != true &&
+        resource.data.get('role', '') != 'admin'
+      );
     }
     
     // --- Unauthorized Logins ---

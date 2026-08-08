@@ -259,6 +259,7 @@ export default function WhatsAppBroadcast() {
   };
 
   const handleConfirmLaunch = async () => {
+    if (loading) return; // re-entrancy guard: ignore a double-click/double-tap before loading flips the button off
     setShowConfirmModal(false);
     setLoading(true);
 
@@ -560,11 +561,12 @@ export default function WhatsAppBroadcast() {
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleConfirmLaunch}
-                className="flex-1 px-4 py-2 rounded-lg bg-brand-primary text-white hover:bg-brand-primary/90 transition-colors font-bold text-sm flex justify-center items-center gap-2"
+                disabled={loading}
+                className={`flex-1 px-4 py-2 rounded-lg text-white transition-colors font-bold text-sm flex justify-center items-center gap-2 ${loading ? 'bg-brand-card-border cursor-not-allowed' : 'bg-brand-primary hover:bg-brand-primary/90'}`}
               >
-                Confirm & Send <Send size={16}/>
+                {loading ? 'Sending...' : <>Confirm & Send <Send size={16}/></>}
               </button>
             </div>
           </div>

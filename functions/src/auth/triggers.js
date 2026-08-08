@@ -12,7 +12,10 @@ exports.onUserCreated = functions.region('us-central1').auth.user().onCreate(asy
   const emailDocRef = db.collection('allowed_users').doc(email);
   const emailDoc = await emailDocRef.get();
 
-  if (emailDoc.exists()) {
+  // `exists` is a boolean property on Admin SDK DocumentSnapshots, not a method — calling
+  // it as `.exists()` throws a TypeError on every invocation, silently breaking permission
+  // provisioning/custom-claims for every new signup.
+  if (emailDoc.exists) {
     // Move the document to use their new UID
     const uidDocRef = db.collection('allowed_users').doc(user.uid);
     const userData = emailDoc.data();

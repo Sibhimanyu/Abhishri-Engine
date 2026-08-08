@@ -151,7 +151,17 @@ async function run() {
 
     console.log(`Filtered down to ${customDays.length} custom calendar days. Logging in to Firebase...`);
 
-    const userCredential = await signInWithEmailAndPassword(auth, "info@abhishriacademy.in", "***REDACTED-ROTATE-THIS-CREDENTIAL***");
+    const seedEmail = process.env.SEED_ADMIN_EMAIL;
+    const seedPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!seedEmail || !seedPassword) {
+      throw new Error(
+        "Set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD environment variables before running this script " +
+        "(e.g. `SEED_ADMIN_EMAIL=... SEED_ADMIN_PASSWORD=... node seed_calendar.js`). " +
+        "Never hardcode credentials in this file — it is committed to git."
+      );
+    }
+
+    const userCredential = await signInWithEmailAndPassword(auth, seedEmail, seedPassword);
     console.log("Logged in as Admin:", userCredential.user.uid);
 
     console.log("Seeding calendar days into Firestore...");

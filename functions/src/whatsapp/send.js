@@ -163,6 +163,27 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
 
     const db = admin.database(), fs = admin.firestore();
 
+    // Guard against dispatching the same broadcast twice — a client retry on this callable
+    // (it can run up to 540s) or a double-click before the confirm button disables would
+    // otherwise resend the entire recipient list, doubling the WhatsApp API cost and spamming
+    // every real recipient twice. This claim is server-side because client-side button
+    // disabling alone can be bypassed (direct SDK call, race between click and re-render).
+    if (broadcastId) {
+      const historyRef = fs.collection("whatsapp_history").doc(broadcastId);
+      const claimed = await fs.runTransaction(async (transaction) => {
+        const snap = await transaction.get(historyRef);
+        if (snap.exists && snap.data().dispatchStarted) return false;
+        transaction.set(historyRef, {
+          dispatchStarted: true,
+          dispatchStartedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        return true;
+      });
+      if (!claimed) {
+        throw new HttpsError("already-exists", "This broadcast has already been dispatched or is currently dispatching.");
+      }
+    }
+
     // 1. Fetch Template Data
     let tData = {};
     if (templateName) {

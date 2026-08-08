@@ -52,14 +52,16 @@ export default function GlobalSearch() {
     setIsOpen(true);
     
     try {
-      const [preschoolSnap, tuitionSnap, staffSnap] = await Promise.all([
-        getDocs(collection(firestore, 'students')),
+      // Was querying the same unfiltered `students` collection twice (leftover from when
+      // preschool/tuition were separate collections) — doubled the read cost of every
+      // debounced keystroke for no benefit, since results were deduped from identical data.
+      const [studentsSnap, staffSnap] = await Promise.all([
         getDocs(collection(firestore, 'students')),
         getDocs(collection(firestore, 'allowed_users'))
       ]);
 
       const foundStudents = [];
-      [...preschoolSnap.docs, ...tuitionSnap.docs].forEach(doc => {
+      studentsSnap.docs.forEach(doc => {
         const data = doc.data();
         if ((data.name || '').toLowerCase().includes(term) || (data.fatherName || '').toLowerCase().includes(term)) {
           foundStudents.push({ id: doc.id, ...data });
