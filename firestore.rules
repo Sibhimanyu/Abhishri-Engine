@@ -74,8 +74,32 @@ service cloud.firestore {
       );
     }
 
+    // Resolve a staff member's email from the SAME collection their wallet lives in
+    // (staff/{staffId}.walletBalance, written by syncStaffWalletBalance). Reading this from
+    // allowed_users was wrong twice over: that collection is writable by any
+    // staff_directory.manage holder, so the identity behind a money check was attacker-
+    // controllable; and onUserCreated migrates allowed_users/{email} -> allowed_users/{uid}
+    // and deletes the email-keyed doc, which would make this return '' for every migrated
+    // user and silently deny their own legitimate wallet writes.
     function getStaffEmail(staffId) {
-      return exists(/databases/$(database)/documents/allowed_users/$(staffId)) ? get(/databases/$(database)/documents/allowed_users/$(staffId)).data.get('email', '').lower() : '';
+      return exists(/databases/$(database)/documents/staff/$(staffId))
+        ? get(/databases/$(database)/documents/staff/$(staffId)).data.get('email', '').lower()
+        : '';
+    }
+
+    // A staff_wallet expense drives staff/{staffId}.walletBalance via the syncStaffWalletBalance
+    // trigger. A caller without "exp_all" may only file one against their OWN staff record, and
+    // may never file a 'funding' entry: funding is money granted TO a staff member by finance,
+    // so permitting it here would let any account (exp_own defaults to true for EVERY role, see
+    // fallbackPerms above) credit its own wallet by an arbitrary amount. Non-wallet expenses are
+    // unaffected. staffId must be non-empty or the exists() path below would be malformed.
+    function isSelfTargetedWalletWrite(data) {
+      let staffId = data.get('staffId', '');
+      return data.get('source', '') != 'staff_wallet' || (
+        staffId != '' &&
+        getStaffEmail(staffId) == request.auth.token.email.lower() &&
+        data.get('type', '') != 'funding'
+      );
     }
 
     function isParentOf(studentId) {
@@ -183,13 +207,10 @@ service cloud.firestore {
           // Non-"exp_all" holders may only create records attributed to themselves.
           (getPerm('fees_accounting', 'exp_own') || getPerm('fees_accounting', 'wallet_edit_own') || isInternalStaff()) &&
           isOwnEmail(request.resource.data.get('createdBy', '')) &&
-          // A staff_wallet-sourced expense (which the syncStaffWalletBalance trigger uses to
-          // credit/debit staff/{staffId}.walletBalance) must target the caller's OWN staff record —
-          // otherwise any staff account could fund/drain another staff member's wallet.
-          (
-            request.resource.data.get('source', '') != 'staff_wallet' ||
-            getStaffEmail(request.resource.data.get('staffId', '')) == request.auth.token.email.lower()
-          )
+          // A staff_wallet-sourced expense must target the caller's OWN staff record and must
+          // not be a 'funding' entry — otherwise any staff account could fund/drain another
+          // staff member's wallet, or simply credit its own. See isSelfTargetedWalletWrite.
+          isSelfTargetedWalletWrite(request.resource.data)
         )
       );
       allow update: if isAuthenticated() && (
@@ -202,10 +223,7 @@ service cloud.firestore {
           (getPerm('fees_accounting', 'exp_own') || getPerm('fees_accounting', 'wallet_edit_own')) &&
           resource != null && isOwnEmail(resource.data.get('createdBy', '')) &&
           isOwnEmail(request.resource.data.get('createdBy', '')) &&
-          (
-            request.resource.data.get('source', '') != 'staff_wallet' ||
-            getStaffEmail(request.resource.data.get('staffId', '')) == request.auth.token.email.lower()
-          )
+          isSelfTargetedWalletWrite(request.resource.data)
         )
       );
       allow delete: if isAuthenticated() && (
