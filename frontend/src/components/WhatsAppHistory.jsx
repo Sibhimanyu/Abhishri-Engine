@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { ref, onValue } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
@@ -10,6 +10,18 @@ function BroadcastDetailView({ log, onBack }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [templateCategory, setTemplateCategory] = useState(null);
+  // `log` is a frozen prop (selectedLog is set once when the row is clicked and never
+  // refreshed from the live whatsapp_history listener), so comparing against log.sentCount
+  // etc. below never advances — it would fire an updateDoc on nearly every RTDB tick for a
+  // live campaign. Track the last-written values in a ref instead so the comparison baseline
+  // actually moves forward after each write.
+  const lastSyncedRef = useRef({
+    sentCount: log.sentCount,
+    deliveredCount: log.deliveredCount,
+    readCount: log.readCount,
+    failedCount: log.failedCount,
+    recipientsCount: log.recipientsCount
+  });
 
   useEffect(() => {
     if (log?.template) {
@@ -49,13 +61,15 @@ function BroadcastDetailView({ log, onBack }) {
         });
 
         const total = arr.length;
+        const last = lastSyncedRef.current;
         if (
-          log.sentCount !== sent ||
-          log.deliveredCount !== delivered ||
-          log.readCount !== read ||
-          log.failedCount !== failed ||
-          log.recipientsCount !== total
+          last.sentCount !== sent ||
+          last.deliveredCount !== delivered ||
+          last.readCount !== read ||
+          last.failedCount !== failed ||
+          last.recipientsCount !== total
         ) {
+          lastSyncedRef.current = { sentCount: sent, deliveredCount: delivered, readCount: read, failedCount: failed, recipientsCount: total };
           import('firebase/firestore').then(({ doc, updateDoc }) => {
             const docRef = doc(firestore, 'whatsapp_history', log.id);
             updateDoc(docRef, {

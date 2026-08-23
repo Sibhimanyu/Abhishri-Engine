@@ -4,6 +4,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { firestore, storage } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Wallet, Search, ArrowUpCircle, ArrowDownCircle, FileText, Upload, X, Trash2, ExternalLink } from 'lucide-react';
+import { logAudit } from '../utils/auditLog';
 import imageCompression from 'browser-image-compression';
 
 export default function FeesStaffWallets() {
@@ -115,8 +116,18 @@ export default function FeesStaffWallets() {
         timestamp: serverTimestamp()
       };
       
-      await addDoc(collection(firestore, 'expenses'), newTx);
+      const newTxRef = await addDoc(collection(firestore, 'expenses'), newTx);
       setExpenses([...expenses, { ...newTx, timestamp: new Date() }]);
+
+      logAudit({
+        action: type === 'credit' ? 'WALLET_FUNDED' : 'WALLET_DEBITED',
+        module: 'fees_accounting',
+        targetId: newTxRef.id,
+        targetName: sObj?.name || newTx.staffEmail || selectedStaff,
+        performedBy: currentUserEmail,
+        details: { staffId: selectedStaff, staffEmail: newTx.staffEmail, amount: newTx.amount, category: walletCategory, details: walletDetails }
+      });
+
       closeModal();
     } catch (err) {
       console.error(err);
@@ -128,9 +139,19 @@ export default function FeesStaffWallets() {
 
   const handleDeleteTx = async (txId) => {
     if (!window.confirm("Are you sure you want to undo/delete this transaction? This will revert the wallet balance.")) return;
+    const tx = expenses.find(e => e.id === txId);
     try {
       await deleteDoc(doc(firestore, 'expenses', txId));
       setExpenses(expenses.filter(e => e.id !== txId));
+
+      logAudit({
+        action: 'WALLET_TRANSACTION_UNDONE',
+        module: 'fees_accounting',
+        targetId: txId,
+        targetName: (staff.find(s => s.id === tx?.staffId)?.name) || tx?.staffEmail || tx?.category || txId,
+        performedBy: currentUserEmail,
+        details: { staffId: tx?.staffId || null, staffEmail: tx?.staffEmail || null, amount: tx?.amount ?? null, type: tx?.type || null, category: tx?.category || null }
+      });
     } catch (err) {
       console.error(err);
       alert("Failed to delete transaction.");

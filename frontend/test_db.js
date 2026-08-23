@@ -18,7 +18,15 @@ const firestore = getFirestore(app);
 
 async function run() {
   try {
-    const userCredential = await signInWithEmailAndPassword(auth, "info@abhishriacademy.in", "***REDACTED-ROTATE-THIS-CREDENTIAL***");
+    const seedEmail = process.env.SEED_ADMIN_EMAIL;
+    const seedPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!seedEmail || !seedPassword) {
+      throw new Error(
+        "Set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD environment variables before running this script. " +
+        "Never hardcode credentials in this file — it is committed to git."
+      );
+    }
+    const userCredential = await signInWithEmailAndPassword(auth, seedEmail, seedPassword);
     console.log("Logged in as:", userCredential.user.uid);
     
     // First let's just query everything without rule restrictions if possible

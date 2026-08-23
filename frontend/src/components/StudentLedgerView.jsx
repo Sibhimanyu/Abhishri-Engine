@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, updateDoc, onSnapshot, limit } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { logAudit } from '../utils/auditLog';
 import { ArrowLeft, PlusCircle, Printer, AlertTriangle, Layers, ListChecks, Settings2, X, Check, Trash2, Plus, IndianRupee, MessageCircle, Edit2 } from 'lucide-react';
 import PaymentReceipt from './PaymentReceipt';
 
@@ -422,6 +423,15 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         isVoided: true
       });
 
+      logAudit({
+        action: 'TRANSACTION_VOIDED',
+        module: 'fees_accounting',
+        targetId: tx.id,
+        targetName: student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown',
+        performedBy: userData?.email,
+        details: { amount: tx.amount, description: tx.description, reason }
+      });
+
       alert("Transaction voided. The balancing entry has been recorded.");
     } catch (err) {
       console.error(err);
@@ -518,9 +528,10 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       // via an onSnapshot trigger, and our UI syncs via its own onSnapshot.
       const timestampValue = paymentForm.date ? new Date(paymentForm.date) : serverTimestamp();
 
-      await addDoc(collection(firestore, 'students', studentId, 'transactions'), {
+      const paymentName = student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown';
+      const newTxRef = await addDoc(collection(firestore, 'students', studentId, 'transactions'), {
         studentId: studentId,
-        studentName: student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown',
+        studentName: paymentName,
         amount: pAmt,
         method: paymentForm.method,
         description: paymentForm.description || 'Fee Payment',
@@ -530,6 +541,15 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         breakdownNames: breakdownNames,
         timestamp: timestampValue,
         addedBy: userData?.email || 'Unknown'
+      });
+
+      logAudit({
+        action: 'PAYMENT_LOGGED',
+        module: 'fees_accounting',
+        targetId: newTxRef.id,
+        targetName: paymentName,
+        performedBy: userData?.email,
+        details: { amount: pAmt, method: paymentForm.method, description: paymentForm.description }
       });
 
       setIsPaymentOpen(false);
@@ -572,10 +592,19 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       txData.breakdown = breakdown;
       txData.breakdownNames = breakdownNames;
 
-      await addDoc(collection(firestore, 'students', studentId, 'transactions'), {
+      const newDiscountRef = await addDoc(collection(firestore, 'students', studentId, 'transactions'), {
         ...txData,
         studentId: studentId,
         studentName: student.name,
+      });
+
+      logAudit({
+        action: 'DISCOUNT_GRANTED',
+        module: 'fees_accounting',
+        targetId: newDiscountRef.id,
+        targetName: student.name,
+        performedBy: userData?.email,
+        details: { amount: pAmt, description: discountForm.description }
       });
 
       setIsDiscountOpen(false);
@@ -620,6 +649,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       const timestampValue = editPaymentForm.date ? new Date(editPaymentForm.date) : serverTimestamp();
       
       const { breakdown, breakdownNames } = allocateFunds(Math.abs(pAmt), compPayments, []);
+      const originalTx = transactions.find(t => t.id === editPaymentForm.id);
 
       await updateDoc(doc(firestore, 'students', studentId, 'transactions', editPaymentForm.id), {
         amount: pAmt,
@@ -629,6 +659,21 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         breakdown: breakdown,
         breakdownNames: breakdownNames
       });
+
+      logAudit({
+        action: 'TRANSACTION_EDITED',
+        module: 'fees_accounting',
+        targetId: editPaymentForm.id,
+        targetName: student?.name || originalTx?.studentName || 'Unknown',
+        performedBy: userData?.email,
+        details: {
+          amount: { from: originalTx?.amount ?? null, to: pAmt },
+          method: { from: originalTx?.method ?? null, to: editPaymentForm.method },
+          description: { from: originalTx?.description ?? null, to: editPaymentForm.description },
+          date: { from: originalTx?.timestamp ?? null, to: editPaymentForm.date || null }
+        }
+      });
+
       setIsEditPaymentOpen(false);
     } catch (err) {
       console.error(err);

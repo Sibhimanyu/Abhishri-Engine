@@ -3,6 +3,7 @@ import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Search, Plus, Edit2, Trash2, X, IndianRupee } from 'lucide-react';
+import { logAudit } from '../utils/auditLog';
 
 export default function FeesPlans() {
   const { currentUser, userData } = useAuth();
@@ -108,13 +109,29 @@ export default function FeesPlans() {
       };
 
       const plansRef = collection(firestore, 'fee_plans');
-      
+
       if (editingPlan.id) {
         await updateDoc(doc(plansRef, editingPlan.id), payload);
+        logAudit({
+          action: 'FEE_PLAN_UPDATED',
+          module: 'fees_accounting',
+          targetId: editingPlan.id,
+          targetName: payload.name,
+          performedBy: currentUser?.email,
+          details: { billingCycle: payload.billingCycle, componentCount: payload.components.length }
+        });
       } else {
-        await addDoc(plansRef, payload);
+        const newPlanRef = await addDoc(plansRef, payload);
+        logAudit({
+          action: 'FEE_PLAN_CREATED',
+          module: 'fees_accounting',
+          targetId: newPlanRef.id,
+          targetName: payload.name,
+          performedBy: currentUser?.email,
+          details: { billingCycle: payload.billingCycle, componentCount: payload.components.length }
+        });
       }
-      
+
       setIsModalOpen(false);
       loadPlans();
     } catch (err) {
@@ -128,6 +145,14 @@ export default function FeesPlans() {
     if (window.confirm(`Are you sure you want to delete the package "${planName}"? This action cannot be undone.`)) {
       try {
         await deleteDoc(doc(firestore, 'fee_plans', planId));
+        logAudit({
+          action: 'FEE_PLAN_DELETED',
+          module: 'fees_accounting',
+          targetId: planId,
+          targetName: planName,
+          performedBy: currentUser?.email,
+          details: {}
+        });
         loadPlans();
       } catch (err) {
         console.error("Failed to delete plan", err);

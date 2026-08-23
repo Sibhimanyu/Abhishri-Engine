@@ -4,6 +4,7 @@ import { firestore } from '../firebase';
 import { ArrowLeft, Edit3, MapPin, Phone, Mail, User, Briefcase, HeartPulse, DollarSign, Wallet, Save, X, Calendar, Trash2, Loader, Star } from 'lucide-react';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 import { useAuth } from '../context/AuthContext';
+import { logAudit } from '../utils/auditLog';
 
 export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
   const { userData, currentUser } = useAuth();
@@ -161,8 +162,26 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
         }, { merge: true });
       }
 
+      const changedFields = {};
+      Object.keys(editForm).forEach(key => {
+        if ((profile?.[key] ?? '') !== editForm[key]) {
+          changedFields[key] = { from: profile?.[key] ?? null, to: editForm[key] };
+        }
+      });
+
       setProfile({ ...editForm, id: uid });
       setIsEditing(false);
+
+      if (Object.keys(changedFields).length > 0) {
+        logAudit({
+          action: 'STAFF_UPDATED',
+          module: 'staff_directory',
+          targetId: uid,
+          targetName: editForm.name,
+          performedBy: currentUser?.email,
+          details: { changedFields }
+        });
+      }
     } catch (err) {
       console.error('Failed to update staff profile:', err);
       alert('Failed to update staff profile. Please try again.');
@@ -212,7 +231,16 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
         try {
           await deleteDoc(doc(firestore, 'staff_wallets', uid));
         } catch(e) {}
-        
+
+        logAudit({
+          action: 'STAFF_DELETED',
+          module: 'staff_directory',
+          targetId: uid,
+          targetName: profile?.name || defaultName || uid,
+          performedBy: currentUser?.email,
+          details: { email: profile?.email || null, designation: profile?.designation || null }
+        });
+
         onBack(); // Go back to directory
       } catch (err) {
         console.error("Failed to delete staff:", err);

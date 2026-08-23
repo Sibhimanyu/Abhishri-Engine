@@ -66,18 +66,18 @@ service firebase.storage {
     }
 
     match /expenses/{userEmail}/{allPaths=**} {
+      // "exp_own" and isInternalStaff() were previously granted here regardless of the
+      // {userEmail} path segment, letting any staff member read/overwrite another staff
+      // member's receipt folder. Own-path access is already covered by the email match below;
+      // cross-user access now requires exp_all (or admin), same as the Firestore expenses rule.
       allow read: if isAuthenticated() && (
         (request.auth.token.email.lower() == userEmail.lower()) ||
         isAdmin() ||
-        isInternalStaff() ||
-        getPerm('fees_accounting', 'exp_own') ||
         getPerm('fees_accounting', 'exp_all')
       );
       allow write: if isAuthenticated() && (
         (request.auth.token.email.lower() == userEmail.lower()) ||
         isAdmin() ||
-        isInternalStaff() ||
-        getPerm('fees_accounting', 'exp_own') ||
         getPerm('fees_accounting', 'exp_all')
       ) && (
         request.resource == null || (
@@ -93,8 +93,12 @@ service firebase.storage {
     }
 
     match /fees/staff_wallet/{allPaths=**} {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all') || getPerm('fees_accounting', 'exp_own'));
-      allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all') || getPerm('fees_accounting', 'exp_own')) && (
+      // This path has no per-user segment, so "exp_own" (which defaults to true for every
+      // staff account, see getPerm's fallbackPerms) previously gave any staff member
+      // read/write over every OTHER staff member's wallet-funding proof file. Restrict to
+      // exp_all/admin, matching who is actually meant to fund/manage staff wallets.
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all'));
+      allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'exp_all')) && (
         request.resource == null || (
           request.resource.size < 10 * 1024 * 1024 &&
           request.resource.contentType.matches('image/.*|application/pdf')
