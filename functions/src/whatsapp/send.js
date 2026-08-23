@@ -333,8 +333,11 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
       apiUrl += `&media_url=${encodeURIComponent(headerImageUrl)}`;
     }
 
-    // DEBUG LOG: See the exact URL in Firebase console
-    const logUrl = apiUrl; // No longer redacting for debugging purposes as requested
+    // DEBUG LOG: the URL is useful for diagnosing dispatch issues, but the authorization
+    // param IS the Fast2SMS API key — in cleartext it ends up in Cloud Logging and in the
+    // whatsapp_history/debugBatches documents, and anyone who reads it can drain the SMS
+    // wallet. Always redact it.
+    const logUrl = apiUrl.replace(auth, "***REDACTED***");
     logger.info(`WhatsApp Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${logUrl}`);
 
     // Save batch info for debugging

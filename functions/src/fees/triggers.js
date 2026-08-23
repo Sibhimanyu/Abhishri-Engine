@@ -207,6 +207,55 @@ exports.dailyFeeReconciliation = onSchedule("every day 00:00", async (event) => 
 });
 
 /**
+ * Recompute one staff member's walletBalance from their staff_wallet expenses.
+ *
+ * This is a full recompute rather than delta-tracking on purpose. The previous
+ * delta version only subtracted on type === 'spend', but both frontend writers
+ * (FeesMyExpenses, FeesStaffWallets) record wallet debits as type === 'expense',
+ * so spends were never applied and every balance drifted upward (funding-only).
+ * A recompute is idempotent — at-least-once event redeliveries just recompute
+ * the same value (so no _wallet_sync_events dedupe marker is needed) — and it
+ * self-heals that historical drift on each staff member's next wallet event.
+ *
+ * Sign convention matches the client-side calculators in FeesMyExpenses and
+ * FeesStaffWallets: 'funding' credits, everything else ('expense', legacy
+ * 'spend') debits.
+ */
+async function resyncWalletBalance(db, staffId) {
+    const staffRef = db.collection("staff").doc(staffId);
+    const walletQuery = db.collection("expenses")
+        .where("source", "==", "staff_wallet")
+        .where("staffId", "==", staffId);
+
+    // Transaction so two near-simultaneous wallet events for the same staff member
+    // serialize instead of racing (the later, stale recompute clobbering the fresh one).
+    await db.runTransaction(async (transaction) => {
+        const [staffDoc, walletSnap] = await Promise.all([
+            transaction.get(staffRef),
+            transaction.get(walletQuery)
+        ]);
+        if (!staffDoc.exists) return;
+
+        let walletBalance = 0;
+        walletSnap.docs.forEach((doc) => {
+            const e = doc.data();
+            const amount = e.amount || 0;
+            if (e.type === 'funding') walletBalance += amount;
+            else walletBalance -= amount;
+        });
+
+        // Skip the write when nothing changed — keeps redeliveries free and avoids
+        // pointless lastWalletSync churn on every unrelated recompute.
+        if ((staffDoc.data().walletBalance || 0) !== walletBalance) {
+            transaction.update(staffRef, {
+                walletBalance: walletBalance,
+                lastWalletSync: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+    });
+}
+
+/**
  * Trigger to keep staff wallet balances in sync with expenses.
  * Specifically handles source='staff_wallet'.
  */
@@ -221,45 +270,12 @@ exports.syncStaffWalletBalance = onDocumentWritten("expenses/{expenseId}", async
 
     if (!isWalletBefore && !isWalletAfter) return;
 
-    const staffId = dataAfter ? dataAfter.staffId : (dataBefore ? dataBefore.staffId : null);
-    if (!staffId) return;
+    // An update could in principle retarget staffId (rules forbid it for non-exp_all
+    // callers, but admins bypass that) — resync every staff member the event touches.
+    const staffIds = new Set();
+    if (isWalletBefore && dataBefore.staffId) staffIds.add(dataBefore.staffId);
+    if (isWalletAfter && dataAfter.staffId) staffIds.add(dataAfter.staffId);
+    if (staffIds.size === 0) return;
 
-    const staffRef = db.collection("staff").doc(staffId);
-    // Firestore triggers are at-least-once: the same write event can be delivered more than
-    // once (retries, infra hiccups). Without a dedupe marker, a redelivery re-reads the
-    // current balance and re-applies the same delta again, permanently drifting the wallet.
-    // Record event.id (stable across redeliveries of the same event) in a side collection and
-    // bail if we've already applied it — writing the marker onto `expenses` itself would
-    // re-trigger this same function.
-    const dedupeRef = db.collection("_wallet_sync_events").doc(event.id);
-
-    return db.runTransaction(async (transaction) => {
-        const dedupeDoc = await transaction.get(dedupeRef);
-        if (dedupeDoc.exists) return;
-
-        const staffDoc = await transaction.get(staffRef);
-        if (!staffDoc.exists) return;
-
-        let walletBalance = staffDoc.data().walletBalance || 0;
-
-        // 1. Revert old record (Update/Delete)
-        if (isWalletBefore) {
-            const amount = dataBefore.amount || 0;
-            if (dataBefore.type === 'funding') walletBalance -= amount;
-            else if (dataBefore.type === 'spend') walletBalance += amount;
-        }
-
-        // 2. Apply new record (Create/Update)
-        if (isWalletAfter) {
-            const amount = dataAfter.amount || 0;
-            if (dataAfter.type === 'funding') walletBalance += amount;
-            else if (dataAfter.type === 'spend') walletBalance -= amount;
-        }
-
-        transaction.update(staffRef, {
-            walletBalance: walletBalance,
-            lastWalletSync: admin.firestore.FieldValue.serverTimestamp()
-        });
-        transaction.set(dedupeRef, { appliedAt: admin.firestore.FieldValue.serverTimestamp() });
-    });
+    await Promise.all(Array.from(staffIds).map((staffId) => resyncWalletBalance(db, staffId)));
 });

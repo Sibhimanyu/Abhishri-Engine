@@ -43,7 +43,7 @@ exports.aggregateDailyAttendance = onSchedule({ schedule: "59 23 * * *", timeZon
     }
 
     const attendanceData = snapshot.val();
-    const batch = db.batch();
+    let batch = db.batch();
     let batchCount = 0;
 
     for (const [entityId, data] of Object.entries(attendanceData)) {
@@ -68,6 +68,11 @@ exports.aggregateDailyAttendance = onSchedule({ schedule: "59 23 * * *", timeZon
 
       if (batchCount >= 490) {
         await batch.commit();
+        // A committed WriteBatch cannot accept further writes — reusing it throws on the
+        // next batch.set(), which would abort this run AFTER the first 490 increments
+        // committed but BEFORE the run marker below was written. The next run's idempotency
+        // guard would then not hold, and those 490 entities would be double-counted.
+        batch = db.batch();
         batchCount = 0;
       }
     }
