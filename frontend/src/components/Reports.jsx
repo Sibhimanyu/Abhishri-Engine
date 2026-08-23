@@ -123,8 +123,15 @@ export default function Reports() {
               const meta = studentMeta[t.studentId] || {};
               // Concessions never moved cash. They are kept as their own record type so a
               // report can show them deliberately rather than inflating collections.
-              const isDiscount = t.type === 'discount' || t.category === 'Discount' || t.category === 'Fee Concession' || t.method === 'Concession';
-              const isVoidEntry = t.type === 'void';
+              //
+              // Classified BEFORE voids on purpose: voiding a concession copies the
+              // original's category ('Discount') and method ('Concession') onto a
+              // type:'void' row (see StudentLedgerView.handleVoidTransaction), so a
+              // void-of-discount is still non-cash — treating it as a cash reversal
+              // would wrongly subtract it from collections. It stays in the discount
+              // bucket, where its negative amount nets the original concession off.
+              const isConcession = t.type === 'discount' || t.category === 'Discount' || t.category === 'Fee Concession' || t.method === 'Concession';
+              const isVoidEntry = t.type === 'void' && !isConcession;
               rows.push({
                 id: d.id,
                 kind: 'income',
@@ -138,7 +145,7 @@ export default function Reports() {
                 wing: meta.wing || 'unassigned',
                 grade: meta.grade || '',
                 recordedBy: (t.addedBy || t.createdBy || '').toLowerCase(),
-                txType: isVoidEntry ? 'void' : isDiscount ? 'discount' : 'incoming',
+                txType: isConcession ? 'discount' : isVoidEntry ? 'void' : 'incoming',
                 isVoided: t.isVoided === true
               });
             });

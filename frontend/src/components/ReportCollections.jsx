@@ -90,7 +90,10 @@ export default function ReportCollections({ data }) {
 
     return (r) => {
       if (r.txType === 'discount' && !f.includeConcessions) return false;
-      if (f.hideVoidedPairs && (r.isVoided || r.txType === 'void')) return false;
+      // "Exclude voided" drops originals (isVoided), cash reversals (void), and voided
+      // concessions' reversals (discount rows with a negative amount) — leaving a lone
+      // negative concession behind would misstate the concession total.
+      if (f.hideVoidedPairs && (r.isVoided || r.txType === 'void' || (r.txType === 'discount' && r.amount < 0))) return false;
       if (!f.netOffVoids && r.txType === 'void') return false;
       if (f.methods.length && !f.methods.includes(r.method)) return false;
       if (f.wings.length && !f.wings.includes(r.wing)) return false;
@@ -186,7 +189,11 @@ export default function ReportCollections({ data }) {
   );
 
   const methodMix = useMemo(() => {
-    const g = groupBy(cashRows.filter(r => r.amount > 0), r => r.method || 'Cash');
+    // Group ALL cash rows so a void (negative, same method as its original) nets off inside
+    // its method — filtering to amount > 0 first kept voided receipts but discarded their
+    // reversals, inflating every method by whatever had been voided. Methods that net to
+    // nothing (or below) carry no share of the mix.
+    const g = groupBy(cashRows, r => r.method || 'Cash').filter(x => x.total > 0);
     return g.map((x, i) => ({ key: x.key, label: x.label, value: x.total, color: colorAt(i), count: x.count }));
   }, [cashRows]);
 

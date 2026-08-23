@@ -90,7 +90,12 @@ export default function ReportDues({ data }) {
   const enriched = useMemo(() => data.students.map(s => {
     const fin = s.financialSummary || {};
     const pay = paymentIndex.get(s.id) || { lastPaid: null, paidInRange: 0, receiptsInRange: 0, lifetime: 0 };
-    const status = fin.status || 'unconfigured';
+    // The reconciliation Cloud Function writes 'arrears' for owing students — NOT 'due'.
+    // FeesLedger renders any status outside clear/ahead/unconfigured as "Due" via its else
+    // branch; mirror that here so the status filter actually matches real documents.
+    // (Filtering on 'due' directly matched nothing and emptied the whole report.)
+    const rawStatus = fin.status || 'unconfigured';
+    const status = ['clear', 'ahead', 'unconfigured'].includes(rawStatus) ? rawStatus : 'due';
     const daysSince = pay.lastPaid ? Math.floor((today - pay.lastPaid) / 86400000) : null;
     return {
       id: s.id,
