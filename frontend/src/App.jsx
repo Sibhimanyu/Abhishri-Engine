@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { LayoutDashboard, Users, CreditCard, Settings, LogOut, Search, Bell, ChevronDown, Moon, Sun, ClipboardCheck, Cpu, MessageSquare, Briefcase, Menu, X, AlertTriangle, Database, Landmark } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Settings, LogOut, Search, Bell, ChevronDown, Moon, Sun, ClipboardCheck, Cpu, MessageSquare, Briefcase, Menu, X, AlertTriangle, Database, Landmark, BarChart3 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth, firestore, rtdb } from './firebase';
 import Login from './components/Login';
 import { useAuth } from './context/AuthContext';
 import FeeCollection from './components/FeeCollection';
 import Accounting from './components/Accounting';
+import Reports from './components/Reports';
 import SettingsAdmin from './components/SettingsAdmin';
 import StudentDirectory from './components/StudentDirectory';
 import SmartCampus from './components/SmartCampus';
@@ -70,7 +71,18 @@ function App() {
     userData?.permissions?.fees_accounting?.wallet_view_own || 
     userData?.permissions?.fees_accounting?.trans_add ||
     userData?.permissions?.fees_accounting?.trans_delete;
-  const hasWaAccess = isMaster || 
+
+  // Reports read the fee ledger and/or the full expense book, so they need the same
+  // permissions firestore.rules requires for those reads — not merely "some accounting access".
+  // exp_own/wallet_view_own deliberately do NOT qualify: those only ever expose the holder's
+  // own records, which is not a report.
+  const hasReportsAccess = isMaster ||
+    userData?.permissions?.fees_accounting?.view ||
+    userData?.permissions?.fees_accounting?.ledger ||
+    userData?.permissions?.fees_accounting?.view_dashboard ||
+    userData?.permissions?.fees_accounting?.exp_all;
+
+  const hasWaAccess = isMaster ||
     userData?.permissions?.whatsapp_sender?.access || 
     userData?.permissions?.whatsapp_sender?.broadcast || 
     userData?.permissions?.whatsapp_sender?.manage;
@@ -205,6 +217,7 @@ function App() {
     ...(hasWaAccess ? [{ id: 'whatsapp', label: 'Communications', icon: MessageSquare }] : []),
     ...(hasFeeCollectionAccess ? [{ id: 'fee-collection', label: 'Fee Collection', icon: CreditCard }] : []),
     ...(hasAccountingAccess ? [{ id: 'accounting', label: 'Accounting', icon: Landmark }] : []),
+    ...(hasReportsAccess ? [{ id: 'reports', label: 'Reports', icon: BarChart3 }] : []),
     { id: 'calendar', label: 'School Calendar', icon: CalendarDays },
     { id: 'weekly-menu', label: 'Weekly Menu', icon: ChefHat },
     ...(isMaster ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
@@ -580,6 +593,7 @@ function App() {
             <Route path="/whatsapp/*" element={<WhatsAppManager />} />
             <Route path="/fee-collection/*" element={<FeeCollection />} />
             <Route path="/accounting/*" element={<Accounting />} />
+            <Route path="/reports/*" element={<Reports />} />
             <Route path="/calendar" element={<SchoolCalendar />} />
             <Route path="/weekly-menu" element={<WeeklyMenu />} />
 

@@ -37,3 +37,52 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
+
+/*
+ * Print support for the Reports module. The app chrome (sidebar, top bar, tab strip and
+ * every interactive control) carries `print:hidden`; what remains is forced onto a light
+ * palette so a dark-mode screen doesn't print as a solid black page, and the scroll
+ * containers are unclipped so a long table paginates instead of being cut at the fold.
+ */
+@media print {
+  aside,
+  header,
+  nav {
+    display: none !important;
+  }
+
+  html,
+  body,
+  main,
+  main > *,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  :root,
+  .dark {
+    --bg-color: #ffffff;
+    --sidebar-bg: #ffffff;
+    --card-bg: #ffffff;
+    --card-border: #cbd5e1;
+    --text-color: #0f172a;
+    --text-dim-color: #475569;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  /* Keep a card, chart or table from being split across two sheets where possible. */
+  table,
+  .rounded-xl {
+    break-inside: avoid;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}
