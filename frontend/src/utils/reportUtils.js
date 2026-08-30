@@ -317,6 +317,31 @@ export const fmtDate = (d) => toDate(d).toLocaleDateString('en-IN', { day: '2-di
 export const fmtDateTime = (d) => toDate(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 export const rangeLabel = (r) => `${fmtDate(r.start)} — ${fmtDate(r.end)}`;
 
+/* ------------------------------------------------------------------ transaction semantics */
+
+/**
+ * Classify a raw fee transaction into the three money buckets the reports use.
+ *
+ * Mirrors reconcileStudent (functions/src/fees/triggers.js) and FeesTransactions:
+ * a concession is a type:'discount' row, or the void that reverses one (voids copy
+ * the original's category 'Discount'/'Fee Concession'). Method is deliberately NOT
+ * consulted: a type:'incoming' row whose method was edited to 'Concession' is still
+ * money the dues engine counts as paid, so treating it as non-cash here made the
+ * Collections report disagree with every ledger screen by that amount.
+ */
+export function classifyIncomeTx(t) {
+  const isConcession = t.type === 'discount' ||
+    (t.type === 'void' && (t.category === 'Discount' || t.category === 'Fee Concession'));
+  return isConcession ? 'discount' : t.type === 'void' ? 'void' : 'incoming';
+}
+
+/**
+ * A receipt that still stands: an incoming row that has not been voided.
+ * Voided originals stay in the row set so gross/net maths can net them off,
+ * but they must not count as receipts, students, averages or payment dates.
+ */
+export const isLiveReceipt = (r) => r.txType === 'incoming' && !r.isVoided;
+
 /* ------------------------------------------------------------------ aggregation */
 
 export function summarize(rows, valueOf = (r) => r.amount) {

@@ -624,7 +624,10 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       const d = tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp);
       // Check if it's a valid date, otherwise keep empty
       if (!isNaN(d.getTime())) {
-        dateStr = d.toISOString().split('T')[0];
+        // LOCAL calendar date, not toISOString(): that converts to UTC first, so a
+        // payment timestamped between 00:00 and 05:29 IST prefilled as the PREVIOUS
+        // day — and saving any edit then silently moved the payment back a day.
+        dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       }
     }
     setEditPaymentForm({
@@ -633,6 +636,9 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       method: tx.method || 'Cash',
       description: tx.description || '',
       date: dateStr,
+      // Kept to detect whether the user actually changed the date: an untouched date
+      // must not rewrite the stored timestamp (which carries the real time of day).
+      originalDate: dateStr,
       type: tx.type
     });
     setIsEditPaymentOpen(true);
@@ -646,19 +652,31 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     setIsProcessingPayment(true);
     try {
       const pAmt = editPaymentForm.type === 'void' ? -Number(editPaymentForm.amount) : Number(editPaymentForm.amount);
-      const timestampValue = editPaymentForm.date ? new Date(editPaymentForm.date) : serverTimestamp();
-      
+
       const { breakdown, breakdownNames } = allocateFunds(Math.abs(pAmt), compPayments, []);
       const originalTx = transactions.find(t => t.id === editPaymentForm.id);
 
-      await updateDoc(doc(firestore, 'students', studentId, 'transactions', editPaymentForm.id), {
+      const update = {
         amount: pAmt,
         method: editPaymentForm.method,
         description: editPaymentForm.description || '',
-        timestamp: timestampValue,
         breakdown: breakdown,
         breakdownNames: breakdownNames
-      });
+      };
+      // Only rewrite the timestamp when the user actually changed the date. Rewriting it
+      // unconditionally destroyed the original time of day on every edit (a description
+      // typo fix reshuffled the transaction's position in daily reports). A changed date
+      // is parsed as LOCAL midnight so the chosen calendar day is the day that's stored.
+      if (editPaymentForm.date !== editPaymentForm.originalDate) {
+        if (editPaymentForm.date) {
+          const [y, m, day] = editPaymentForm.date.split('-').map(Number);
+          update.timestamp = new Date(y, m - 1, day);
+        } else {
+          update.timestamp = serverTimestamp();
+        }
+      }
+
+      await updateDoc(doc(firestore, 'students', studentId, 'transactions', editPaymentForm.id), update);
 
       logAudit({
         action: 'TRANSACTION_EDITED',
@@ -1460,7 +1478,11 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                   <option value="Bank Transfer">Bank Transfer / NEFT</option>
                   <option value="Cheque">Cheque</option>
                   <option value="Card">Card</option>
-                  <option value="Concession">Concession</option>
+                  {/* 'Concession' is deliberately NOT offered: a type:'incoming' payment
+                      relabelled as Concession is still counted as paid money by the dues
+                      engine, so the label only made the reports disagree with the ledger.
+                      Real concessions go through Grant Concession, which writes type:'discount'. */}
+                  {editPaymentForm.method === 'Concession' && <option value="Concession">Concession</option>}
                 </select>
               </div>
               

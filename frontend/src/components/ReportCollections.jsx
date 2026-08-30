@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { IndianRupee, Receipt, TrendingUp, Undo2, BadgePercent, Filter } from 'lucide-react';
 import {
-  resolveRange, previousRange, effectiveGranularity, timeSeries, groupBy, summarize,
+  resolveRange, previousRange, effectiveGranularity, timeSeries, groupBy, summarize, isLiveReceipt,
   downloadCSV, GRANULARITY_ADVERB, INR, fmtDate, slugDate, colorAt, PAYMENT_METHODS, WINGS, ALL_CLASSES
 } from '../utils/reportUtils';
 import ReportToolbar from './ReportToolbar';
@@ -124,6 +124,11 @@ export default function ReportCollections({ data }) {
     const receipts = list.filter(r => r.txType === 'incoming');
     const voids = list.filter(r => r.txType === 'void');
     const concessions = list.filter(r => r.txType === 'discount');
+    // Voided originals stay in `receipts` so gross minus reversals still nets correctly,
+    // but the human-facing figures (receipt count, students, average, largest) must only
+    // reflect receipts that still stand — a voided payment is not a receipt.
+    const live = receipts.filter(isLiveReceipt);
+    const liveTotal = summarize(live).total;
     const gross = summarize(receipts).total;
     const reversed = Math.abs(summarize(voids).total);
     return {
@@ -132,10 +137,10 @@ export default function ReportCollections({ data }) {
       reversed,
       net: gross - (f.netOffVoids ? reversed : 0),
       concessionTotal: summarize(concessions).total,
-      count: receipts.length,
-      students: new Set(receipts.map(r => r.studentId)).size,
-      avg: receipts.length ? gross / receipts.length : 0,
-      largest: receipts.reduce((m, r) => Math.max(m, r.amount), 0)
+      count: live.length,
+      students: new Set(live.filter(r => r.studentId).map(r => r.studentId)).size,
+      avg: live.length ? liveTotal / live.length : 0,
+      largest: live.reduce((m, r) => Math.max(m, r.amount), 0)
     };
   }, [f.netOffVoids]);
 

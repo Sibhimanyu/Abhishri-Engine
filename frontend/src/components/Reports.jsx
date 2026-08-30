@@ -4,7 +4,7 @@ import { collection, onSnapshot, getDocs, collectionGroup } from 'firebase/fires
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { TrendingUp, TrendingDown, Scale, AlertCircle, ShieldAlert } from 'lucide-react';
-import { toDate } from '../utils/reportUtils';
+import { toDate, classifyIncomeTx } from '../utils/reportUtils';
 import ReportCollections from './ReportCollections';
 import ReportExpenses from './ReportExpenses';
 import ReportCashFlow from './ReportCashFlow';
@@ -78,8 +78,6 @@ export default function Reports() {
         staffList.sort((a, b) => a.name.localeCompare(b.name));
         setStaff(staffList);
 
-        const studentMeta = {};
-
         const applyStudents = (snap) => {
           const list = [];
           snap.forEach(d => {
@@ -87,7 +85,6 @@ export default function Reports() {
             const name = s.name || `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Unknown';
             const wing = s.programType || s.studentType || 'preschool';
             const grade = s.admissionForClass || s.className || s.grade || '';
-            studentMeta[d.id] = { name, wing, grade };
             list.push({
               id: d.id,
               name,
@@ -119,19 +116,11 @@ export default function Reports() {
           unsubIncome = onSnapshot(collectionGroup(firestore, 'transactions'), (snap) => {
             const rows = [];
             snap.forEach(d => {
-              const t = d.data();
-              const meta = studentMeta[t.studentId] || {};
-              // Concessions never moved cash. They are kept as their own record type so a
-              // report can show them deliberately rather than inflating collections.
-              //
-              // Classified BEFORE voids on purpose: voiding a concession copies the
-              // original's category ('Discount') and method ('Concession') onto a
-              // type:'void' row (see StudentLedgerView.handleVoidTransaction), so a
-              // void-of-discount is still non-cash — treating it as a cash reversal
-              // would wrongly subtract it from collections. It stays in the discount
-              // bucket, where its negative amount nets the original concession off.
-              const isConcession = t.type === 'discount' || t.category === 'Discount' || t.category === 'Fee Concession' || t.method === 'Concession';
-              const isVoidEntry = t.type === 'void' && !isConcession;
+              // serverTimestamps: 'estimate' — a payment just recorded on THIS device
+              // arrives in the latency-compensated snapshot with a null timestamp, which
+              // toDate() would park in 1970 and drop out of every date window until the
+              // server ack. The estimate keeps it in "today" from the first render.
+              const t = d.data({ serverTimestamps: 'estimate' });
               rows.push({
                 id: d.id,
                 kind: 'income',
@@ -141,11 +130,11 @@ export default function Reports() {
                 category: t.category || 'General Fees',
                 description: t.description || '',
                 studentId: t.studentId || '',
-                studentName: t.studentName || meta.name || 'Unknown student',
-                wing: meta.wing || 'unassigned',
-                grade: meta.grade || '',
+                studentName: t.studentName || '',
                 recordedBy: (t.addedBy || t.createdBy || '').toLowerCase(),
-                txType: isConcession ? 'discount' : isVoidEntry ? 'void' : 'incoming',
+                // Concessions never moved cash; classifyIncomeTx mirrors the dues engine
+                // so this report can never disagree with the ledger over what counts.
+                txType: classifyIncomeTx(t),
                 isVoided: t.isVoided === true
               });
             });
@@ -162,7 +151,7 @@ export default function Reports() {
           unsubExpenses = onSnapshot(collection(firestore, 'expenses'), (snap) => {
             const rows = [];
             snap.forEach(d => {
-              const e = d.data();
+              const e = d.data({ serverTimestamps: 'estimate' });
               if (!['spend', 'expense', 'funding'].includes(e.type)) return;
               const byId = e.staffId ? staffMap[e.staffId] : null;
               const email = (e.staffEmail || e.createdBy || '').toLowerCase();
@@ -209,9 +198,27 @@ export default function Reports() {
     };
   }, [currentUser, canViewIncome, canViewExpenses]);
 
+  // Wing/grade/name are resolved HERE, from the live students state, rather than inside
+  // the transactions listener. A lookup map captured at listener setup goes stale: a
+  // student who loads after the first transactions snapshot (new admission, slow listener)
+  // stayed "Unassigned" in every wing/class breakdown until an unrelated transaction
+  // happened to re-fire the listener.
+  const enrichedIncome = useMemo(() => {
+    const metaById = new Map(students.map(s => [s.id, s]));
+    return income.map(r => {
+      const m = metaById.get(r.studentId);
+      return {
+        ...r,
+        studentName: r.studentName || m?.name || 'Unknown student',
+        wing: m?.wing || 'unassigned',
+        grade: m?.grade || ''
+      };
+    });
+  }, [income, students]);
+
   const data = useMemo(
-    () => ({ income, expenses, students, staff, canViewIncome, canViewExpenses }),
-    [income, expenses, students, staff, canViewIncome, canViewExpenses]
+    () => ({ income: enrichedIncome, expenses, students, staff, canViewIncome, canViewExpenses }),
+    [enrichedIncome, expenses, students, staff, canViewIncome, canViewExpenses]
   );
 
   const tabs = [
