@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { AlertCircle, Users, PiggyBank, CalendarClock, BadgePercent, Filter } from 'lucide-react';
 import {
-  resolveRange, groupBy, downloadCSV, INR, fmtDate, slugDate, WINGS, ALL_CLASSES
+  resolveRange, groupBy, downloadCSV, INR, fmtDate, slugDate, isLiveReceipt, WINGS, ALL_CLASSES
 } from '../utils/reportUtils';
 import ReportToolbar from './ReportToolbar';
 import {
@@ -74,11 +74,15 @@ export default function ReportDues({ data }) {
     data.income.forEach(r => {
       if (r.txType === 'discount' || !r.studentId) return;
       const e = idx.get(r.studentId) || { lastPaid: null, paidInRange: 0, receiptsInRange: 0, lifetime: 0 };
-      if (r.amount > 0 && (!e.lastPaid || r.date > e.lastPaid)) e.lastPaid = r.date;
+      // Money totals net voided pairs off (original + negative reversal both included),
+      // but the ageing clock and receipt count must only see receipts that still stand:
+      // a voided payment is not evidence the family paid recently.
+      const live = isLiveReceipt(r);
+      if (live && r.amount > 0 && (!e.lastPaid || r.date > e.lastPaid)) e.lastPaid = r.date;
       e.lifetime += r.amount;
       if (r.date >= range.start && r.date <= range.end) {
         e.paidInRange += r.amount;
-        if (r.amount > 0) e.receiptsInRange += 1;
+        if (live && r.amount > 0) e.receiptsInRange += 1;
       }
       idx.set(r.studentId, e);
     });

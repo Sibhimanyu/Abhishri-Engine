@@ -1,26 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { LayoutDashboard, Users, CreditCard, Settings, LogOut, Search, Bell, ChevronDown, Moon, Sun, ClipboardCheck, Cpu, MessageSquare, Briefcase, Menu, X, AlertTriangle, Database, Landmark, BarChart3 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth, firestore, rtdb } from './firebase';
 import Login from './components/Login';
 import { useAuth } from './context/AuthContext';
-import FeeCollection from './components/FeeCollection';
-import Accounting from './components/Accounting';
-import Reports from './components/Reports';
-import SettingsAdmin from './components/SettingsAdmin';
-import StudentDirectory from './components/StudentDirectory';
-import SmartCampus from './components/SmartCampus';
-import Attendance from './components/Attendance';
-import StudentPortal from './components/StudentPortal';
-import WhatsAppManager from './components/WhatsAppManager';
-import StaffDirectory from './components/StaffDirectory';
 import GlobalSearch from './components/GlobalSearch';
 import MainDashboard from './components/MainDashboard';
 import { getCurrentTamilDate } from './utils/astrologyApi';
 import { MessageCircle, Cake, CalendarDays, ChefHat } from 'lucide-react';
-import SchoolCalendar from './components/SchoolCalendar';
-import WeeklyMenu from './components/WeeklyMenu';
 import FeedbackWidget from './components/FeedbackWidget';
+
+// Route modules are lazy so the login screen and dashboard don't pay for the
+// entire app up front — each section downloads on first visit instead.
+const FeeCollection = lazy(() => import('./components/FeeCollection'));
+const Accounting = lazy(() => import('./components/Accounting'));
+const Reports = lazy(() => import('./components/Reports'));
+const SettingsAdmin = lazy(() => import('./components/SettingsAdmin'));
+const StudentDirectory = lazy(() => import('./components/StudentDirectory'));
+const SmartCampus = lazy(() => import('./components/SmartCampus'));
+const Attendance = lazy(() => import('./components/Attendance'));
+const StudentPortal = lazy(() => import('./components/StudentPortal'));
+const WhatsAppManager = lazy(() => import('./components/WhatsAppManager'));
+const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
+const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
+const WeeklyMenu = lazy(() => import('./components/WeeklyMenu'));
+
+const RouteLoader = () => (
+  <div className="flex justify-center items-center h-64">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary" />
+  </div>
+);
 
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 
@@ -309,7 +318,7 @@ function App() {
 
   const isStudentOrParent = userData?.dashboardType === 'student' || userData?.dashboardType === 'parent' || userData?.role === 'student' || userData?.role === 'parent';
   if (isStudentOrParent) {
-    return <StudentPortal />;
+    return <Suspense fallback={<RouteLoader />}><StudentPortal /></Suspense>;
   }
 
   // Block unauthorized users from seeing the main admin dashboard and sidebar
@@ -584,6 +593,7 @@ function App() {
           )}
           
           {/* Routes */}
+          <Suspense fallback={<RouteLoader />}>
           <Routes>
             <Route path="/" element={<MainDashboard />} />
             <Route path="/students" element={<StudentDirectory />} />
@@ -600,6 +610,7 @@ function App() {
             <Route path="/settings/*" element={<SettingsAdmin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </div>
       </main>
     </div>
