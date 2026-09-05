@@ -9,9 +9,13 @@ import { Coffee, UtensilsCrossed, Apple, Plus, Trash2, Download, Save, FolderOpe
 // Fixed brand palette for the exported image — literal hex, not the app's CSS variables,
 // so the PNG always renders the same regardless of the admin panel's light/dark mode.
 const BRAND = {
-  primary: '#F1615B',   // coral — Morning Drink header (matches --color-brand-primary)
-  secondary: '#66C8C8', // teal — Lunch header (matches --color-brand-secondary)
-  accent: '#9B7FD4',    // purple — Evening Snack header (new, third column to complete the trio)
+  // Deep variants of the brand coral/teal/purple: the column header bars carry white
+  // 13px text, and the base shades fail WCAG contrast against it (teal was 1.97:1 —
+  // "LUNCH" looked washed out in the exported PNG). These darkened same-hue shades
+  // all clear 4.5:1 with white while keeping the trio recognisably on-brand.
+  primary: '#D93B34',   // deep coral — Morning Drink (from #F1615B, 3.18:1 → 4.54:1)
+  secondary: '#237F7F', // deep teal — Lunch (from #66C8C8, 1.97:1 → 4.76:1)
+  accent: '#7C5FC0',    // deep purple — Evening Snack (from #9B7FD4, 3.29:1 → 4.94:1)
   ink: '#1F2937',
   inkDim: '#6B7280',
   border: '#E7E2D8',
