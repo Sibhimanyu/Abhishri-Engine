@@ -6,6 +6,8 @@ import Login from './components/Login';
 import { useAuth } from './context/AuthContext';
 import GlobalSearch from './components/GlobalSearch';
 import MainDashboard from './components/MainDashboard';
+import ErrorBoundary from './components/ErrorBoundary';
+import { CenteredSpinner } from './components/Spinner';
 import { getCurrentTamilDate } from './utils/astrologyApi';
 import { MessageCircle, Cake, CalendarDays, ChefHat } from 'lucide-react';
 import FeedbackWidget from './components/FeedbackWidget';
@@ -25,11 +27,7 @@ const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
 const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
 const WeeklyMenu = lazy(() => import('./components/WeeklyMenu'));
 
-const RouteLoader = () => (
-  <div className="flex justify-center items-center h-64">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary" />
-  </div>
-);
+const RouteLoader = CenteredSpinner;
 
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 
@@ -290,7 +288,13 @@ function App() {
 
         {/* Content Wrapper */}
         <main className="flex-1 overflow-y-auto p-4 md:p-12 max-w-6xl mx-auto w-full">
-          <SchoolCalendar />
+          {/* SchoolCalendar is lazy; without a Suspense in this early-return branch the
+              public page suspends with no fallback and React throws (white screen). */}
+          <ErrorBoundary>
+            <Suspense fallback={<RouteLoader />}>
+              <SchoolCalendar />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     );
@@ -318,7 +322,11 @@ function App() {
 
   const isStudentOrParent = userData?.dashboardType === 'student' || userData?.dashboardType === 'parent' || userData?.role === 'student' || userData?.role === 'parent';
   if (isStudentOrParent) {
-    return <Suspense fallback={<RouteLoader />}><StudentPortal /></Suspense>;
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<RouteLoader />}><StudentPortal /></Suspense>
+      </ErrorBoundary>
+    );
   }
 
   // Block unauthorized users from seeing the main admin dashboard and sidebar
@@ -593,6 +601,7 @@ function App() {
           )}
           
           {/* Routes */}
+          <ErrorBoundary>
           <Suspense fallback={<RouteLoader />}>
           <Routes>
             <Route path="/" element={<MainDashboard />} />
@@ -611,6 +620,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
     </div>

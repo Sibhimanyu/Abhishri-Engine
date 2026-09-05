@@ -3,6 +3,7 @@ import { collection, query, onSnapshot, getDocs, collectionGroup } from 'firebas
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Search, ArrowUpRight, ArrowDownRight, ExternalLink, X, RefreshCw, Briefcase } from 'lucide-react';
+import { classifyIncomeTx } from '../utils/reportUtils';
 
 export default function FeesTransactions() {
   const { currentUser, userData } = useAuth();
@@ -74,7 +75,8 @@ export default function FeesTransactions() {
                 allTxns.delete(`in-${change.doc.id}`);
               } else {
                 const data = change.doc.data();
-                if (data.type === 'discount' || (data.type === 'void' && (data.category === 'Discount' || data.category === 'Fee Concession'))) {
+                // Shared classifier so this screen can never drift from the Reports tab.
+                if (classifyIncomeTx(data) === 'discount') {
                   return; // Exclude discounts from the global financial ledger
                 }
                 allTxns.set(`in-${change.doc.id}`, {

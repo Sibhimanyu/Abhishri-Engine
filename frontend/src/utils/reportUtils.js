@@ -9,7 +9,10 @@ import Papa from 'papaparse';
  * current range uses it yet — the actual filter lists are unioned with the values found
  * in live data, so a legacy/renamed value never becomes invisible.
  */
-export const PAYMENT_METHODS = ['Cash', 'GPay/UPI', 'Bank Transfer', 'Cheque', 'Card', 'Concession'];
+// 'Concession' is deliberately absent: it is not a way money arrives (concessions are
+// type:'discount' rows). Legacy rows that carry it as a method still surface in the
+// filter facets because those are unioned with live data values.
+export const PAYMENT_METHODS = ['Cash', 'GPay/UPI', 'Bank Transfer', 'Cheque', 'Card'];
 
 export const EXPENSE_CATEGORIES = [
   'Office Supplies', 'Maintenance', 'Utility Bills', 'Transport',
@@ -330,8 +333,14 @@ export const rangeLabel = (r) => `${fmtDate(r.start)} — ${fmtDate(r.end)}`;
  * Collections report disagree with every ledger screen by that amount.
  */
 export function classifyIncomeTx(t) {
+  const concessionShaped = t.category === 'Discount' || t.category === 'Fee Concession';
   const isConcession = t.type === 'discount' ||
-    (t.type === 'void' && (t.category === 'Discount' || t.category === 'Fee Concession'));
+    (t.type === 'void' && concessionShaped) ||
+    // Legacy rows with NO type field: the writers have always set type, so an untyped
+    // row predates them. The dues engine counts untyped rows in neither totalPaid nor
+    // totalDiscounted, so treating a concession-shaped one as cash income here would
+    // inflate collections by money that never moved.
+    (!t.type && (concessionShaped || t.method === 'Concession'));
   return isConcession ? 'discount' : t.type === 'void' ? 'void' : 'incoming';
 }
 
@@ -361,22 +370,31 @@ export function summarize(rows, valueOf = (r) => r.amount) {
   };
 }
 
-/** Group rows into [{ key, label, total, count, rows }] sorted by total descending. */
-export function groupBy(rows, keyOf, labelOf = (k) => k) {
+/**
+ * Group rows into [{ key, label, total, count, rows }] sorted by total descending.
+ * `countIf` decides which rows the human-facing `count` reflects — totals always sum
+ * every row (so negative reversals net off), but a voided receipt and its reversal
+ * must not each count as an entry. Defaults to counting everything.
+ */
+export function groupBy(rows, keyOf, labelOf = (k) => k, countIf = () => true) {
   const map = new Map();
   rows.forEach(r => {
     const key = keyOf(r) ?? '—';
     if (!map.has(key)) map.set(key, { key, label: labelOf(key, r), total: 0, count: 0, rows: [] });
     const g = map.get(key);
     g.total += Number(r.amount) || 0;
-    g.count += 1;
+    if (countIf(r)) g.count += 1;
     g.rows.push(r);
   });
   return Array.from(map.values()).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
 }
 
-/** Bucket rows onto a complete timeline, with an optional second (comparison) series. */
-export function timeSeries(rows, range, granularity) {
+/**
+ * Bucket rows onto a complete timeline, with an optional second (comparison) series.
+ * `countIf` mirrors groupBy: values always sum every row, counts only the rows the
+ * predicate accepts (e.g. live receipts, not voided pairs).
+ */
+export function timeSeries(rows, range, granularity, countIf = () => true) {
   const buckets = buildBuckets(range.start, range.end, granularity);
   const totals = new Map(buckets.map(b => [b.key, 0]));
   const counts = new Map(buckets.map(b => [b.key, 0]));
@@ -384,7 +402,7 @@ export function timeSeries(rows, range, granularity) {
     const k = bucketOf(r.date, granularity).key;
     if (totals.has(k)) {
       totals.set(k, totals.get(k) + (Number(r.amount) || 0));
-      counts.set(k, counts.get(k) + 1);
+      if (countIf(r)) counts.set(k, counts.get(k) + 1);
     }
   });
   return buckets.map(b => ({ ...b, value: totals.get(b.key), count: counts.get(b.key) }));

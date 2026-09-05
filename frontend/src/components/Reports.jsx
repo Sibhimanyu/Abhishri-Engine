@@ -203,8 +203,17 @@ export default function Reports() {
   // student who loads after the first transactions snapshot (new admission, slow listener)
   // stayed "Unassigned" in every wing/class breakdown until an unrelated transaction
   // happened to re-fire the listener.
+  // The students listener fires on EVERY student write — including the financialSummary
+  // rewrite the reconciliation function performs after each payment — but enrichment only
+  // reads id/name/wing/grade. Keying the map on a fingerprint of those fields stops the
+  // full income remap (and the downstream report memo cascade) when unrelated fields churn.
+  const metaFingerprint = students.map(s => `${s.id}|${s.name}|${s.wing}|${s.grade}`).join('\n');
+  const metaById = useMemo(
+    () => new Map(students.map(s => [s.id, s])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fingerprint stands in for students
+    [metaFingerprint]
+  );
   const enrichedIncome = useMemo(() => {
-    const metaById = new Map(students.map(s => [s.id, s]));
     return income.map(r => {
       const m = metaById.get(r.studentId);
       return {
@@ -214,7 +223,7 @@ export default function Reports() {
         grade: m?.grade || ''
       };
     });
-  }, [income, students]);
+  }, [income, metaById]);
 
   const data = useMemo(
     () => ({ income: enrichedIncome, expenses, students, staff, canViewIncome, canViewExpenses }),

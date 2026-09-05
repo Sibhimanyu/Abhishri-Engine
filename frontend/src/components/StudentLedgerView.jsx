@@ -3,6 +3,7 @@ import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
+import { localKey, parseISODate, toDate } from '../utils/reportUtils';
 import { ArrowLeft, PlusCircle, Printer, AlertTriangle, Layers, ListChecks, Settings2, X, Check, Trash2, Plus, IndianRupee, MessageCircle, Edit2 } from 'lucide-react';
 import PaymentReceipt from './PaymentReceipt';
 
@@ -526,7 +527,9 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       // We ONLY write to the 'transactions' collection. 
       // The `syncStudentFeeTotals` Cloud Function handles updating the `student_fees` document 
       // via an onSnapshot trigger, and our UI syncs via its own onSnapshot.
-      const timestampValue = paymentForm.date ? new Date(paymentForm.date) : serverTimestamp();
+      // parseISODate: LOCAL midnight, matching the edit path — new Date('YYYY-MM-DD')
+      // parses as UTC midnight and gives the same field two different day conventions.
+      const timestampValue = paymentForm.date ? parseISODate(paymentForm.date) : serverTimestamp();
 
       const paymentName = student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown';
       const newTxRef = await addDoc(collection(firestore, 'students', studentId, 'transactions'), {
@@ -573,7 +576,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     try {
       const pAmt = Number(discountForm.amount);
       
-      const timestampValue = discountForm.date ? new Date(discountForm.date) : serverTimestamp();
+      const timestampValue = discountForm.date ? parseISODate(discountForm.date) : serverTimestamp();
       
       const txData = {
         amount: pAmt,
@@ -618,27 +621,25 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     }
   };
 
+  /**
+   * The transaction's calendar day as the edit form's date input shows it — the LOCAL
+   * date via localKey, never toISOString() (UTC conversion shifted early-morning IST
+   * timestamps back a day). '' when the stored timestamp is missing or unparseable,
+   * which is also how the save handler detects a timestamp in need of repair.
+   */
+  const txDateStr = (tx) => {
+    if (!tx?.timestamp) return '';
+    const d = toDate(tx.timestamp);
+    return d.getTime() > 0 ? localKey(d) : '';
+  };
+
   const handleEditTransaction = (tx) => {
-    let dateStr = '';
-    if (tx.timestamp) {
-      const d = tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp);
-      // Check if it's a valid date, otherwise keep empty
-      if (!isNaN(d.getTime())) {
-        // LOCAL calendar date, not toISOString(): that converts to UTC first, so a
-        // payment timestamped between 00:00 and 05:29 IST prefilled as the PREVIOUS
-        // day — and saving any edit then silently moved the payment back a day.
-        dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      }
-    }
     setEditPaymentForm({
       id: tx.id,
       amount: Math.abs(tx.amount).toString(),
       method: tx.method || 'Cash',
       description: tx.description || '',
-      date: dateStr,
-      // Kept to detect whether the user actually changed the date: an untouched date
-      // must not rewrite the stored timestamp (which carries the real time of day).
-      originalDate: dateStr,
+      date: txDateStr(tx),
       type: tx.type
     });
     setIsEditPaymentOpen(true);
@@ -666,14 +667,22 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       // Only rewrite the timestamp when the user actually changed the date. Rewriting it
       // unconditionally destroyed the original time of day on every edit (a description
       // typo fix reshuffled the transaction's position in daily reports). A changed date
-      // is parsed as LOCAL midnight so the chosen calendar day is the day that's stored.
-      if (editPaymentForm.date !== editPaymentForm.originalDate) {
+      // keeps the original time of day, transplanted onto the chosen LOCAL calendar day.
+      // A transaction whose stored timestamp is missing/corrupt gets stamped "now" even
+      // on a no-op date — otherwise it could never be repaired and stayed permanently
+      // invisible to every date-ranged report (it sorts to epoch 1970).
+      const originalDateStr = txDateStr(originalTx);
+      if (editPaymentForm.date !== originalDateStr) {
         if (editPaymentForm.date) {
-          const [y, m, day] = editPaymentForm.date.split('-').map(Number);
-          update.timestamp = new Date(y, m - 1, day);
+          const d = parseISODate(editPaymentForm.date);
+          const orig = toDate(originalTx?.timestamp);
+          if (orig.getTime() > 0) d.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
+          update.timestamp = d;
         } else {
           update.timestamp = serverTimestamp();
         }
+      } else if (!originalDateStr) {
+        update.timestamp = serverTimestamp();
       }
 
       await updateDoc(doc(firestore, 'students', studentId, 'transactions', editPaymentForm.id), update);
@@ -1481,8 +1490,10 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                   {/* 'Concession' is deliberately NOT offered: a type:'incoming' payment
                       relabelled as Concession is still counted as paid money by the dues
                       engine, so the label only made the reports disagree with the ledger.
-                      Real concessions go through Grant Concession, which writes type:'discount'. */}
-                  {editPaymentForm.method === 'Concession' && <option value="Concession">Concession</option>}
+                      Real concessions go through Grant Concession, which writes type:'discount'.
+                      Keyed on the ORIGINAL method (not the live form value) so a mis-click
+                      to another method doesn't unmount the option and strand the user. */}
+                  {transactions.find(t => t.id === editPaymentForm.id)?.method === 'Concession' && <option value="Concession">Concession</option>}
                 </select>
               </div>
               

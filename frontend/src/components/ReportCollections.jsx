@@ -128,7 +128,7 @@ export default function ReportCollections({ data }) {
     // but the human-facing figures (receipt count, students, average, largest) must only
     // reflect receipts that still stand — a voided payment is not a receipt.
     const live = receipts.filter(isLiveReceipt);
-    const liveTotal = summarize(live).total;
+    const liveStats = summarize(live);
     const gross = summarize(receipts).total;
     const reversed = Math.abs(summarize(voids).total);
     return {
@@ -137,10 +137,10 @@ export default function ReportCollections({ data }) {
       reversed,
       net: gross - (f.netOffVoids ? reversed : 0),
       concessionTotal: summarize(concessions).total,
-      count: live.length,
+      count: liveStats.count,
       students: new Set(live.filter(r => r.studentId).map(r => r.studentId)).size,
-      avg: live.length ? liveTotal / live.length : 0,
-      largest: live.reduce((m, r) => Math.max(m, r.amount), 0)
+      avg: liveStats.avg,
+      largest: liveStats.max
     };
   }, [f.netOffVoids]);
 
@@ -149,11 +149,13 @@ export default function ReportCollections({ data }) {
 
   // The trend charts cash movement only — concessions are non-cash and would distort it.
   const cashRows = useMemo(() => rows.filter(r => r.txType !== 'discount'), [rows]);
-  const series = useMemo(() => timeSeries(cashRows, range, grain), [cashRows, range, grain]);
+  // Counts everywhere on this screen mean "standing receipts": amounts keep voided
+  // pairs so they net off, but a voided receipt plus its reversal is zero receipts.
+  const series = useMemo(() => timeSeries(cashRows, range, grain, isLiveReceipt), [cashRows, range, grain]);
   const compareSeries = useMemo(() => {
     if (!f.compare) return null;
     const prevCash = prevRows.filter(r => r.txType !== 'discount');
-    const s = timeSeries(prevCash, prev, grain);
+    const s = timeSeries(prevCash, prev, grain, isLiveReceipt);
     // Align by index so bucket N of the previous period sits behind bucket N of this one.
     return series.map((_, i) => s[i] || { key: `pad-${i}`, label: '', value: 0, count: 0 });
   }, [f.compare, prevRows, prev, grain, series]);
@@ -161,18 +163,20 @@ export default function ReportCollections({ data }) {
   const groups = useMemo(() => {
     const src = cashRows;
     switch (f.groupBy) {
-      case 'wing': return groupBy(src, r => r.wing, k => WING_LABEL[k] || k);
-      case 'grade': return groupBy(src, r => r.grade || '—', k => (k === '—' ? 'No class set' : k));
-      case 'category': return groupBy(src, r => r.category);
-      case 'student': return groupBy(src, r => r.studentId || r.studentName, (k, r) => r.studentName);
-      case 'recordedBy': return groupBy(src, r => r.recordedBy || '—', k => (k === '—' ? 'Unattributed' : k));
+      case 'wing': return groupBy(src, r => r.wing, k => WING_LABEL[k] || k, isLiveReceipt);
+      case 'grade': return groupBy(src, r => r.grade || '—', k => (k === '—' ? 'No class set' : k), isLiveReceipt);
+      case 'category': return groupBy(src, r => r.category, undefined, isLiveReceipt);
+      case 'student': return groupBy(src, r => r.studentId || r.studentName, (k, r) => r.studentName, isLiveReceipt);
+      case 'recordedBy': return groupBy(src, r => r.recordedBy || '—', k => (k === '—' ? 'Unattributed' : k), isLiveReceipt);
       case 'period': {
-        const s = timeSeries(src, range, grain);
+        const s = timeSeries(src, range, grain, isLiveReceipt);
+        // Keep buckets that carry only netting rows (a reversal of last period's
+        // receipt has count 0 but a real negative total).
         return s.map(b => ({ key: b.key, label: b.label, total: b.value, count: b.count, rows: [] }))
-          .filter(b => b.count > 0);
+          .filter(b => b.count > 0 || b.value !== 0);
       }
       case 'method':
-      default: return groupBy(src, r => r.method || 'Cash');
+      default: return groupBy(src, r => r.method || 'Cash', undefined, isLiveReceipt);
     }
   }, [cashRows, f.groupBy, range, grain]);
 
@@ -198,7 +202,7 @@ export default function ReportCollections({ data }) {
     // its method — filtering to amount > 0 first kept voided receipts but discarded their
     // reversals, inflating every method by whatever had been voided. Methods that net to
     // nothing (or below) carry no share of the mix.
-    const g = groupBy(cashRows, r => r.method || 'Cash').filter(x => x.total > 0);
+    const g = groupBy(cashRows, r => r.method || 'Cash', undefined, isLiveReceipt).filter(x => x.total > 0);
     return g.map((x, i) => ({ key: x.key, label: x.label, value: x.total, color: colorAt(i), count: x.count }));
   }, [cashRows]);
 
