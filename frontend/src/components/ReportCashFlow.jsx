@@ -2,7 +2,8 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { ArrowDownRight, ArrowUpRight, Scale, Percent, Info } from 'lucide-react';
 import {
   resolveRange, previousRange, effectiveGranularity, buildBuckets, bucketOf, summarize,
-  downloadCSV, GRANULARITY_ADVERB, INR, fmtPct, pct, slugDate, PAYMENT_METHODS, EXPENSE_CATEGORIES, WINGS
+  downloadCSV, GRANULARITY_ADVERB, INR, fmtPct, pct, slugDate, PAYMENT_METHODS, EXPENSE_CATEGORIES, WINGS,
+  isLiveReceipt
 } from '../utils/reportUtils';
 import ReportToolbar from './ReportToolbar';
 import {
@@ -86,7 +87,9 @@ export default function ReportCashFlow({ data }) {
       outTotal,
       net: inTotal - outTotal,
       margin: pct(inTotal - outTotal, inTotal),
-      inCount: bundle.income.length,
+      // Receipts = standing receipts only; a voided original and its reversal both
+      // stay in the sum (they net to zero) but neither is a receipt.
+      inCount: bundle.income.filter(isLiveReceipt).length,
       outCount: bundle.expenses.length
     };
   };

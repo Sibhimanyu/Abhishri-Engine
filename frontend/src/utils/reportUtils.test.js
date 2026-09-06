@@ -30,6 +30,19 @@ describe('classifyIncomeTx', () => {
   it('classifies a plain payment as income', () => {
     expect(classifyIncomeTx({ type: 'incoming', method: 'Cash', category: 'General Fees' })).toBe('incoming');
   });
+
+  it('treats legacy UNTYPED concession-shaped rows as discount, not cash', () => {
+    // Regression: rows with no `type` predate the current writers. The dues engine
+    // counts them in neither totalPaid nor totalDiscounted, so classifying a
+    // concession-shaped one as income inflated Collections by money that never moved.
+    expect(classifyIncomeTx({ category: 'Fee Concession', method: 'Concession', amount: 5000 })).toBe('discount');
+    expect(classifyIncomeTx({ category: 'Discount', amount: 1000 })).toBe('discount');
+    expect(classifyIncomeTx({ method: 'Concession', category: 'General Fees' })).toBe('discount');
+  });
+
+  it('still treats an untyped row with normal method/category as income', () => {
+    expect(classifyIncomeTx({ method: 'Cash', category: 'General Fees', amount: 500 })).toBe('incoming');
+  });
 });
 
 describe('isLiveReceipt', () => {

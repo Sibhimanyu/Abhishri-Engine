@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, onSnapshot, doc, where, collectionGroup } from 'firebase/firestore';
 import { ref, onValue } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
+import { classifyIncomeTx } from '../utils/reportUtils';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
@@ -128,7 +129,8 @@ export default function MainDashboard() {
 
         snap.forEach(d => {
           const data = d.data();
-          if (data.type === 'discount' || (data.type === 'void' && (data.category === 'Discount' || data.category === 'Fee Concession'))) {
+          // Shared classifier so the dashboard can never drift from the Reports tab.
+          if (classifyIncomeTx(data) === 'discount') {
             return; // Ignore non-cash ledger adjustments
           }
           const tDate = data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp || 0);
