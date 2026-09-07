@@ -34,11 +34,35 @@ export const WINGS = [
 ];
 
 export const CLASSES = {
-  preschool: ['Playgroup', 'Nursery', 'LKG', 'UKG'],
+  // 'PRE-KG' is a real class in the roster that the admission form never offered,
+  // so records carrying it used to fall outside every canonical list.
+  preschool: ['Playgroup', 'Nursery', 'PRE-KG', 'LKG', 'UKG'],
   tuition: ['Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10']
 };
 
 export const ALL_CLASSES = [...CLASSES.preschool, ...CLASSES.tuition];
+
+/**
+ * Collapse punctuation/spacing/case variants of a class name onto one canonical label.
+ *
+ * `admissionForClass` is effectively free text: the roster holds 'L.K.G' and 'LKG',
+ * 'U.K.G' and 'UKG', 'Play Group' and 'Playgroup' for the same classes. Grouping on the
+ * raw value split one class across several rows (UKG read as Rs 4,500 when it was really
+ * Rs 42,000) and made the class filter offer canonical options that matched no student.
+ *
+ * Deliberately conservative: it only unifies spellings that differ by punctuation,
+ * spacing or case. Values whose WORDS differ (e.g. 'Earlier PRE-KG') are left untouched,
+ * because merging them would be a guess about what the school meant.
+ */
+const CLASS_KEY = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+const CANONICAL_CLASS = new Map(ALL_CLASSES.map(c => [CLASS_KEY(c), c]));
+
+export function normalizeClass(raw) {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return '';
+  return CANONICAL_CLASS.get(CLASS_KEY(trimmed)) || trimmed;
+}
 
 /* ------------------------------------------------------------------ formatting */
 
