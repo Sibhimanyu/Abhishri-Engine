@@ -106,7 +106,7 @@ describe('normalizeClass', () => {
     expect(normalizeClass('Montessori')).toBe('Montessori');
   });
 
-  it('maps blank-ish values to the empty string so they bucket as "No class set"', () => {
+  it('maps blank-ish values to the empty string so they bucket as "Unspecified"', () => {
     expect(normalizeClass('')).toBe('');
     expect(normalizeClass('   ')).toBe('');
     expect(normalizeClass(null)).toBe('');

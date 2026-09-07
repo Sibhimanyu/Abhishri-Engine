@@ -9,7 +9,8 @@ export default function AdminWhatsAppConfig() {
     apiKey: '',
     wabaId: '',
     phoneNumberId: '',
-    phoneNumber: ''
+    phoneNumber: '',
+    webhookToken: ''
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -207,6 +208,32 @@ export default function AdminWhatsAppConfig() {
               placeholder="+91 99999 99999"
               className="w-full bg-brand-bg border border-brand-card-border rounded-md py-2 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary text-brand-text"
             />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-brand-text">Webhook Token</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={config.webhookToken || ''}
+                onChange={e => setConfig({...config, webhookToken: e.target.value})}
+                placeholder="Secret that authenticates incoming webhooks"
+                className="flex-1 bg-brand-bg border border-brand-card-border rounded-md py-2 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary text-brand-text"
+              />
+              <button
+                type="button"
+                onClick={() => setConfig({...config, webhookToken: crypto.randomUUID().replace(/-/g, '')})}
+                className="shrink-0 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-md font-medium text-sm transition-colors"
+              >
+                Generate
+              </button>
+            </div>
+            <p className="text-xs text-brand-text-dim">
+              While this is empty the webhook accepts calls from <span className="font-bold">anyone</span> who finds its URL.
+              After saving, update the callback URL registered with your provider (Fast2SMS / Meta) to
+              <span className="font-mono"> …/whatsappWebhook?token=&lt;this value&gt;</span> — for Meta, also paste it
+              as the Verify Token. Calls without it are then rejected.
+            </p>
           </div>
 
           <button 

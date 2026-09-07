@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, onSnapshot, doc, where, collectionGroup } from 'firebase/firestore';
+import { collection, query, getDocs, onSnapshot, doc, where, collectionGroup, orderBy, limit } from 'firebase/firestore';
 import { ref, onValue } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
 import { classifyIncomeTx } from '../utils/reportUtils';
@@ -120,8 +120,12 @@ export default function MainDashboard() {
       let txnsRef;
       if (showMonthlyRevenue || showRecentCollections) {
 
-        txnsRef = collectionGroup(firestore, 'transactions');
-        unsubTransactions = onSnapshot(query(txnsRef), (snap) => {
+        // Capped: the dashboard only needs this month's revenue and the 4 latest
+        // receipts, but an unbounded collectionGroup listener re-downloads the entire
+        // payment history on every visit and grows forever. 400 newest rows is months
+        // of headroom at this school's volume while keeping first load flat.
+        txnsRef = query(collectionGroup(firestore, 'transactions'), orderBy('timestamp', 'desc'), limit(400));
+        unsubTransactions = onSnapshot(txnsRef, (snap) => {
         let revenueThisMonth = 0;
         const currentMonth = new Date().getMonth();
         const currentYear = new Date().getFullYear();
