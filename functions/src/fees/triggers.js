@@ -12,6 +12,10 @@ function getComponentKey(c, month = null, academicYear = null) {
 }
 
 async function reconcileStudent(studentId, db) {
+    // Shared with the frontend reports (see functions/src/shared/feeTx.mjs). Loaded
+    // with a dynamic import because this file is CommonJS and the shared rule is ESM;
+    // Node caches the module after the first call, so this is free per-invocation.
+    const { classifyIncomeTx } = await import("../shared/feeTx.mjs");
     const studentRef = db.collection("students").doc(studentId);
     const planRef = studentRef.collection("fee_ledger").doc("plan_details");
     const txRef = studentRef.collection("transactions");
@@ -30,14 +34,16 @@ async function reconcileStudent(studentId, db) {
 
     txSnap.docs.forEach(doc => {
         const tx = doc.data();
-        // A voided original and its type:'void' reversal cancel each other, so both
-        // sides are skipped outright. (The old `type === 'void' && category === 'Discount'`
-        // arm below this guard was dead code — voids never reached it.)
-        if (tx.isVoided || tx.type === 'void') return;
+        // A voided original and its reversal cancel each other, so both sides are
+        // skipped. Classification itself comes from the shared rule so this engine
+        // can never disagree with the Reports tab about what counts as cash/discount.
+        if (tx.isVoided) return;
+        const kind = classifyIncomeTx(tx);
+        if (kind === 'void') return;
 
-        if (tx.type === 'discount') {
+        if (kind === 'discount') {
             totalDiscounted += (tx.amount || 0);
-        } else if (tx.type === 'incoming') {
+        } else {
             totalPaid += (tx.amount || 0);
         }
     });

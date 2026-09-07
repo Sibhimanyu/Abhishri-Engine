@@ -346,27 +346,11 @@ export const rangeLabel = (r) => `${fmtDate(r.start)} — ${fmtDate(r.end)}`;
 
 /* ------------------------------------------------------------------ transaction semantics */
 
-/**
- * Classify a raw fee transaction into the three money buckets the reports use.
- *
- * Mirrors reconcileStudent (functions/src/fees/triggers.js) and FeesTransactions:
- * a concession is a type:'discount' row, or the void that reverses one (voids copy
- * the original's category 'Discount'/'Fee Concession'). Method is deliberately NOT
- * consulted: a type:'incoming' row whose method was edited to 'Concession' is still
- * money the dues engine counts as paid, so treating it as non-cash here made the
- * Collections report disagree with every ledger screen by that amount.
- */
-export function classifyIncomeTx(t) {
-  const concessionShaped = t.category === 'Discount' || t.category === 'Fee Concession';
-  const isConcession = t.type === 'discount' ||
-    (t.type === 'void' && concessionShaped) ||
-    // Legacy rows with NO type field: the writers have always set type, so an untyped
-    // row predates them. The dues engine counts untyped rows in neither totalPaid nor
-    // totalDiscounted, so treating a concession-shaped one as cash income here would
-    // inflate collections by money that never moved.
-    (!t.type && (concessionShaped || t.method === 'Concession'));
-  return isConcession ? 'discount' : t.type === 'void' ? 'void' : 'incoming';
-}
+// classifyIncomeTx is THE shared money-classification rule, and it deliberately lives
+// under functions/ (a Cloud Functions deploy only uploads that directory, while the
+// frontend can import across the repo). Re-exported here so every existing consumer
+// (Reports, FeesTransactions, MainDashboard) keeps importing it from reportUtils.
+export { classifyIncomeTx } from '../../../functions/src/shared/feeTx.mjs';
 
 /**
  * A receipt that still stands: an incoming row that has not been voided.
