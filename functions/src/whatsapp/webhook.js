@@ -2,6 +2,7 @@
 const { onRequest } = require("firebase-functions/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 
 
 
@@ -256,7 +257,59 @@ async function processStatus(db, fs, report) {
   }
 }
 
+/**
+ * Shared-secret gate for the webhook.
+ *
+ * Sending goes through Fast2SMS, so Meta's x-hub-signature-256 HMAC cannot be
+ * assumed on delivery callbacks. The one mechanism every provider supports is a
+ * secret baked into the registered callback URL itself: query params are
+ * preserved on both the GET verification handshake and POST deliveries.
+ *
+ * Enforcement is config-driven: set `webhookToken` on configs/whatsapp_main
+ * (Admin -> WhatsApp Config) and re-register the callback URL with
+ * ?token=<value> at the provider. Until the token is configured the endpoint
+ * behaves as before but logs a warning on every hit, so turning protection on
+ * is a config change, not a deploy.
+ */
+async function getWebhookToken() {
+  const snap = await admin.firestore().collection("configs").doc("whatsapp_main").get();
+  const t = snap.exists ? snap.data().webhookToken : null;
+  return t ? String(t).trim() : null;
+}
+
+const tokenMatches = (presented, expected) => {
+  const a = Buffer.from(String(presented || ""));
+  const b = Buffer.from(String(expected));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
+
 exports.whatsappWebhook = onRequest(async (request, response) => {
+  let token;
+  try {
+    token = await getWebhookToken();
+  } catch (err) {
+    // Fail closed-ish: better to make the provider retry than to accept
+    // unauthenticated traffic just because the config read hiccuped.
+    logger.error("Webhook: could not load webhookToken config", err);
+    return response.status(503).send("Config unavailable");
+  }
+
+  if (token) {
+    // Meta's GET handshake presents the secret as hub.verify_token; every other
+    // call (Meta POST, Fast2SMS GET/POST) carries it in the registered URL.
+    const viaQuery = tokenMatches(request.query.token, token);
+    const viaHub = request.method === "GET" && tokenMatches(request.query["hub.verify_token"], token);
+    if (!viaQuery && !viaHub) {
+      logger.warn("Webhook: rejected unauthenticated call", { method: request.method });
+      return response.status(403).send("Forbidden");
+    }
+  } else {
+    logger.warn(
+      "Webhook: webhookToken not configured - endpoint is UNAUTHENTICATED. " +
+      "Set it in Admin -> WhatsApp Config and add ?token=<value> to the callback URL."
+    );
+  }
+
   if (request.method === "GET") {
     const challenge = request.query["hub.challenge"];
     return response.status(200).send(challenge);

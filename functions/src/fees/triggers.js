@@ -30,10 +30,12 @@ async function reconcileStudent(studentId, db) {
 
     txSnap.docs.forEach(doc => {
         const tx = doc.data();
-        if (tx.isVoided) return;
-        if (tx.type === 'void') return;
+        // A voided original and its type:'void' reversal cancel each other, so both
+        // sides are skipped outright. (The old `type === 'void' && category === 'Discount'`
+        // arm below this guard was dead code — voids never reached it.)
+        if (tx.isVoided || tx.type === 'void') return;
 
-        if (tx.type === 'discount' || (tx.type === 'void' && tx.category === 'Discount')) {
+        if (tx.type === 'discount') {
             totalDiscounted += (tx.amount || 0);
         } else if (tx.type === 'incoming') {
             totalPaid += (tx.amount || 0);
@@ -202,7 +204,9 @@ async function performReconciliation() {
     }
 }
 
-exports.dailyFeeReconciliation = onSchedule("every day 00:00", async (event) => {
+// timeZone matters: without it Cloud Scheduler runs at 00:00 UTC = 05:30 IST, so on
+// the 1st of each month the newly-due installment didn't appear until mid-morning.
+exports.dailyFeeReconciliation = onSchedule({ schedule: "every day 00:00", timeZone: "Asia/Kolkata" }, async (event) => {
     await performReconciliation();
 });
 

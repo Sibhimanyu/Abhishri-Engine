@@ -164,7 +164,7 @@ export default function ReportCollections({ data }) {
     const src = cashRows;
     switch (f.groupBy) {
       case 'wing': return groupBy(src, r => r.wing, k => WING_LABEL[k] || k, isLiveReceipt);
-      case 'grade': return groupBy(src, r => r.grade || '—', k => (k === '—' ? 'No class set' : k), isLiveReceipt);
+      case 'grade': return groupBy(src, r => r.grade || '—', k => (k === '—' ? 'Unspecified' : k), isLiveReceipt);
       case 'category': return groupBy(src, r => r.category, undefined, isLiveReceipt);
       case 'student': return groupBy(src, r => r.studentId || r.studentName, (k, r) => r.studentName, isLiveReceipt);
       case 'recordedBy': return groupBy(src, r => r.recordedBy || '—', k => (k === '—' ? 'Unattributed' : k), isLiveReceipt);

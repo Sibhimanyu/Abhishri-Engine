@@ -156,7 +156,7 @@ export default function ReportDues({ data }) {
 
   const groups = useMemo(() => {
     switch (f.groupBy) {
-      case 'grade': return groupBy(rows, r => r.grade || '—', k => (k === '—' ? 'No class set' : k));
+      case 'grade': return groupBy(rows, r => r.grade || '—', k => (k === '—' ? 'Unspecified' : k));
       case 'aging': {
         const g = groupBy(rows, r => r.band, k => AGE_BANDS.find(b => b.id === k)?.label || k);
         // Ageing reads chronologically, not by size — newest band first.
