@@ -4,7 +4,7 @@ import { collection, onSnapshot, getDocs, collectionGroup } from 'firebase/fires
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { TrendingUp, TrendingDown, Scale, AlertCircle, ShieldAlert } from 'lucide-react';
-import { toDate, classifyIncomeTx } from '../utils/reportUtils';
+import { toDate, classifyIncomeTx, normalizeClass } from '../utils/reportUtils';
 import ReportCollections from './ReportCollections';
 import ReportExpenses from './ReportExpenses';
 import ReportCashFlow from './ReportCashFlow';
@@ -84,7 +84,10 @@ export default function Reports() {
             const s = d.data();
             const name = s.name || `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Unknown';
             const wing = s.programType || s.studentType || 'preschool';
-            const grade = s.admissionForClass || s.className || s.grade || '';
+            // Normalised: the roster spells the same class several ways ('L.K.G' vs
+            // 'LKG', 'Play Group' vs 'Playgroup'), which split one class across
+            // several breakdown rows and made canonical filter options match nobody.
+            const grade = normalizeClass(s.admissionForClass || s.className || s.grade);
             list.push({
               id: d.id,
               name,
@@ -218,7 +221,10 @@ export default function Reports() {
       const m = metaById.get(r.studentId);
       return {
         ...r,
-        studentName: r.studentName || m?.name || 'Unknown student',
+        // LIVE student name wins over the snapshot stored on the transaction: renaming
+        // a student left old receipts displaying (and only searchable under) the old
+        // spelling, so one student read as two in breakdowns, exports and search.
+        studentName: m?.name || r.studentName || 'Unknown student',
         wing: m?.wing || 'unassigned',
         grade: m?.grade || ''
       };

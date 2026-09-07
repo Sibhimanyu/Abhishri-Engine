@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { IndianRupee, Receipt, TrendingUp, Undo2, BadgePercent, Filter } from 'lucide-react';
+import { IndianRupee, Receipt, TrendingUp, Undo2, BadgePercent, Filter, Info } from 'lucide-react';
 import {
   resolveRange, previousRange, effectiveGranularity, timeSeries, groupBy, summarize, isLiveReceipt,
   downloadCSV, GRANULARITY_ADVERB, INR, fmtDate, slugDate, colorAt, PAYMENT_METHODS, WINGS, ALL_CLASSES
@@ -206,6 +206,16 @@ export default function ReportCollections({ data }) {
     return g.map((x, i) => ({ key: x.key, label: x.label, value: x.total, color: colorAt(i), count: x.count }));
   }, [cashRows]);
 
+  // A zero KPI strip is ambiguous: no activity, or a range that simply misses the data?
+  // When the window is empty but records exist outside it, surface the latest date so the
+  // reader isn't left believing the books are empty (the default preset is "this month",
+  // which reads zero for the whole of any month before the first payment lands).
+  const emptyRangeHint = useMemo(() => {
+    if (rows.length || !data.income.length) return null;
+    const latest = data.income.reduce((m, r) => (r.date > m ? r.date : m), new Date(0));
+    return latest.getTime() > 0 ? latest : null;
+  }, [rows, data.income]);
+
   const activeFilterCount =
     f.methods.length + f.wings.length + f.grades.length + f.categories.length + f.recordedBy.length +
     (f.minAmount !== '' ? 1 : 0) + (f.maxAmount !== '' ? 1 : 0) + (f.search ? 1 : 0) +
@@ -294,6 +304,16 @@ export default function ReportCollections({ data }) {
           />
         </div>
       </ReportToolbar>
+
+      {emptyRangeHint && (
+        <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl px-4 py-3">
+          <Info size={16} className="text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-sm text-amber-800 dark:text-amber-200">
+            Nothing recorded in <span className="font-bold">{range.label}</span>, so every figure below reads zero.
+            The most recent entry is <span className="font-bold">{fmtDate(emptyRangeHint)}</span>. Widen the date range to see it.
+          </p>
+        </div>
+      )}
 
       {/* KPI strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

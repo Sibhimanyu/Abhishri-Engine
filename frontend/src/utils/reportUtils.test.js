@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyIncomeTx, isLiveReceipt, localKey, toDate } from './reportUtils';
+import { classifyIncomeTx, isLiveReceipt, localKey, toDate, normalizeClass, ALL_CLASSES } from './reportUtils';
 
 /**
  * Regression tests for the Reports "wrong data" investigation (see the five
@@ -75,5 +75,45 @@ describe('local calendar date handling (run under TZ=Asia/Kolkata)', () => {
   it('toDate parses Firestore-like shapes and falls back to epoch on null', () => {
     expect(toDate({ seconds: 1_756_500_000 }).getTime()).toBe(1_756_500_000_000);
     expect(toDate(null).getTime()).toBe(0);
+  });
+});
+
+describe('normalizeClass', () => {
+  // Regression: the live roster spells the same class several ways. Grouping on the raw
+  // value split UKG into 'U.K.G' (Rs 37,500) and 'UKG' (Rs 4,500), and the class filter
+  // offered a canonical 'LKG' option that matched none of the 3 real 'L.K.G' students.
+  it('folds punctuation variants onto the canonical class', () => {
+    expect(normalizeClass('L.K.G')).toBe('LKG');
+    expect(normalizeClass('U.K.G')).toBe('UKG');
+    expect(normalizeClass('l.k.g')).toBe('LKG');
+  });
+
+  it('folds spacing and case variants', () => {
+    expect(normalizeClass('Play Group')).toBe('Playgroup');
+    expect(normalizeClass('  playgroup ')).toBe('Playgroup');
+    expect(normalizeClass('class 10')).toBe('Class 10');
+  });
+
+  it('recognises PRE-KG, which the admission form never offered', () => {
+    expect(ALL_CLASSES).toContain('PRE-KG');
+    expect(normalizeClass('PRE-KG')).toBe('PRE-KG');
+    expect(normalizeClass('pre kg')).toBe('PRE-KG');
+  });
+
+  it('leaves genuinely different wording alone rather than guessing', () => {
+    // 'Earlier PRE-KG' is not obviously the same class; merging it would be a guess.
+    expect(normalizeClass('Earlier PRE-KG')).toBe('Earlier PRE-KG');
+    expect(normalizeClass('Montessori')).toBe('Montessori');
+  });
+
+  it('maps blank-ish values to the empty string so they bucket as "No class set"', () => {
+    expect(normalizeClass('')).toBe('');
+    expect(normalizeClass('   ')).toBe('');
+    expect(normalizeClass(null)).toBe('');
+    expect(normalizeClass(undefined)).toBe('');
+  });
+
+  it('is idempotent', () => {
+    expect(normalizeClass(normalizeClass('L.K.G'))).toBe('LKG');
   });
 });
