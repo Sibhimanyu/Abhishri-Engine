@@ -3,6 +3,7 @@ import { collection, query, getDocs, onSnapshot, doc, where, collectionGroup, or
 import { ref, onValue } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
 import { classifyIncomeTx, localKey } from '../utils/reportUtils';
+import { SkeletonBar } from './AppSkeleton';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
@@ -11,6 +12,10 @@ import {
   TrendingUp, Award, UserPlus, FileText, CheckCircle2, 
   Clock, Plus, MessageSquare
 } from 'lucide-react';
+
+/** Renders a value, or a shimmering bar until its data source has answered. */
+const Val = ({ ok, w = 'w-16', h = 'h-8', children }) =>
+  ok ? children : <SkeletonBar className={`inline-block align-middle ${h} ${w}`} />;
 
 export default function MainDashboard() {
   const { currentUser, userData } = useAuth();
@@ -48,7 +53,17 @@ export default function MainDashboard() {
 
   const [recentTxns, setRecentTxns] = useState([]);
   const [recentAdmissions, setRecentAdmissions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Per-source "first snapshot received" flags. Cards render a skeleton bar until
+  // their source has answered, instead of a misleading 0.
+  // Sources this role never subscribes to start out ready so their cards never wait.
+  const [ready, setReady] = useState({
+    students: !(showTotalStudents || showWingBreakdown),
+    txns: !(showMonthlyRevenue || showRecentCollections),
+    staff: !showStaffAttendance,
+    studentAtt: false,
+    staffAtt: false,
+  });
+  const markReady = (key) => setReady(prev => (prev[key] ? prev : { ...prev, [key]: true }));
 
   // Today's Date String YYYY-MM-DD
   // LOCAL day, not toISOString(): between 00:00 and 05:29 IST the UTC date is
@@ -104,6 +119,7 @@ export default function MainDashboard() {
           preschoolCount = pCount;
           tuitionCount = tCount;
           updateStats();
+          markReady('students');
 
           if (!showRecentCollections && showTotalStudents) {
              const recent = allStudents.sort((a, b) => {
@@ -115,6 +131,7 @@ export default function MainDashboard() {
           }
         }, (err) => {
           console.error("studentsRef snapshot error", err);
+          markReady('students');
         });
       }
 
@@ -162,6 +179,10 @@ export default function MainDashboard() {
           ...prev,
           monthlyRevenue: revenueThisMonth
         }));
+        markReady('txns');
+      }, (err) => {
+        console.error("transactions snapshot error", err);
+        markReady('txns');
       });
       }
 
@@ -180,8 +201,10 @@ export default function MainDashboard() {
             ...prev,
             totalStaffCount: count
           }));
+          markReady('staff');
         }, (err) => {
           console.error("allowed_usersRef snapshot error", err);
+          markReady('staff');
         });
       }
 
@@ -209,7 +232,8 @@ export default function MainDashboard() {
         });
       }
       setStats(prev => ({ ...prev, presentStudentsCount: presentCount }));
-    });
+      markReady('studentAtt');
+    }, () => markReady('studentAtt'));
 
     const unsubStaffAtt = onValue(staffAttendanceRef, (snap) => {
       if (snap.exists()) {
@@ -223,9 +247,8 @@ export default function MainDashboard() {
       } else {
         setStats(prev => ({ ...prev, presentStaffCount: 0 }));
       }
-    });
-
-    setLoading(false);
+      markReady('staffAtt');
+    }, () => markReady('staffAtt'));
 
     return () => {
       unsubStudentAtt();
@@ -269,9 +292,11 @@ export default function MainDashboard() {
           <div className="bg-brand-card border border-brand-card-border p-6 rounded-2xl shadow-sm hover:shadow-md transition-all flex items-start justify-between">
             <div>
               <p className="text-brand-text-dim text-xs font-bold uppercase tracking-wider mb-2">Total Students</p>
-              <h3 className="text-3xl font-black text-brand-text leading-none mb-2">{stats.totalStudents}</h3>
+              <h3 className="text-3xl font-black text-brand-text leading-none mb-2"><Val ok={ready.students}>{stats.totalStudents}</Val></h3>
               <p className="text-brand-text-dim text-xs">
-                <span className="text-brand-secondary font-bold">{stats.preschoolCount}</span> Preschool • <span className="text-yellow-500 font-bold">{stats.tuitionCount}</span> Tuition
+                <Val ok={ready.students} w="w-40" h="h-3">
+                  <span className="text-brand-secondary font-bold">{stats.preschoolCount}</span> Preschool • <span className="text-yellow-500 font-bold">{stats.tuitionCount}</span> Tuition
+                </Val>
               </p>
             </div>
             <div className="p-3 rounded-xl bg-brand-primary/10 text-brand-primary shrink-0"><Users size={22} /></div>
@@ -283,7 +308,7 @@ export default function MainDashboard() {
           <div className="bg-brand-card border border-brand-card-border p-6 rounded-2xl shadow-sm hover:shadow-md transition-all flex items-start justify-between">
             <div>
               <p className="text-brand-text-dim text-xs font-bold uppercase tracking-wider mb-2">Monthly Revenue</p>
-              <h3 className="text-3xl font-black text-brand-text leading-none mb-2">₹ {stats.monthlyRevenue.toLocaleString()}</h3>
+              <h3 className="text-3xl font-black text-brand-text leading-none mb-2"><Val ok={ready.txns} w="w-28">₹ {stats.monthlyRevenue.toLocaleString()}</Val></h3>
               <p className="text-brand-text-dim text-xs flex items-center gap-1">
                 <TrendingUp size={14} className="text-green-500" /> realization this month
               </p>
@@ -312,7 +337,9 @@ export default function MainDashboard() {
           <div>
             <p className="text-brand-text-dim text-xs font-bold uppercase tracking-wider mb-2">Student Attendance</p>
             <h3 className="text-3xl font-black text-brand-text leading-none mb-2">
-              {stats.presentStudentsCount} <span className="text-lg font-normal text-brand-text-dim">/ {stats.totalStudentsToday}</span>
+              <Val ok={ready.studentAtt && ready.students} w="w-24">
+                {stats.presentStudentsCount} <span className="text-lg font-normal text-brand-text-dim">/ {stats.totalStudentsToday}</span>
+              </Val>
             </h3>
             <div className="flex items-center gap-2 mt-2">
               <div className="flex-1 h-1.5 w-24 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
@@ -331,7 +358,9 @@ export default function MainDashboard() {
           <div>
             <p className="text-brand-text-dim text-xs font-bold uppercase tracking-wider mb-2">Active Staff Today</p>
             <h3 className="text-3xl font-black text-brand-text leading-none mb-2">
-              {stats.presentStaffCount} <span className="text-lg font-normal text-brand-text-dim">/ {stats.totalStaffCount}</span>
+              <Val ok={ready.staffAtt && ready.staff} w="w-24">
+                {stats.presentStaffCount} <span className="text-lg font-normal text-brand-text-dim">/ {stats.totalStaffCount}</span>
+              </Val>
             </h3>
             <div className="flex items-center gap-2 mt-2">
               <div className="flex-1 h-1.5 w-24 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden">
@@ -487,7 +516,16 @@ export default function MainDashboard() {
             <Link to="/fees/transactions" className="text-xs font-bold text-brand-primary hover:underline">View All Collections</Link>
           </div>
 
-          {recentTxns.length === 0 ? (
+          {!ready.txns ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className="p-4 rounded-xl border border-brand-card-border bg-brand-bg/50 dark:bg-black/10 flex items-center justify-between">
+                  <div className="space-y-2 flex-1"><SkeletonBar className="h-3.5 w-3/5" /><SkeletonBar className="h-2.5 w-2/5" /></div>
+                  <SkeletonBar className="h-4 w-16 ml-3" />
+                </div>
+              ))}
+            </div>
+          ) : recentTxns.length === 0 ? (
             <div className="py-8 text-center text-brand-text-dim text-sm">No transaction receipts logged this month.</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -519,7 +557,16 @@ export default function MainDashboard() {
             <Link to="/students" className="text-xs font-bold text-brand-primary hover:underline">View Directory</Link>
           </div>
 
-          {recentAdmissions.length === 0 ? (
+          {!ready.students ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className="p-4 rounded-xl border border-brand-card-border bg-brand-bg/50 dark:bg-black/10 flex items-center justify-between">
+                  <div className="space-y-2 flex-1"><SkeletonBar className="h-3.5 w-3/5" /><SkeletonBar className="h-2.5 w-2/5" /></div>
+                  <SkeletonBar className="h-4 w-16 ml-3" />
+                </div>
+              ))}
+            </div>
+          ) : recentAdmissions.length === 0 ? (
             <div className="py-8 text-center text-brand-text-dim text-sm">No students currently enrolled.</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
