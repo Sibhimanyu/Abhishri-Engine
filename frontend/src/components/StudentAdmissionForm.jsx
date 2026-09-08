@@ -1,3 +1,4 @@
+import { localKey } from '../utils/reportUtils';
 import React, { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { firestore } from '../firebase';
@@ -22,7 +23,7 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
     tamilDay: '',
     gender: '',
     aadhaarNo: '',
-    enrollmentDate: new Date().toISOString().split('T')[0],
+    enrollmentDate: localKey(new Date()),
     studentEmail: '',
     address: '',
     city: '',

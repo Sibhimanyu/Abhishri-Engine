@@ -1,3 +1,4 @@
+import { localKey } from '../utils/reportUtils';
 import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, query, where } from 'firebase/firestore';
@@ -10,7 +11,7 @@ export default function Attendance() {
   const { currentUser, userData } = useAuth();
   const [activeTab, setActiveTab] = useState('preschool'); // 'staff' | 'preschool' | 'tuition'
   const [mode, setMode] = useState('mark'); // 'mark' | 'report'
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => localKey(new Date()));
   const [entities, setEntities] = useState([]);
   const [attendance, setAttendance] = useState({});
   const [loadingEntities, setLoadingEntities] = useState(true);

@@ -1,3 +1,4 @@
+import { localKey } from '../utils/reportUtils';
 import React, { useState } from 'react';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { firestore } from '../firebase';
@@ -20,7 +21,7 @@ export default function StaffOnboardingForm({ onBack, onSuccess }) {
     nakshatra: '',
     tamilMonth: '',
     tamilDay: '',
-    joiningDate: new Date().toISOString().split('T')[0],
+    joiningDate: localKey(new Date()),
     bloodGroup: '',
     worksInPreschool: false,
     worksInTuition: false,

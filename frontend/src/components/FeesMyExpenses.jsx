@@ -1,3 +1,4 @@
+import { localKey, parseISODate, toDate } from '../utils/reportUtils';
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -36,7 +37,7 @@ export default function FeesMyExpenses() {
     amount: '', 
     category: 'Office Supplies', 
     details: '', 
-    date: new Date().toISOString().split('T')[0], 
+    date: localKey(new Date()), 
     file: null 
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -195,10 +196,17 @@ export default function FeesMyExpenses() {
     setEditingExpense(null);
   };
 
+  /** The expense's LOCAL calendar day as the date input shows it; '' if unparseable. */
+  const expenseDateStr = (expense) => {
+    const d = toDate(expense?.timestamp);
+    return d.getTime() > 0 ? localKey(d) : '';
+  };
+
   const handleOpenEdit = (expense) => {
-    const dateStr = expense.timestamp?.toDate
-      ? expense.timestamp.toDate().toISOString().split('T')[0]
-      : new Date(expense.timestamp || Date.now()).toISOString().split('T')[0];
+    // LOCAL calendar day, never toISOString(): the UTC conversion prefilled expenses
+    // recorded between 00:00 and 05:29 IST as the PREVIOUS day, and saving any edit
+    // then silently moved the expense back a day in every report.
+    const dateStr = expenseDateStr(expense);
     setExpenseData({
       source: expense.source || 'office',
       amount: String(expense.amount ?? ''),
@@ -213,7 +221,7 @@ export default function FeesMyExpenses() {
 
   const closeExpenseModal = () => {
     setIsLogExpenseOpen(false);
-    resetExpenseForm(new Date().toISOString().split('T')[0]);
+    resetExpenseForm(localKey(new Date()));
   };
 
   const handleLogExpense = async (e) => {
@@ -238,7 +246,7 @@ export default function FeesMyExpenses() {
         attachmentUrl = await getDownloadURL(snap.ref);
       }
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = localKey(new Date());
       const isToday = expenseData.date === today;
 
       if (editingExpense) {
@@ -246,13 +254,30 @@ export default function FeesMyExpenses() {
         // expense to a different staffId is what create's anti-spoofing check exists to prevent,
         // and there's no legitimate reason to change payment source after the fact.
         const newAmount = parseFloat(expenseData.amount);
-        await updateDoc(doc(firestore, 'expenses', editingExpense.id), {
+        const update = {
           amount: newAmount,
           category: expenseData.category,
           details: expenseData.details,
-          attachmentUrl,
-          timestamp: isToday ? serverTimestamp() : new Date(expenseData.date)
-        });
+          attachmentUrl
+        };
+        // Same semantics as the fee-ledger edit modal: only rewrite the timestamp when
+        // the user actually changed the date (an amount/typo fix must not reshuffle the
+        // expense's position in daily reports), keep the original time of day on the new
+        // LOCAL calendar day, and stamp "now" if the stored timestamp was missing/corrupt.
+        const originalDateStr = expenseDateStr(editingExpense);
+        if (expenseData.date !== originalDateStr) {
+          if (expenseData.date) {
+            const d = parseISODate(expenseData.date);
+            const orig = toDate(editingExpense.timestamp);
+            if (orig.getTime() > 0) d.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
+            update.timestamp = d;
+          } else {
+            update.timestamp = serverTimestamp();
+          }
+        } else if (!originalDateStr) {
+          update.timestamp = serverTimestamp();
+        }
+        await updateDoc(doc(firestore, 'expenses', editingExpense.id), update);
 
         logAudit({
           action: 'EXPENSE_EDITED',
@@ -275,7 +300,8 @@ export default function FeesMyExpenses() {
           details: expenseData.details,
           attachmentUrl: attachmentUrl,
           createdBy: email,
-          timestamp: isToday ? serverTimestamp() : new Date(expenseData.date)
+          // parseISODate: LOCAL midnight — new Date('YYYY-MM-DD') parses as UTC midnight.
+          timestamp: isToday ? serverTimestamp() : parseISODate(expenseData.date)
         };
 
         if (expenseData.source === 'staff_wallet') {
