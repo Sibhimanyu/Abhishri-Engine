@@ -1,3 +1,4 @@
+import { Spinner } from './Spinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { collection, onSnapshot, getDocs, collectionGroup } from 'firebase/firestore';
@@ -289,7 +290,7 @@ export default function Reports() {
 
         {loading ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary" />
+            <Spinner />
             <p className="text-sm text-brand-text-dim">Crunching the books…</p>
           </div>
         ) : (

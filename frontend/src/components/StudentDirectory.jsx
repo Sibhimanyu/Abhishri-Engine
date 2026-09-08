@@ -1,3 +1,4 @@
+import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, doc, where } from 'firebase/firestore';
 import { firestore } from '../firebase';
@@ -82,9 +83,7 @@ export default function StudentDirectory() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
-      </div>
+      <CenteredSpinner />
     );
   }
 

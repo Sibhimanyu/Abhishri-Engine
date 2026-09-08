@@ -1,3 +1,4 @@
+import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, query, where } from 'firebase/firestore';
 import { ref, onValue, set, serverTimestamp, get } from 'firebase/database';
@@ -213,7 +214,7 @@ export default function Attendance() {
           {/* Roster Table */}
           <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm overflow-hidden">
             {loadingEntities ? (
-              <div className="py-12 flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div></div>
+              <div className="py-12 flex justify-center"><Spinner /></div>
             ) : entities.length === 0 ? (
               <div className="py-12 text-center text-brand-text-dim">No records found for this category.</div>
             ) : (
@@ -353,7 +354,7 @@ export default function Attendance() {
           </div>
           
           {loadingReport || loadingEntities ? (
-            <div className="py-12 flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div></div>
+            <div className="py-12 flex justify-center"><Spinner /></div>
           ) : entities.length === 0 ? (
             <div className="py-12 text-center text-brand-text-dim">No records found.</div>
           ) : (

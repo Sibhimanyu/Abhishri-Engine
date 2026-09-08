@@ -1,3 +1,4 @@
+import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { firestore } from '../firebase';
@@ -48,9 +49,7 @@ export default function AdminAuditLog() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
-      </div>
+      <CenteredSpinner />
     );
   }
 

@@ -1,3 +1,4 @@
+import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, addDoc, setDoc, doc, serverTimestamp, deleteDoc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -173,7 +174,7 @@ export default function FeesStaffWallets() {
   };
 
   if (loading) {
-    return <div className="flex justify-center items-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div></div>;
+    return <CenteredSpinner />;
   }
 
   const statementTxs = selectedStaff && showModal === 'statement' 

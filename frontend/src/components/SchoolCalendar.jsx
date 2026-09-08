@@ -1,3 +1,4 @@
+import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { firestore } from '../firebase';
@@ -266,7 +267,7 @@ export default function SchoolCalendar() {
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
+        <Spinner />
       </div>
     );
   }
