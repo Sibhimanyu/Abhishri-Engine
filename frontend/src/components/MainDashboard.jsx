@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, onSnapshot, doc, where, collectionGroup, orderBy, limit } from 'firebase/firestore';
 import { ref, onValue } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
-import { classifyIncomeTx } from '../utils/reportUtils';
+import { classifyIncomeTx, localKey } from '../utils/reportUtils';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
@@ -51,7 +51,9 @@ export default function MainDashboard() {
   const [loading, setLoading] = useState(true);
 
   // Today's Date String YYYY-MM-DD
-  const todayStr = new Date().toISOString().split('T')[0];
+  // LOCAL day, not toISOString(): between 00:00 and 05:29 IST the UTC date is
+  // still yesterday, so the dashboard read the previous day's attendance as today.
+  const todayStr = localKey(new Date());
 
   useEffect(() => {
     // Dynamic greeting based on hour

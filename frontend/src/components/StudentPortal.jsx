@@ -1,3 +1,4 @@
+import { localKey } from '../utils/reportUtils';
 import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
@@ -89,7 +90,7 @@ export default function StudentPortal() {
         for (let i = 0; i < 35; i++) {
           const d = new Date();
           d.setDate(d.getDate() - i);
-          const dk = d.toISOString().split('T')[0];
+          const dk = localKey(d);
           promises.push(get(ref(rtdb, `modules/${directoryPath}/attendance/${dk}/${sid}`)).then(snap => {
             if (snap.exists()) attMap[dk] = snap.val();
           }));
@@ -128,7 +129,9 @@ export default function StudentPortal() {
   }
 
   // Analytics Helpers
-  const todayStr = new Date().toISOString().split('T')[0];
+  // LOCAL day, not toISOString(): between 00:00 and 05:29 IST the UTC date is
+  // still yesterday, which read/rendered the previous day's attendance as today.
+  const todayStr = localKey(new Date());
   const todayAtt = attendance[todayStr]?.status || 'none';
   const attMap = { 
     present: { color: 'text-green-500', bg: 'bg-green-500/10 border-green-500/20', icon: CheckCircle, label: 'Present' }, 
@@ -165,7 +168,7 @@ export default function StudentPortal() {
     for (let i = 0; i < 28; i++) {
       const d = new Date(startMonday);
       d.setDate(startMonday.getDate() + i);
-      const dk = d.toISOString().split('T')[0];
+      const dk = localKey(d);
       const isFuture = d > today;
       const isWeekend = d.getDay() === 0;
       const status = attendance[dk]?.status || 'none';
