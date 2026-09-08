@@ -10,7 +10,8 @@
     },
     "whatsapp_debug_webhooks": {
       ".read": "auth != null && root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true",
-      ".write": false
+      ".write": false,
+      ".indexOn": ["timestamp"]
     },
     "whatsapp_conversations": {
       ".read": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('access').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('broadcast').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('whatsapp_sender').child('manage').val() === true)",
