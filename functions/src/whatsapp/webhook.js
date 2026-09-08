@@ -1,5 +1,6 @@
 
 const { onRequest } = require("firebase-functions/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -338,3 +339,48 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
     response.status(500).send("Error");
   }
 });
+
+
+/**
+ * Trim whatsapp_debug_webhooks to the last DEBUG_RETENTION_DAYS.
+ *
+ * The webhook appends every raw provider payload there and nothing ever reads it
+ * back in code — it exists purely so a human can inspect recent traffic in the
+ * Firebase console. Left alone it grows forever (2,015 entries / 1.1 MB across
+ * the first 92 days, ~22/day), and because the payloads carry parent phone
+ * numbers and message bodies, "forever" is a privacy cost as well as a storage
+ * one. Recent history stays; everything older goes.
+ *
+ * Deletes in batches via a single multi-path update per batch (atomic, one round
+ * trip), bounded by MAX_BATCHES so a backlog can never run the function away.
+ */
+const DEBUG_RETENTION_DAYS = 30;
+const DEBUG_BATCH = 500;
+const DEBUG_MAX_BATCHES = 20;
+
+exports.pruneWhatsAppDebugLog = onSchedule(
+  { schedule: "every day 03:30", timeZone: "Asia/Kolkata" },
+  async () => {
+    const ref = admin.database().ref("whatsapp_debug_webhooks");
+    const cutoff = Date.now() - DEBUG_RETENTION_DAYS * 86400000;
+    let removed = 0;
+
+    for (let i = 0; i < DEBUG_MAX_BATCHES; i++) {
+      // Server-side filter — needs the timestamp index in database.rules.json,
+      // without which RTDB would download the whole node to sort it locally.
+      const snap = await ref.orderByChild("timestamp").endAt(cutoff).limitToFirst(DEBUG_BATCH).once("value");
+      if (!snap.exists()) break;
+
+      const updates = {};
+      snap.forEach((child) => { updates[child.key] = null; });
+      const n = Object.keys(updates).length;
+      if (n === 0) break;
+
+      await ref.update(updates);
+      removed += n;
+      if (n < DEBUG_BATCH) break;
+    }
+
+    logger.info("pruneWhatsAppDebugLog complete", { removed, retentionDays: DEBUG_RETENTION_DAYS });
+  }
+);

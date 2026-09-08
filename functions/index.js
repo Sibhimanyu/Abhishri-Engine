@@ -28,6 +28,7 @@ exports.sendWhatsAppBroadcast = whatsappSend.sendWhatsAppBroadcast;
 exports.syncWhatsAppTemplates = whatsappSend.syncWhatsAppTemplates;
 exports.checkWhatsAppWallet = whatsappSend.checkWhatsAppWallet;
 exports.whatsappWebhook = whatsappWebhook.whatsappWebhook;
+exports.pruneWhatsAppDebugLog = whatsappWebhook.pruneWhatsAppDebugLog;
 
 // --- Fees & Accounting Module ---
 const feeTriggers = require("./src/fees/triggers");
