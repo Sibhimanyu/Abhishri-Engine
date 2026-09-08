@@ -1,3 +1,4 @@
+import { Spinner } from './Spinner';
 import React, { useState, useEffect, useRef } from 'react';
 import { ref, onValue, push, update, set } from 'firebase/database';
 import { rtdb } from '../firebase';
@@ -208,7 +209,7 @@ export default function WhatsAppChats() {
             <div className="flex-1 overflow-y-auto p-4 space-y-2 relative" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundSize: 'contain', backgroundBlendMode: 'multiply' }}>
               {messagesLoading ? (
                 <div className="flex justify-center items-center h-full">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
+                  <Spinner />
                 </div>
               ) : messages.map(msg => {
                 const isInbound = msg.direction === 'inbound';

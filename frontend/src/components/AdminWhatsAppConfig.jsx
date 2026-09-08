@@ -1,3 +1,4 @@
+import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -94,9 +95,7 @@ export default function AdminWhatsAppConfig() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
-      </div>
+      <CenteredSpinner />
     );
   }
 

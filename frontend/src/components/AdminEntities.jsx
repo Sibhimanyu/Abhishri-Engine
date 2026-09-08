@@ -1,3 +1,4 @@
+import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { ref, onValue, update } from 'firebase/database';
 import { rtdb } from '../firebase';
@@ -98,9 +99,7 @@ export default function AdminEntities() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
-      </div>
+      <CenteredSpinner />
     );
   }
 

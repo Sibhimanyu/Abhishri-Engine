@@ -1,3 +1,4 @@
+import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { ref, get } from 'firebase/database';
@@ -107,7 +108,7 @@ export default function StudentPortal() {
   }, [userData]);
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center bg-brand-bg"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div></div>;
+    return <div className="h-screen flex items-center justify-center bg-brand-bg"><Spinner /></div>;
   }
 
   if (error) {

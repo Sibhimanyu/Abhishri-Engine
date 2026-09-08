@@ -1,3 +1,4 @@
+import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, updateDoc, onSnapshot, limit } from 'firebase/firestore';
 import { firestore } from '../firebase';
@@ -268,9 +269,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   const reallocatedPayments = compPayments;
 
   if (loading) return (
-    <div className="flex justify-center items-center h-64">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-primary"></div>
-    </div>
+    <CenteredSpinner />
   );
 
   if (!student) return <div className="p-8 text-center text-brand-text-dim">Student not found.</div>;
