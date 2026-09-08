@@ -4,6 +4,8 @@ import { signOut } from 'firebase/auth';
 import { auth, firestore, rtdb } from './firebase';
 import Login from './components/Login';
 import { useAuth } from './context/AuthContext';
+import { readSessionHint } from './utils/sessionHint';
+import AppSkeleton from './components/AppSkeleton';
 import GlobalSearch from './components/GlobalSearch';
 import MainDashboard from './components/MainDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -301,6 +303,9 @@ function App() {
   }
 
   if (loading) {
+    // Returning staff see the dashboard shell skeleton (matches index.html's pre-React
+    // skeleton, so the handoff is seamless); everyone else gets the brand splash.
+    if (readSessionHint() === 'shell') return <AppSkeleton />;
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-brand-bg transition-colors duration-300">
         <div className="relative flex flex-col items-center">

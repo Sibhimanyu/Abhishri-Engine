@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, firestore } from '../firebase';
+import { writeSessionHint } from '../utils/sessionHint';
 
 const AuthContext = createContext();
 
@@ -197,6 +198,7 @@ export function AuthProvider({ children }) {
           setLoading(false);
         }
       } else {
+        writeSessionHint('');
         setCurrentUser(null);
         setUserData(null);
         setLoading(false);
@@ -209,15 +211,27 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  // Persist the hint whenever we learn what kind of user this is.
+  useEffect(() => {
+    if (loading || !userData) return;
+    const isPortal = userData.dashboardType === 'student' || userData.dashboardType === 'parent'
+      || userData.role === 'student' || userData.role === 'parent';
+    const isStaff = userData.isAdmin || ['admin', 'staff', 'teacher', 'pro'].includes(userData.role)
+      || Object.keys(userData.permissions || {}).length > 0;
+    writeSessionHint(isPortal ? 'portal' : isStaff ? 'shell' : '');
+  }, [loading, userData]);
+
   const value = {
     currentUser,
     userData,
     loading
   };
 
+  // Children always render: App.jsx shows the app-shell skeleton while `loading`
+  // is true, instead of the blank page a withheld tree produced.
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }

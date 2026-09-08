@@ -6,14 +6,80 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Abhishri Academy | ERP Dashboard</title>
     <script>
-      if (window.location.pathname === '/public-calendar') {
-        document.documentElement.classList.remove('dark');
-        document.documentElement.style.colorScheme = 'light';
-      }
+      (function () {
+        var root = document.documentElement;
+        if (window.location.pathname === '/public-calendar') {
+          root.classList.remove('dark');
+          root.style.colorScheme = 'light';
+          return;
+        }
+        // Apply the colour scheme before first paint so the skeleton (and the app)
+        // don't flash light-then-dark. App.jsx keeps this in sync afterwards.
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          root.classList.add('dark');
+        }
+      })();
     </script>
+    <style>
+      /* Pre-React skeleton. Mirrors the tokens in src/index.css; React replaces #root's
+         children on first render, so nothing here survives past mount. */
+      :root { --sk-bg:#F8FAFC; --sk-card:#FFFFFF; --sk-border:#E2E8F0; --sk-bar:rgba(0,0,0,.08); }
+      .dark { --sk-bg:#0d1117; --sk-card:#161b22; --sk-border:#30363d; --sk-bar:rgba(255,255,255,.1); }
+      body { margin:0; background:var(--sk-bg); }
+      #root:empty { display:none; }
+      .sk-shell { display:flex; height:100vh; width:100%; overflow:hidden; font-family:system-ui,sans-serif; }
+      .sk-side { display:none; width:260px; background:var(--sk-card); border-right:1px solid var(--sk-border); flex-direction:column; }
+      @media (min-width:768px) { .sk-side { display:flex; } }
+      .sk-logo { height:96px; display:flex; align-items:center; justify-content:center; border-bottom:1px solid var(--sk-border); }
+      .sk-logo img { height:64px; }
+      .sk-nav { padding:16px; display:flex; flex-direction:column; gap:12px; }
+      .sk-main { flex:1; display:flex; flex-direction:column; min-width:0; }
+      .sk-top { height:80px; background:var(--sk-card); border-bottom:1px solid var(--sk-border); display:flex; align-items:center; justify-content:space-between; gap:16px; padding:0 16px; }
+      @media (min-width:768px) { .sk-top { padding:0 32px; } .sk-body { padding:32px; } }
+      .sk-body { flex:1; padding:16px; display:flex; flex-direction:column; gap:32px; }
+      .sk-card { background:var(--sk-card); border:1px solid var(--sk-border); border-radius:16px; padding:24px; }
+      .sk-grid { display:grid; grid-template-columns:repeat(1,1fr); gap:24px; }
+      @media (min-width:640px) { .sk-grid { grid-template-columns:repeat(2,1fr); } }
+      @media (min-width:1024px) { .sk-grid { grid-template-columns:repeat(4,1fr); } }
+      .sk-bar { height:12px; border-radius:6px; background:var(--sk-bar); animation:sk-pulse 1.6s ease-in-out infinite; }
+      .sk-bar.lg { height:32px; }
+      .sk-bar.md { height:20px; }
+      .sk-splash { height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:32px; }
+      .sk-splash img { height:96px; animation:sk-pulse 1.6s ease-in-out infinite; }
+      .sk-hide-dark, .sk-hide-light { display:none; }
+      html:not(.dark) .sk-hide-dark { display:block; }
+      html.dark .sk-hide-light { display:block; }
+      @keyframes sk-pulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        if (window.location.pathname === '/public-calendar') return;
+        var root = document.getElementById('root');
+        var logo = '<img class="sk-hide-dark" src="/logo-coral.png" alt="" /><img class="sk-hide-light" src="/logo-white.png" alt="" />';
+        var bars = function (n, w) { var s = ''; for (var i = 0; i < n; i++) s += '<div class="sk-bar" style="width:' + w[i % w.length] + '"></div>'; return s; };
+        var card = function () { return '<div class="sk-card"><div class="sk-bar" style="width:45%"></div><div class="sk-bar lg" style="width:55%;margin:14px 0 12px"></div><div class="sk-bar" style="width:70%"></div></div>'; };
+        var shell = '';
+        try { shell = localStorage.getItem('aa:session') || ''; } catch (e) {}
+        if (shell === 'shell') {
+          root.innerHTML =
+            '<div class="sk-shell" aria-hidden="true">' +
+              '<aside class="sk-side"><div class="sk-logo">' + logo + '</div><div class="sk-nav">' + bars(8, ['70%', '55%', '65%', '50%']) + '</div></aside>' +
+              '<div class="sk-main">' +
+                '<div class="sk-top"><div class="sk-bar md" style="width:45%;max-width:220px"></div><div class="sk-bar md" style="width:30%;max-width:140px"></div></div>' +
+                '<div class="sk-body">' +
+                  '<div class="sk-card"><div class="sk-bar" style="width:160px"></div><div class="sk-bar lg" style="width:320px;margin:14px 0 12px"></div><div class="sk-bar" style="width:60%"></div></div>' +
+                  '<div class="sk-grid">' + card() + card() + card() + card() + '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+        } else {
+          root.innerHTML = '<div class="sk-splash" aria-hidden="true">' + logo + '<div class="sk-bar" style="width:160px"></div></div>';
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
