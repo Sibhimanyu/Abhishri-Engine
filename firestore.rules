@@ -102,19 +102,23 @@ service cloud.firestore {
       );
     }
 
+    // Students live in ONE place: /students. Three legacy fallbacks
+    // (modules/{student,preschool,tuition}_directory/students) were checked here
+    // before falling through to it, costing 4 exists() + 1 get() per call.
+    //
+    // That mattered beyond tidiness. Rules allow only 10 document accesses per
+    // single-document request, and the read rules that call this also evaluate
+    // isAdmin() + getPerm() (allowed_users lookup + permission_groups). At 5
+    // accesses this function could push a parent reading their own child's
+    // transaction over the limit, denying access outright. It is now 2.
+    //
+    // Verified against production before removing: Firestore has no "modules"
+    // collection at all, and all three legacy student paths return zero docs.
     function isParentOf(studentId) {
       let email = request.auth.token.email;
-      let inRoot = exists(/databases/$(database)/documents/students/$(studentId));
-      let inStudent = exists(/databases/$(database)/documents/modules/student_directory/students/$(studentId));
-      let inPreschool = exists(/databases/$(database)/documents/modules/preschool_directory/students/$(studentId));
-      let inTuition = exists(/databases/$(database)/documents/modules/tuition_directory/students/$(studentId));
-      
-      let doc = inRoot ? get(/databases/$(database)/documents/students/$(studentId)) :
-                inStudent ? get(/databases/$(database)/documents/modules/student_directory/students/$(studentId)) :
-                inPreschool ? get(/databases/$(database)/documents/modules/preschool_directory/students/$(studentId)) :
-                inTuition ? get(/databases/$(database)/documents/modules/tuition_directory/students/$(studentId)) :
-                null;
-                
+      let path = /databases/$(database)/documents/students/$(studentId);
+      let doc = exists(path) ? get(path) : null;
+
       return doc != null && (
         doc.data.get('studentEmail', '') == email ||
         doc.data.get('motherEmail', '')  == email ||
