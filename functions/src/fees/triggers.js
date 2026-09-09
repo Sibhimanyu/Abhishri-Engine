@@ -269,6 +269,36 @@ async function resyncWalletBalance(db, staffId) {
  * Trigger to keep staff wallet balances in sync with expenses.
  * Specifically handles source='staff_wallet'.
  */
+/**
+ * Nightly safety net for wallet balances.
+ *
+ * resyncWalletBalance only runs when a staff_wallet expense is written, so it
+ * "self-heals on the next wallet event" — which never arrives for a staff member
+ * who simply has no further wallet activity. The recompute fix shipped 2026-08-23,
+ * but one account's last wallet event was 2026-07-08, so it kept displaying the
+ * old delta-bug figure (funding-only, Rs 1,000) instead of its true balance
+ * (Rs 45) indefinitely.
+ *
+ * This mirrors dailyFeeReconciliation: same semantics, applied to everyone on a
+ * schedule, so a stale balance can persist for at most a day. resyncWalletBalance
+ * skips the write when nothing changed, so a steady state costs reads only.
+ */
+async function performWalletReconciliation() {
+    const db = admin.firestore();
+    const staffSnap = await db.collection("staff").get();
+    for (let i = 0; i < staffSnap.docs.length; i += 25) {
+        const chunk = staffSnap.docs.slice(i, i + 25);
+        await Promise.all(chunk.map((doc) => resyncWalletBalance(db, doc.id)));
+    }
+}
+
+exports.dailyWalletReconciliation = onSchedule(
+    { schedule: "every day 00:20", timeZone: "Asia/Kolkata" },
+    async () => {
+        await performWalletReconciliation();
+    }
+);
+
 exports.syncStaffWalletBalance = onDocumentWritten("expenses/{expenseId}", async (event) => {
     const db = admin.firestore();
     const dataBefore = event.data.before ? event.data.before.data() : null;
