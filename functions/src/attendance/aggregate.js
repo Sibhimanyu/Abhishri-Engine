@@ -2,8 +2,12 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
 
 /**
- * Runs every day at 11:59 PM to aggregate RTDB attendance data into Firestore.
- * This solves the N+1 query problem by providing a pre-calculated 30-day view.
+ * Runs every day at 11:59 PM to aggregate RTDB attendance data into Firestore,
+ * so the attendance report reads one small collection instead of fanning out
+ * across per-day RTDB nodes.
+ *
+ * The counters are CUMULATIVE (lifetime totals per entity), not a rolling
+ * window - the report renders presentDays/totalDays as-is.
  */
 exports.aggregateDailyAttendance = onSchedule({ schedule: "59 23 * * *", timeZone: "Asia/Kolkata" }, async (event) => {
   const db = admin.firestore();
@@ -21,7 +25,12 @@ exports.aggregateDailyAttendance = onSchedule({ schedule: "59 23 * * *", timeZon
   }).format(new Date());
   console.log(`Aggregating attendance for ${today}`);
 
-  const modules = ['staff_directory', 'preschool_directory', 'tuition_directory'];
+  // These MUST match the paths Attendance.jsx actually writes to:
+  //   staff tab            -> modules/staff_directory/attendance/{date}/{id}
+  //   preschool + tuition  -> modules/student_directory/attendance/{date}/{id}
+  // This previously read preschool_directory/tuition_directory, which nothing has
+  // ever written, so every nightly run found no data and aggregated nothing.
+  const modules = ['staff_directory', 'student_directory'];
 
   for (const mod of modules) {
     // Scheduled (Pub/Sub-backed) invocations are at-least-once. Without this marker, a
@@ -49,7 +58,10 @@ exports.aggregateDailyAttendance = onSchedule({ schedule: "59 23 * * *", timeZon
     for (const [entityId, data] of Object.entries(attendanceData)) {
       if (!data.status) continue;
 
-      const aggregateRef = db.collection('modules').doc('attendance').collection('aggregates').doc(entityId);
+      // Attendance.jsx reads the root 'attendance_aggregates' collection (and that is
+      // the path firestore.rules exposes). Writing to modules/attendance/aggregates
+      // put the results somewhere no reader and no rule could ever see them.
+      const aggregateRef = db.collection('attendance_aggregates').doc(entityId);
 
       // We use Firestore FieldValue.increment to atomically update the counters.
       const increment = admin.firestore.FieldValue.increment(1);
