@@ -44,6 +44,10 @@ export default function Reports() {
   // for, and starting at `true` would strand them on a spinner until an effect cleared it.
   const [loading, setLoading] = useState(canViewIncome || canViewExpenses);
   const [loadError, setLoadError] = useState(null);
+  // Reports access is granted by view_dashboard/exp_all too, but firestore.rules only
+  // lets view/ledger (or student_directory/attendance perms) read /students. Such a
+  // caller must NOT be shown a confident zero — see the notice below and ReportDues.
+  const [studentsReadable, setStudentsReadable] = useState(true);
 
   useEffect(() => {
     if (!currentUser || (!canViewIncome && !canViewExpenses)) return;
@@ -109,11 +113,14 @@ export default function Reports() {
           const first = await getDocs(collection(firestore, 'students'));
           if (cancelled) return;
           applyStudents(first);
+          setStudentsReadable(true);
           unsubStudents = onSnapshot(collection(firestore, 'students'), applyStudents, (err) => {
             console.warn('Reports: students listener error', err);
+            setStudentsReadable(false);
           });
         } catch (err) {
           console.warn('Reports: students unreadable', err);
+          setStudentsReadable(false);
         }
 
         if (canViewIncome) {
@@ -233,8 +240,8 @@ export default function Reports() {
   }, [income, metaById]);
 
   const data = useMemo(
-    () => ({ income: enrichedIncome, expenses, students, staff, canViewIncome, canViewExpenses }),
-    [enrichedIncome, expenses, students, staff, canViewIncome, canViewExpenses]
+    () => ({ income: enrichedIncome, expenses, students, staff, canViewIncome, canViewExpenses, studentsReadable }),
+    [enrichedIncome, expenses, students, staff, canViewIncome, canViewExpenses, studentsReadable]
   );
 
   const tabs = [
@@ -282,6 +289,17 @@ export default function Reports() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        {!studentsReadable && (
+          <div className="mb-4 flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 text-amber-800 dark:text-amber-200 rounded-xl px-4 py-3 text-sm">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>
+              Student records aren&rsquo;t visible to your account, so wing and class attribution is unavailable and
+              Outstanding Dues cannot be shown. Money totals below are still complete. Ask an administrator for the
+              Fees &amp; Accounting &ldquo;view&rdquo; or &ldquo;ledger&rdquo; permission.
+            </span>
+          </div>
+        )}
+
         {loadError && (
           <div className="mb-4 flex items-start gap-2 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 text-red-700 dark:text-red-300 rounded-xl px-4 py-3 text-sm">
             <AlertCircle size={16} className="mt-0.5 shrink-0" /> {loadError}

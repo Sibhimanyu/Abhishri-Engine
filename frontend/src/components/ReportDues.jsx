@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { AlertCircle, Users, PiggyBank, CalendarClock, BadgePercent, Filter } from 'lucide-react';
+import { AlertCircle, Users, PiggyBank, CalendarClock, BadgePercent, Filter, ShieldAlert } from 'lucide-react';
 import {
   resolveRange, groupBy, downloadCSV, INR, fmtDate, slugDate, isLiveReceipt, WINGS, ALL_CLASSES
 } from '../utils/reportUtils';
@@ -232,6 +232,24 @@ export default function ReportDues({ data }) {
     },
     { key: 'annualRemaining', header: 'Annual left', align: 'right', width: '120px', cellClass: 'tabular-nums text-brand-text-dim', render: s => INR(s.annualRemaining) }
   ];
+
+  // Every figure on this report derives from the student roster. When the caller can't
+  // read /students the honest answer is "not available" — the previous behaviour rendered
+  // a confident "0 students owing Rs 0", which a finance user would reasonably read as
+  // "nobody owes anything" rather than "you lack a permission".
+  if (!data.studentsReadable) {
+    return (
+      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 p-8 rounded-xl text-center flex flex-col items-center m-1">
+        <ShieldAlert className="text-amber-500 mb-4" size={44} />
+        <h3 className="text-xl font-bold text-brand-text mb-2">Outstanding dues aren&rsquo;t available</h3>
+        <p className="text-brand-text-dim max-w-md">
+          This report is built entirely from student records, which your account can&rsquo;t read. Rather than show
+          you a total that would read as zero, it is hidden. Ask an administrator for the Fees &amp; Accounting
+          &ldquo;view&rdquo; or &ldquo;ledger&rdquo; permission.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
