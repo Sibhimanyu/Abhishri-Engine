@@ -46,6 +46,10 @@ exports.closePeriod = feePeriods.closePeriod;
 exports.reopenPeriod = feePeriods.reopenPeriod;
 exports.previewPeriod = feePeriods.previewPeriod;
 
+const feeDeposits = require("./src/fees/deposits");
+exports.createDeposit = feeDeposits.createDeposit;
+exports.undepositedCash = feeDeposits.undepositedCash;
+
 // --- Staff Attendance Module ---
 const staffAttendance = require("./src/staff/attendance");
 exports.selfMarkStaffAttendance = staffAttendance.selfMarkStaffAttendance;

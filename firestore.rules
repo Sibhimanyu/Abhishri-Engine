@@ -207,6 +207,30 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Cash settlement. Written only by the createDeposit callable (Admin SDK, bypasses
+    // rules); membership lives in deposit_lines keyed by payment id, deliberately NOT as
+    // a field on the payment, because the ledger has been append-only since phase 3.
+    match /deposits/{depositId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'view_dashboard') ||
+        getPerm('fees_accounting', 'view') ||
+        getPerm('fees_accounting', 'ledger') ||
+        getPerm('fees_accounting', 'config')
+      );
+      allow write: if false;
+    }
+    match /deposits/{depositId}/deposit_lines/{paymentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'view_dashboard') ||
+        getPerm('fees_accounting', 'view') ||
+        getPerm('fees_accounting', 'ledger') ||
+        getPerm('fees_accounting', 'config')
+      );
+      allow write: if false;
+    }
+
     // Accounting periods. Written only by the closePeriod/reopenPeriod callables, which
     // run with the Admin SDK and bypass rules; the client reads them to show whether a
     // month is signed off.
