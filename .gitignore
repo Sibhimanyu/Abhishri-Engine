@@ -84,3 +84,6 @@ functions/test_broadcast.js
 functions/get_local_webhook.js
 firebase-debug.log
 
+
+# Migration snapshots (local safety copies, never committed)
+.migration-snapshots/
