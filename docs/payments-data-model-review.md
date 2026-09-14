@@ -233,7 +233,105 @@ fully will be — which is exactly why this is Phase 1.
 
 ---
 
-## 5. If you only do one thing
+## 5. Migration safety — how existing data is preserved
+
+The data already in production is the constraint that shapes everything above. This
+section is the contract for how it gets protected.
+
+### 5.1 The governing rule
+
+> **Never modify or delete an existing field. Only add.**
+
+Every phase in this plan can be done additively. No phase renames a field in place, no
+phase drops a column, no phase rewrites an existing document's meaning. Where a new
+field supersedes an old one (`amount` -> `amountMinor`), **both are written and both are
+kept** — the old field stays the source of truth until the new one has been verified in
+production, and is never removed afterwards. Storage is free at this size; a
+irreversible migration is not.
+
+### 5.2 Scope is small — and that is a window, not a permanent condition
+
+| collection | docs |
+|---|---|
+| transactions | 173 |
+| students | 54 |
+| expenses | 53 |
+| fee_ledger | 49 |
+| **total** | **329** |
+
+The entire database is ~1 MB. That means a migration can:
+
+- take a **complete JSON snapshot** before every run (independent of Firestore's own
+  backups, restorable with no GCP tooling),
+- run in a **single batch pass** with no pagination or resumability concerns,
+- and be **verified row-by-row** — at 173 payments you can literally diff every record.
+
+None of that is true at 10,000 payments. The cheapness of migrating is itself an
+argument for doing the structural work now rather than after another year of entry.
+
+### 5.3 Backup posture — one real gap
+
+Checked against the live project:
+
+| control | state |
+|---|---|
+| Daily backup schedule | **healthy** — 96 consecutive daily backups, 2026-06-09 to 2026-09-13, 98-day retention |
+| Point-in-time recovery | **DISABLED** — version retention is 3600s (1 hour) |
+| Delete protection | **DISABLED** |
+
+The daily backups are genuinely good. The gap is PITR: without it, a migration that
+corrupts data at 14:00 can only be restored from that morning's backup, **losing every
+real payment entered in between**. With PITR enabled, retention becomes 7 days at
+microsecond granularity and you can restore to the instant before the migration ran.
+
+**Enable PITR and delete protection before Phase 2 runs.** PITR has a storage cost, so
+it is a decision rather than something to switch on unilaterally — but it is the single
+control that makes a bad migration recoverable rather than merely survivable.
+
+### 5.4 Every migration script obeys the same shape
+
+1. **Snapshot** — dump affected collections to timestamped JSON; refuse to run if the
+   dump fails.
+2. **Dry run by default** — `--apply` is required to write anything. Dry run prints the
+   exact per-document diff.
+3. **Idempotent** — safe to re-run. Keyed on a marker field or derived deterministically,
+   so a half-finished run can simply be run again.
+4. **Verify** — assert invariants after writing, and fail loudly if any break:
+   - document counts unchanged (migrations add, never remove)
+   - `sum(incoming) + sum(voids)` still equals **Rs 612,600**
+   - every `financialSummary.totalPaid` still matches its recomputation
+   - no document lost a field it previously had
+5. **Rollback note** — every script states, in its header, exactly how to undo it.
+
+### 5.5 Per-phase risk and rollback
+
+| phase | touches existing docs? | rollback |
+|---|---|---|
+| **1** — `externalRef`, `receivedAt`/`recordedAt`, `idempotencyKey`, `periodKey` | **No.** New fields on new writes only. Optional safe backfill: `receivedAt` from existing `timestamp`, `recordedAt` from Firestore's own `createTime` metadata | Ignore the new fields; nothing to undo |
+| **2** — `allocations/` + plan versioning | **No.** Derives a **new** collection from existing `breakdown` maps; originals untouched | Delete the `allocations` collection |
+| **3** — immutability | **No.** Security-rules change only | Redeploy previous rules |
+| **4** — deposits, periods, reconciliation runs | **No.** All new collections | Delete the new collections |
+| **5** — minor units | Adds `amountMinor` alongside `amount`; `amount` is never dropped | Stop reading `amountMinor` |
+
+Phase 2 is the only one that changes numbers users see, and even there the change is in
+*which* projection is authoritative, not in the underlying records. It ships behind a
+diff report: the 13 students whose two allocation sources disagree get reviewed by a
+human **before** the switch, not after.
+
+### 5.6 What gets verified before each cutover
+
+The same three invariants that made this review trustworthy, re-run as a gate:
+
+- total collected reconciles three independent ways (currently **Rs 612,600**)
+- every stored `financialSummary` matches a fresh recomputation from transactions
+- every stored `walletBalance` matches a fresh recomputation from expenses
+
+If any of those drift during a migration, the migration is wrong and gets rolled back —
+they are the canary, and they are cheap enough to run on every phase.
+
+---
+
+## 6. If you only do one thing
 
 **Phase 1, this week.** It is a field on a form and four lines in the write path. Every
 day it is deferred adds ~2 more payments that can never be matched to a bank line, and
