@@ -44,6 +44,28 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "deposit_lines",
+      "fieldPath": "paymentId",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "order": "ASCENDING"
+        },
+        {
+          "queryScope": "COLLECTION",
+          "order": "DESCENDING"
+        },
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        },
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ]
 }
