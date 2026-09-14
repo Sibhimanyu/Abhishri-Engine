@@ -1,6 +1,6 @@
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, updateDoc, onSnapshot, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, updateDoc, onSnapshot, limit, writeBatch } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
@@ -672,6 +672,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       method: tx.method || 'Cash',
       description: tx.description || '',
       date: txDateStr(tx),
+      externalRef: tx.externalRef || '',
       type: tx.type
     });
     setIsEditPaymentOpen(true);
@@ -689,7 +690,13 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       const { breakdown, breakdownNames } = allocateFunds(Math.abs(pAmt), compPayments, []);
       const originalTx = transactions.find(t => t.id === editPaymentForm.id);
 
-      const update = {
+      // A reference is required when RECORDING a payment (staff have it to hand), but not
+      // when correcting one: most existing payments predate the field entirely, and
+      // blocking a typo fix on a three-month-old entry because nobody can find the UTR
+      // would be worse than the missing reference. The field is offered and carried
+      // forward, so a correction is an opportunity to capture it rather than a gate.
+
+      const corrected = {
         amount: pAmt,
         method: editPaymentForm.method,
         description: editPaymentForm.description || '',
@@ -704,23 +711,77 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       // on a no-op date — otherwise it could never be repaired and stayed permanently
       // invisible to every date-ranged report (it sorts to epoch 1970).
       const originalDateStr = txDateStr(originalTx);
+      let correctedTimestamp = originalTx?.timestamp ?? serverTimestamp();
       if (editPaymentForm.date !== originalDateStr) {
         if (editPaymentForm.date) {
           const d = parseISODate(editPaymentForm.date);
           const orig = toDate(originalTx?.timestamp);
           if (orig.getTime() > 0) d.setHours(orig.getHours(), orig.getMinutes(), orig.getSeconds(), orig.getMilliseconds());
-          update.timestamp = d;
+          correctedTimestamp = d;
         } else {
-          update.timestamp = serverTimestamp();
+          correctedTimestamp = serverTimestamp();
         }
       } else if (!originalDateStr) {
-        update.timestamp = serverTimestamp();
+        correctedTimestamp = serverTimestamp();
       }
+      corrected.timestamp = correctedTimestamp;
 
-      await updateDoc(doc(firestore, 'students', studentId, 'transactions', editPaymentForm.id), update);
+      // APPEND-ONLY CORRECTION (docs/payments-data-model-review.md phase 3).
+      // Editing a posted payment in place rewrote history: a period that had already been
+      // reconciled could change afterwards with no trace. A correction now posts three
+      // facts atomically instead — the original is flagged voided, a reversal row cancels
+      // it, and the corrected values go in as a new payment. The ledger only ever grows,
+      // and the UI still presents it to staff as a single "edit".
+      const tsCollection = collection(firestore, 'students', studentId, 'transactions');
+      const reversalRef = doc(tsCollection);
+      const replacementKey = newIdempotencyKey();
+      const replacementRef = doc(tsCollection, replacementKey);
+      const originalRef = doc(tsCollection, editPaymentForm.id);
+      const originalAmount = Number(originalTx?.amount) || 0;
+      const receivedAt = correctedTimestamp instanceof Date ? correctedTimestamp : new Date();
+      const correctionName = student?.name || originalTx?.studentName || 'Unknown';
+
+      const batch = writeBatch(firestore);
+      batch.update(originalRef, { isVoided: true });
+      batch.set(reversalRef, {
+        studentId,
+        studentName: correctionName,
+        amount: -originalAmount,
+        method: originalTx?.method || 'Cash',
+        description: `CORRECTION: superseded by a revised entry`,
+        category: originalTx?.category || 'General Fees',
+        type: 'void',
+        breakdown: Object.fromEntries(Object.entries(originalTx?.breakdown || {}).map(([k, v]) => [k, -Math.abs(Number(v) || 0)])),
+        breakdownNames: originalTx?.breakdownNames || {},
+        voidRefId: editPaymentForm.id,
+        correctionOf: editPaymentForm.id,
+        timestamp: originalTx?.timestamp ?? serverTimestamp(),
+        receivedAt: originalTx?.receivedAt ?? originalTx?.timestamp ?? null,
+        periodKey: originalTx?.periodKey ?? null,
+        recordedAt: serverTimestamp(),
+        addedBy: userData?.email || 'Unknown',
+        schemaVersion: 2,
+      });
+      batch.set(replacementRef, {
+        ...corrected,
+        studentId,
+        studentName: correctionName,
+        category: originalTx?.category || 'General Fees',
+        type: originalTx?.type === 'discount' ? 'discount' : 'incoming',
+        addedBy: userData?.email || 'Unknown',
+        recordedAt: serverTimestamp(),
+        supersedes: editPaymentForm.id,
+        ...buildPaymentAuditFields({
+          receivedAt,
+          method: editPaymentForm.method,
+          externalRef: editPaymentForm.externalRef ?? originalTx?.externalRef,
+          idempotencyKey: replacementKey,
+        }),
+      });
+      await batch.commit();
 
       logAudit({
-        action: 'TRANSACTION_EDITED',
+        action: 'TRANSACTION_CORRECTED',
         module: 'fees_accounting',
         targetId: editPaymentForm.id,
         targetName: student?.name || originalTx?.studentName || 'Unknown',
@@ -729,7 +790,9 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           amount: { from: originalTx?.amount ?? null, to: pAmt },
           method: { from: originalTx?.method ?? null, to: editPaymentForm.method },
           description: { from: originalTx?.description ?? null, to: editPaymentForm.description },
-          date: { from: originalTx?.timestamp ?? null, to: editPaymentForm.date || null }
+          date: { from: originalTx?.timestamp ?? null, to: editPaymentForm.date || null },
+          reversalId: reversalRef.id,
+          replacementId: replacementKey
         }
       });
 
@@ -1550,6 +1613,22 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                   {transactions.find(t => t.id === editPaymentForm.id)?.method === 'Concession' && <option value="Concession">Concession</option>}
                 </select>
               </div>
+
+              {requiresReference(editPaymentForm.method) && (
+                <div>
+                  <label className="block text-sm font-medium text-brand-text-dim mb-1">
+                    Reference Number
+                    <span className="font-normal text-brand-text-dim"> (optional on a correction)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editPaymentForm.externalRef || ''}
+                    onChange={(e) => setEditPaymentForm({ ...editPaymentForm, externalRef: e.target.value })}
+                    className="w-full bg-brand-bg border border-brand-card-border rounded-md px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                    placeholder="Add the UTR / txn ID if you have it"
+                  />
+                </div>
+              )}
               
               <div>
                 <label className="block text-sm font-medium text-brand-text-dim mb-1">Description</label>
