@@ -179,8 +179,18 @@ service cloud.firestore {
     match /students/{studentId}/transactions/{id} {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(studentId));
       allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
-      allow update: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete') || (getPerm('fees_accounting', 'trans_add') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isVoided'])));
-      allow delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
+      // APPEND-ONLY LEDGER (docs/payments-data-model-review.md phase 3).
+      // A posted payment is never rewritten. The only permitted mutation is flipping
+      // isVoided, which is how both voiding and correcting work: the correction posts a
+      // reversal row plus a replacement payment instead of editing in place, so a period
+      // that has already been reconciled cannot change underneath you.
+      allow update: if isAuthenticated()
+        && (isAdmin() || getPerm('fees_accounting', 'trans_delete') || getPerm('fees_accounting', 'trans_add'))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isVoided']);
+      // Deleting money is never correct - reverse it instead, which leaves both facts.
+      // Note: the catch-all at the foot of this file still grants admins write access,
+      // deliberately retained as a break-glass path; every correction is audit-logged.
+      allow delete: if false;
     }
 
     // --- Payments journal (migration 002; see docs/payments-data-model-review.md) ---
