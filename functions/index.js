@@ -41,6 +41,11 @@ exports.dailyWalletReconciliation = feeTriggers.dailyWalletReconciliation;
 const feeAllocations = require("./src/fees/allocations");
 exports.syncAllocations = feeAllocations.syncAllocations;
 
+const feePeriods = require("./src/fees/periods");
+exports.closePeriod = feePeriods.closePeriod;
+exports.reopenPeriod = feePeriods.reopenPeriod;
+exports.previewPeriod = feePeriods.previewPeriod;
+
 // --- Staff Attendance Module ---
 const staffAttendance = require("./src/staff/attendance");
 exports.selfMarkStaffAttendance = staffAttendance.selfMarkStaffAttendance;
