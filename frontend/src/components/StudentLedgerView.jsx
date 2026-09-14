@@ -5,6 +5,7 @@ import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
 import { localKey, parseISODate, toDate } from '../utils/reportUtils';
+import { requiresReference, validateReference, newIdempotencyKey, buildPaymentAuditFields } from '../utils/paymentFields';
 import { ArrowLeft, PlusCircle, Printer, AlertTriangle, Layers, ListChecks, Settings2, X, Check, Trash2, Plus, IndianRupee, MessageCircle, Edit2 } from 'lucide-react';
 import PaymentReceipt from './PaymentReceipt';
 
@@ -25,7 +26,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isDiscountOpen, setIsDiscountOpen] = useState(false);
   const [isEditPaymentOpen, setIsEditPaymentOpen] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', description: '', date: '' });
+  const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', description: '', date: '', externalRef: '', idemKey: '' });
   const [discountForm, setDiscountForm] = useState({ amount: '', description: '', date: '' });
   const [editPaymentForm, setEditPaymentForm] = useState({ id: '', amount: '', method: 'Cash', description: '', date: '', type: '' });
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -516,6 +517,9 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       return alert("Please enter a valid amount.");
     }
 
+    const refError = validateReference(paymentForm.method, paymentForm.externalRef);
+    if (refError) return alert(refError);
+
     setIsProcessingPayment(true);
     try {
       const pAmt = Number(paymentForm.amount);
@@ -531,7 +535,17 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       const timestampValue = paymentForm.date ? parseISODate(paymentForm.date) : serverTimestamp();
 
       const paymentName = student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown';
-      const newTxRef = await addDoc(collection(firestore, 'students', studentId, 'transactions'), {
+
+      // Phase 1 additive fields (docs/payments-data-model-review.md). `timestamp` is still
+      // written exactly as before so every existing reader is unaffected; receivedAt is the
+      // same instant under its accounting name, recordedAt is when it was actually entered.
+      const receivedAt = paymentForm.date ? parseISODate(paymentForm.date) : new Date();
+      const idemKey = paymentForm.idemKey || newIdempotencyKey();
+
+      // The idempotency key doubles as the document id: a double-submit (or a retry after a
+      // dropped response) rewrites the same document instead of creating a second payment.
+      const newTxRef = doc(firestore, 'students', studentId, 'transactions', idemKey);
+      await setDoc(newTxRef, {
         studentId: studentId,
         studentName: paymentName,
         amount: pAmt,
@@ -542,7 +556,14 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         breakdown: breakdown,
         breakdownNames: breakdownNames,
         timestamp: timestampValue,
-        addedBy: userData?.email || 'Unknown'
+        addedBy: userData?.email || 'Unknown',
+        recordedAt: serverTimestamp(),
+        ...buildPaymentAuditFields({
+          receivedAt,
+          method: paymentForm.method,
+          externalRef: paymentForm.externalRef,
+          idempotencyKey: idemKey,
+        }),
       });
 
       logAudit({
@@ -551,14 +572,26 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         targetId: newTxRef.id,
         targetName: paymentName,
         performedBy: userData?.email,
-        details: { amount: pAmt, method: paymentForm.method, description: paymentForm.description }
+        details: { amount: pAmt, method: paymentForm.method, description: paymentForm.description, externalRef: paymentForm.externalRef || null }
       });
 
       setIsPaymentOpen(false);
-      setPaymentForm({ amount: '', method: 'Cash', description: '', date: '' });
+      setPaymentForm({ amount: '', method: 'Cash', description: '', date: '', externalRef: '', idemKey: '' });
 
     } catch (err) {
       console.error(err);
+      // The document id IS the idempotency key, so a retry of an already-recorded payment
+      // arrives as an update and the rules reject it for non-admins. That is the guard
+      // working: the payment exists exactly once. Confirm that is what happened before
+      // calling it a success, so genuine failures still surface.
+      try {
+        const existing = await getDoc(doc(firestore, 'students', studentId, 'transactions', paymentForm.idemKey || ''));
+        if (existing.exists() && existing.data()?.idempotencyKey === paymentForm.idemKey) {
+          setIsPaymentOpen(false);
+          setPaymentForm({ amount: '', method: 'Cash', description: '', date: '', externalRef: '', idemKey: '' });
+          return;
+        }
+      } catch { /* fall through to the error below */ }
       alert("Failed to process payment.");
     } finally {
       setIsProcessingPayment(false);
@@ -749,7 +782,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                   <PlusCircle size={18} /> Discount
                 </button>
                 <button 
-                  onClick={() => { setSelectedDues([]); setIsPaymentOpen(true); }}
+                  onClick={() => { setSelectedDues([]); setPaymentForm(prev => ({ ...prev, externalRef: '', idemKey: newIdempotencyKey() })); setIsPaymentOpen(true); }}
                   className="bg-brand-primary hover:bg-brand-primary-hover text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors text-sm"
                 >
                   <PlusCircle size={18} /> Log Payment
@@ -1406,6 +1439,28 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                   <option value="Card">Card</option>
                 </select>
               </div>
+
+              {/* Reference number: the only thing that lets a payment be matched to a bank
+                  statement line. Shown only for methods that actually produce one. */}
+              {requiresReference(paymentForm.method) && (
+                <div>
+                  <label className="block text-sm font-medium text-brand-text-dim mb-1">
+                    Reference Number <span className="text-red-500">*</span>
+                    <span className="font-normal text-brand-text-dim"> ({paymentForm.method === 'Cheque' ? 'cheque no.' : 'UTR / txn ID'})</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentForm.externalRef}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, externalRef: e.target.value })}
+                    className="w-full bg-brand-bg border border-brand-card-border rounded-md px-3 py-2 text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
+                    placeholder={paymentForm.method === 'Cheque' ? 'e.g. 004512' : 'e.g. 431234567890'}
+                  />
+                  <p className="text-[10px] text-brand-text-dim mt-1">
+                    Needed to reconcile this payment against the bank statement later.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-brand-text-dim mb-1">Description (Optional)</label>
                 <input 

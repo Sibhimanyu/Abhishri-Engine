@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { classifyIncomeTx, isLiveReceipt, localKey, toDate, normalizeClass, ALL_CLASSES } from './reportUtils';
+import { requiresReference, validateReference, periodKeyOf, buildPaymentAuditFields, newIdempotencyKey } from './paymentFields';
 
 /**
  * Regression tests for the Reports "wrong data" investigation (see the five
@@ -115,5 +116,45 @@ describe('normalizeClass', () => {
 
   it('is idempotent', () => {
     expect(normalizeClass(normalizeClass('L.K.G'))).toBe('LKG');
+  });
+});
+
+describe('paymentFields (Phase 1 migration)', () => {
+  it('requires a reference only for methods that produce one', () => {
+    expect(requiresReference('GPay/UPI')).toBe(true);
+    expect(requiresReference('Bank Transfer')).toBe(true);
+    expect(requiresReference('Cheque')).toBe(true);
+    expect(requiresReference('Card')).toBe(true);
+    // Cash reconciles via a deposit record, not a reference.
+    expect(requiresReference('Cash')).toBe(false);
+  });
+
+  it('blocks an electronic payment with no reference, allows cash without one', () => {
+    expect(validateReference('GPay/UPI', '')).toMatch(/reference number is required/i);
+    expect(validateReference('GPay/UPI', '  ')).toMatch(/reference number is required/i);
+    expect(validateReference('GPay/UPI', '431234567890')).toBe('');
+    expect(validateReference('Cash', '')).toBe('');
+  });
+
+  it('derives the accounting period from the LOCAL month, not UTC', () => {
+    // 1 Sep 2026 00:30 IST is 31 Aug 18:30 UTC — a UTC-derived key would file this
+    // payment in the wrong accounting month.
+    expect(periodKeyOf(new Date(2026, 8, 1, 0, 30))).toBe('2026-09');
+    expect(periodKeyOf(new Date(2026, 11, 31, 23, 59))).toBe('2026-12');
+    expect(periodKeyOf(new Date('nonsense'))).toBe('');
+  });
+
+  it('only stores a reference for methods that have one', () => {
+    const cash = buildPaymentAuditFields({ receivedAt: new Date(2026, 8, 1), method: 'Cash', externalRef: 'stray', idempotencyKey: 'k1' });
+    expect(cash.externalRef).toBe('');
+    const upi = buildPaymentAuditFields({ receivedAt: new Date(2026, 8, 1), method: 'GPay/UPI', externalRef: ' 4312 ', idempotencyKey: 'k2' });
+    expect(upi.externalRef).toBe('4312');
+    expect(upi.periodKey).toBe('2026-09');
+    expect(upi.idempotencyKey).toBe('k2');
+    expect(upi.schemaVersion).toBe(2);
+  });
+
+  it('generates distinct idempotency keys', () => {
+    expect(newIdempotencyKey()).not.toBe(newIdempotencyKey());
   });
 });
