@@ -114,6 +114,18 @@ service cloud.firestore {
     //
     // Verified against production before removing: Firestore has no "modules"
     // collection at all, and all three legacy student paths return zero docs.
+    // A closed accounting period is frozen: reconciling a month is meaningless if the
+    // month can still move afterwards. Payments carrying a closed periodKey are refused,
+    // so a later correction must be posted as an adjustment in the OPEN period instead
+    // of silently rewriting a signed-off one. Unset/blank periodKey (legacy rows written
+    // before Phase 1) is treated as open so nothing that exists today becomes unwritable.
+    function isPeriodOpen(periodKey) {
+      return periodKey == null
+        || periodKey == ''
+        || !exists(/databases/$(database)/documents/periods/$(periodKey))
+        || get(/databases/$(database)/documents/periods/$(periodKey)).data.get('status', 'open') != 'closed';
+    }
+
     function isParentOf(studentId) {
       let email = request.auth.token.email;
       let path = /databases/$(database)/documents/students/$(studentId);
@@ -178,7 +190,9 @@ service cloud.firestore {
 
     match /students/{studentId}/transactions/{id} {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(studentId));
-      allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
+      allow create: if isAuthenticated()
+        && (isAdmin() || getPerm('fees_accounting', 'trans_add'))
+        && isPeriodOpen(request.resource.data.get('periodKey', null));
       // APPEND-ONLY LEDGER (docs/payments-data-model-review.md phase 3).
       // A posted payment is never rewritten. The only permitted mutation is flipping
       // isVoided, which is how both voiding and correcting work: the correction posts a
@@ -191,6 +205,20 @@ service cloud.firestore {
       // Note: the catch-all at the foot of this file still grants admins write access,
       // deliberately retained as a break-glass path; every correction is audit-logged.
       allow delete: if false;
+    }
+
+    // Accounting periods. Written only by the closePeriod/reopenPeriod callables, which
+    // run with the Admin SDK and bypass rules; the client reads them to show whether a
+    // month is signed off.
+    match /periods/{periodKey} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'view_dashboard') ||
+        getPerm('fees_accounting', 'view') ||
+        getPerm('fees_accounting', 'ledger') ||
+        getPerm('fees_accounting', 'config')
+      );
+      allow write: if false;
     }
 
     // --- Payments journal (migration 002; see docs/payments-data-model-review.md) ---
