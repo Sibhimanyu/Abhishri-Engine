@@ -183,6 +183,39 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
     }
 
+    // --- Payments journal (migration 002; see docs/payments-data-model-review.md) ---
+    // Derived, append-only records. The client never writes them: they are produced by
+    // migrations and Cloud Functions, both of which use the Admin SDK and bypass rules
+    // entirely. Read access mirrors the transactions rule so the reconciliation screens
+    // can be built without widening who can see fee data.
+    //
+    // Note the catch-all at the bottom of this file still grants admins write access,
+    // deliberately — an admin needs a way to correct the journal. This block exists to
+    // grant READ to non-admin fee staff, which the catch-all alone would not.
+    match /allocations/{allocationId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'view_dashboard') ||
+        getPerm('fees_accounting', 'view') ||
+        getPerm('fees_accounting', 'ledger')
+      );
+      allow write: if false;
+    }
+
+    // Immutable snapshots of a student's fee plan. Allocations reference a version id so
+    // that editing a plan can never again orphan the component a payment was applied to.
+    match /students/{studentId}/fee_plan_versions/{versionId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'view_dashboard') ||
+        getPerm('fees_accounting', 'view') ||
+        getPerm('fees_accounting', 'ledger') ||
+        getPerm('fees_accounting', 'config') ||
+        isParentOf(studentId)
+      );
+      allow write: if false;
+    }
+
     match /students/{studentId}/fee_ledger/{id} {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(studentId));
       allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
