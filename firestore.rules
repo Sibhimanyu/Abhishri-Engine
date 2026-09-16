@@ -231,6 +231,28 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Bank reconciliation runs and their statement lines. Written only by the
+    // importStatement / autoMatchStatement / setStatementLineMatch callables (Admin SDK,
+    // rules-bypassing): a bank statement is evidence, so the client never edits it in place.
+    match /reconciliations/{runId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'ledger') ||
+        getPerm('fees_accounting', 'config') ||
+        getPerm('fees_accounting', 'view')
+      );
+      allow write: if false;
+    }
+    match /reconciliations/{runId}/lines/{lineId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        getPerm('fees_accounting', 'ledger') ||
+        getPerm('fees_accounting', 'config') ||
+        getPerm('fees_accounting', 'view')
+      );
+      allow write: if false;
+    }
+
     // Accounting periods. Written only by the closePeriod/reopenPeriod callables, which
     // run with the Admin SDK and bypass rules; the client reads them to show whether a
     // month is signed off.
