@@ -1,10 +1,11 @@
 import React from 'react';
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LayoutDashboard, CreditCard, Landmark } from 'lucide-react';
+import { LayoutDashboard, CreditCard, Landmark, Scale } from 'lucide-react';
 import FeesTransactions from './FeesTransactions';
 import FeesStaffWallets from './FeesStaffWallets';
 import FeesMyExpenses from './FeesMyExpenses';
+import Reconciliation from './Reconciliation';
 
 export default function Accounting() {
   const { userData } = useAuth();
@@ -20,7 +21,10 @@ export default function Accounting() {
   const tabs = [
     { id: 'transactions', label: 'All Transactions', icon: CreditCard, show: isMaster || perms?.exp_all || perms?.trans_add || perms?.trans_delete },
     { id: 'wallets', label: 'All Wallets', icon: CreditCard, show: canViewAllWallets },
-    { id: 'my-expenses', label: 'My Expenses', icon: CreditCard, show: isMaster || perms?.exp_own || perms?.wallet_view_own || perms?.exp_all }
+    { id: 'my-expenses', label: 'My Expenses', icon: CreditCard, show: isMaster || perms?.exp_own || perms?.wallet_view_own || perms?.exp_all },
+    // Reconciliation reads the whole ledger, so it needs ledger-level sight rather than
+    // own-expense access; closing a month additionally requires config, checked inside.
+    { id: 'reconciliation', label: 'Reconciliation', icon: Scale, show: isMaster || perms?.ledger || perms?.config || perms?.view }
   ];
 
   if (!isMaster && !perms?.view_dashboard && !perms?.exp_all && !perms?.exp_own && !perms?.wallet_view_own && !perms?.trans_add && !perms?.trans_delete) {
@@ -61,6 +65,7 @@ export default function Accounting() {
           <Route path="wallets" element={<FeesStaffWallets />} />
           <Route path="transactions" element={<FeesTransactions />} />
           <Route path="my-expenses" element={<FeesMyExpenses />} />
+          <Route path="reconciliation" element={<Reconciliation />} />
           <Route path="*" element={<div className="text-center py-12 text-brand-text-dim">Module section under construction.</div>} />
         </Routes>
       </div>
