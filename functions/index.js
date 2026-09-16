@@ -50,6 +50,11 @@ const feeDeposits = require("./src/fees/deposits");
 exports.createDeposit = feeDeposits.createDeposit;
 exports.undepositedCash = feeDeposits.undepositedCash;
 
+const feeRecon = require("./src/fees/reconciliation");
+exports.importStatement = feeRecon.importStatement;
+exports.autoMatchStatement = feeRecon.autoMatchStatement;
+exports.setStatementLineMatch = feeRecon.setStatementLineMatch;
+
 // --- Staff Attendance Module ---
 const staffAttendance = require("./src/staff/attendance");
 exports.selfMarkStaffAttendance = staffAttendance.selfMarkStaffAttendance;
