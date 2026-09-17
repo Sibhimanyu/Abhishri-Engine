@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { INR, localKey } from '../utils/reportUtils';
 import { periodKeyOf } from '../utils/paymentFields';
+import StatementMatch from './StatementMatch';
 
 /**
  * Month-end reconciliation.
@@ -337,6 +338,8 @@ export default function Reconciliation() {
         )}
       </div>
 
+      {/* Bank statement: imported per month, matched against the ledger. */}
+      <StatementMatch key={periodKey} periodKey={periodKey} />
       {/* Deposit modal */}
       {depositOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
