@@ -1,0 +1,36 @@
+{
+  "hosting": {
+    "site": "abhishri-ios",
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*"],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          { "key": "X-Content-Type-Options", "value": "nosniff" },
+          { "key": "Referrer-Policy", "value": "no-referrer" }
+        ]
+      },
+      {
+        "// note": "SideStore and the in-app update notice must see a new build the moment it is deployed. The notice fetches from abhishri-academy.web.app, hence CORS.",
+        "source": "**/*.@(json|html)",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache" },
+          { "key": "Access-Control-Allow-Origin", "value": "*" }
+        ]
+      },
+      {
+        "source": "/",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      },
+      {
+        "// note": "Each .ipa is named for its build and never changes once published.",
+        "source": "**/*.ipa",
+        "headers": [
+          { "key": "Content-Type", "value": "application/octet-stream" },
+          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        ]
+      }
+    ]
+  }
+}

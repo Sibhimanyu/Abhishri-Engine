@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Abhishri Academy</title>
+    <!-- Bundled into the iOS app and shown when the live site can't be reached
+         (capacitor.config.json → server.errorPath). -->
+    <style>
+      :root { --bg:#F8FAFC; --card:#FFFFFF; --border:#E2E8F0; --text:#0F172A; --dim:#64748B; }
+      @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --card:#161b22; --border:#30363d; --text:#ffffff; --dim:#94a3b8; } }
+      body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; box-sizing:border-box;
+             background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,sans-serif; text-align:center; }
+      .card { max-width:360px; width:100%; background:var(--card); border:1px solid var(--border); border-radius:16px; padding:32px 24px; }
+      img { height:56px; margin-bottom:24px; }
+      .dark { display:none; }
+      @media (prefers-color-scheme: dark) { .light { display:none; } .dark { display:inline; } }
+      h1 { font-size:20px; margin:0 0 8px; }
+      p { color:var(--dim); font-size:14px; line-height:1.5; margin:0 0 24px; }
+      button { width:100%; border:0; border-radius:10px; padding:12px; font-size:15px; font-weight:600; color:#fff; background:#F1615B; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img class="light" src="logo-coral.png" alt="Abhishri Academy" />
+      <img class="dark" src="logo-white.png" alt="Abhishri Academy" />
+      <h1>Can't reach Abhishri</h1>
+      <p>Check your internet connection and try again.</p>
+      <button onclick="window.location.replace('https://abhishri-academy.web.app/')">Try again</button>
+    </div>
+  </body>
+</html>

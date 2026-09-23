@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { auth, googleProvider } from '../firebase';
-import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
+import { isNative } from '../utils/native';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
 
 export default function Login() {
@@ -25,14 +26,24 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     setError(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      if (isNative) {
+        // Popups can't open inside the iOS app: sign in with the native Google SDK,
+        // then hand its token to the JS SDK so the rest of the app is unchanged.
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        await signInWithCredential(auth, GoogleAuthProvider.credential(result.credential?.idToken, result.credential?.accessToken));
+      } else {
+        await signInWithPopup(auth, googleProvider);
+      }
     } catch (err) {
+      // Closing the Google sheet isn't an error worth showing.
+      if (isNative && /cancel/i.test(err?.message || '')) return;
       setError(err.message);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-brand-bg text-brand-text transition-colors duration-300">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-brand-bg text-brand-text transition-colors duration-300">
       <div className="w-full max-w-md p-8 bg-brand-card border border-brand-card-border rounded-2xl shadow-lg transition-colors duration-300">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-8">

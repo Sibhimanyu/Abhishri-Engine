@@ -8,6 +8,13 @@
     <script>
       (function () {
         var root = document.documentElement;
+        // Capacitor injects window.Capacitor before any page script, so the iOS app
+        // gets its edge-to-edge layout (see html.native in index.css) before first paint.
+        if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+          root.classList.add('native');
+          var vp = document.querySelector('meta[name="viewport"]');
+          if (vp) vp.setAttribute('content', vp.getAttribute('content') + ', viewport-fit=cover');
+        }
         if (window.location.pathname === '/public-calendar') {
           root.classList.remove('dark');
           root.style.colorScheme = 'light';

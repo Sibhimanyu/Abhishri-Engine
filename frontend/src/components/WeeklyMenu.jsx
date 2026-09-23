@@ -4,6 +4,7 @@ import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
 import { toPng } from 'html-to-image';
+import { saveFile } from '../utils/native';
 import { Coffee, UtensilsCrossed, Apple, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2 } from 'lucide-react';
 
 // Fixed brand palette for the exported image — literal hex, not the app's CSS variables,
@@ -173,13 +174,8 @@ export default function WeeklyMenu() {
       // Two passes: html-to-image sometimes misses fonts/images on the very first render.
       await toPng(previewRef.current, { pixelRatio: 2, cacheBust: true, backgroundColor: '#ffffff' });
       const dataUrl = await toPng(previewRef.current, { pixelRatio: 2, cacheBust: true, backgroundColor: '#ffffff' });
-      const link = document.createElement('a');
       const safeName = (menu.weekLabel || 'weekly-menu').replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/(^-|-$)/g, '');
-      link.download = `${safeName || 'weekly-menu'}.png`;
-      link.href = dataUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      await saveFile(`${safeName || 'weekly-menu'}.png`, dataUrl);
 
       logAudit({
         action: 'WEEKLY_MENU_EXPORTED',

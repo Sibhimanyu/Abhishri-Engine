@@ -1,0 +1,20 @@
+App/build
+App/Pods
+App/output
+App/App/public
+DerivedData
+xcuserdata
+
+# Cordova plugins for Capacitor
+capacitor-cordova-ios-plugins
+
+# Generated Config files
+App/App/capacitor.config.json
+App/App/config.xml
+
+# Absolute symlinks written by `cap sync` (machine-specific)
+App/CapApp-SPM/symlinks
+
+# Sideload builds (ios/build-ipa.sh)
+build
+dist

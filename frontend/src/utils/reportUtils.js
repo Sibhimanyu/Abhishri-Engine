@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { saveFile } from './native';
 
 /**
  * Shared vocabulary + date maths for the Reports module.
@@ -418,20 +419,14 @@ export function timeSeries(rows, range, granularity, countIf = () => true) {
 
 /* ------------------------------------------------------------------ export */
 
-/** Trigger a browser download of `rows` (array of flat objects) as CSV. */
+/** Download `rows` (array of flat objects) as CSV — a share sheet in the iOS app. */
 export function downloadCSV(filename, rows) {
   if (!rows?.length) return false;
   const csv = Papa.unparse(rows);
   // The BOM keeps Excel from mangling the rupee sign and any non-ASCII student names.
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.setAttribute('download', filename.endsWith('.csv') ? filename : `${filename}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  saveFile(filename.endsWith('.csv') ? filename : `${filename}.csv`, blob)
+    .catch(err => { console.error('CSV export failed', err); alert('Could not export the CSV.'); });
   return true;
 }
 
