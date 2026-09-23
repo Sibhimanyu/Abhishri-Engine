@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, onSnapshot, doc, where, collectionGroup, orderBy, limit } from 'firebase/firestore';
 import { ref, onValue } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
-import { classifyIncomeTx, localKey } from '../utils/reportUtils';
+import { classifyIncomeTx, localKey, isOnRolls } from '../utils/reportUtils';
 import { SkeletonBar } from './AppSkeleton';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
@@ -111,6 +111,10 @@ export default function MainDashboard() {
           const allStudents = [];
           snap.forEach(doc => {
             const data = doc.data();
+            // Head-count means students on the rolls today: someone who discontinued
+            // keeps their record (and their ledger) but must not inflate strength. One
+            // whose exit date is still ahead is still attending, so still counts.
+            if (!isOnRolls(data)) return;
             const type = data.studentType || data.programType || 'preschool';
             if (type === 'tuition') tCount++;
             else pCount++;

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { AlertCircle, Users, PiggyBank, CalendarClock, BadgePercent, Filter, ShieldAlert } from 'lucide-react';
 import {
-  resolveRange, groupBy, downloadCSV, INR, fmtDate, slugDate, isLiveReceipt, WINGS, ALL_CLASSES
+  resolveRange, groupBy, downloadCSV, INR, fmtDate, slugDate, isLiveReceipt, WINGS, ALL_CLASSES, isDiscontinued
 } from '../utils/reportUtils';
 import ReportToolbar from './ReportToolbar';
 import {
@@ -104,6 +104,7 @@ export default function ReportDues({ data }) {
     return {
       id: s.id,
       name: s.name,
+      discontinued: isDiscontinued(s),
       wing: s.wing || 'unassigned',
       grade: s.grade || '',
       status,
@@ -184,6 +185,7 @@ export default function ReportDues({ data }) {
     `outstanding_dues_${slugDate(new Date())}`,
     detailRows.map(s => ({
       Student: s.name,
+      Enrollment: s.discontinued ? 'Discontinued' : 'Active',
       Wing: WING_LABEL[s.wing] || s.wing,
       Class: s.grade || '',
       Status: STATUS_LABEL[s.status] || s.status,
@@ -202,7 +204,12 @@ export default function ReportDues({ data }) {
       key: 'name', header: 'Student', cellClass: 'text-brand-text',
       render: s => (
         <div className="min-w-[160px]">
-          <div className="font-medium text-brand-text truncate max-w-[220px]">{s.name}</div>
+          <div className="font-medium text-brand-text truncate max-w-[220px] flex items-center gap-1.5">
+            {s.name}
+            {s.discontinued && (
+              <span className="text-[10px] uppercase tracking-wide font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full shrink-0">Left</span>
+            )}
+          </div>
           <div className="text-[11px] text-brand-text-dim">{WING_LABEL[s.wing] || s.wing}{s.grade ? ` · ${s.grade}` : ''}</div>
         </div>
       )

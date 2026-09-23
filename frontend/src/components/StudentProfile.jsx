@@ -1,10 +1,11 @@
 import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
-import { ArrowLeft, Edit3, MapPin, Phone, User, Users, HeartPulse, FileText, AlertTriangle, Save, X, UserCheck, Star, Loader } from 'lucide-react';
+import { ArrowLeft, Edit3, MapPin, Phone, User, Users, HeartPulse, FileText, AlertTriangle, Save, X, UserCheck, Star, Loader, CircleSlash2, RotateCcw } from 'lucide-react';
+import { isDiscontinued, getDiscontinuationDate } from '../utils/reportUtils';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 
 export default function StudentProfile({ studentId, studentType, onBack, canEdit }) {
@@ -14,6 +15,9 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [suggestingNakshatra, setSuggestingNakshatra] = useState(false);
+  const [isDiscontinueOpen, setIsDiscontinueOpen] = useState(false);
+  const [savingEnrollment, setSavingEnrollment] = useState(false);
+  const [discontinueForm, setDiscontinueForm] = useState({ effectiveDate: '', reason: '', notes: '', waiveFinalMonth: false });
   
   const [editForm, setEditForm] = useState({
     name: '',
@@ -145,7 +149,10 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
       });
 
       await updateDoc(docRef, editForm);
-      setStudent({ id: studentId, ...editForm });
+      // Merge rather than replace: the document carries fields this form doesn't edit
+      // (enrollmentStatus, discontinuation, financialSummary) and replacing would drop
+      // them from the view until the next reload.
+      setStudent(prev => ({ ...prev, id: studentId, ...editForm }));
       setIsEditing(false);
 
       if (Object.keys(changedFields).length > 0) {
@@ -163,6 +170,111 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
       alert('Failed to update student profile. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const studentLeft = isDiscontinued(student);
+  const exitDate = getDiscontinuationDate(student);
+
+  const openDiscontinueModal = () => {
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    setDiscontinueForm({ effectiveDate: iso, reason: '', notes: '', waiveFinalMonth: false });
+    setIsDiscontinueOpen(true);
+  };
+
+  /**
+   * Discontinue = mark as left, never delete. The record, its ledger and its payment
+   * history stay intact; what changes is that fees stop accruing after the exit month
+   * (see functions/src/shared/enrollment.mjs) and the student drops off active rolls.
+   */
+  const handleDiscontinue = async () => {
+    if (!discontinueForm.effectiveDate) {
+      alert('Please set the last attending date.');
+      return;
+    }
+    if (!discontinueForm.reason) {
+      alert('Please select a reason.');
+      return;
+    }
+    try {
+      setSavingEnrollment(true);
+      const record = {
+        effectiveDate: discontinueForm.effectiveDate,
+        reason: discontinueForm.reason,
+        notes: discontinueForm.notes || '',
+        waiveFinalMonth: !!discontinueForm.waiveFinalMonth,
+        recordedBy: currentUser?.email || null,
+        recordedAt: new Date().toISOString()
+      };
+      await updateDoc(doc(firestore, 'students', studentId), {
+        enrollmentStatus: 'discontinued',
+        discontinuation: record
+      });
+      setStudent(prev => ({ ...prev, enrollmentStatus: 'discontinued', discontinuation: record }));
+      setIsDiscontinueOpen(false);
+
+      logAudit({
+        action: 'STUDENT_DISCONTINUED',
+        module: 'student_directory',
+        targetId: studentId,
+        targetName: student?.name,
+        performedBy: currentUser?.email,
+        details: record
+      });
+    } catch (err) {
+      console.error('Failed to discontinue student:', err);
+      alert('Failed to discontinue this student. Please try again.');
+    } finally {
+      setSavingEnrollment(false);
+    }
+  };
+
+  const handleReEnroll = async () => {
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (!window.confirm(
+      `Re-enroll ${student?.name}? Fees start again from the current month. ` +
+      `Months between their exit month and this one are not charged.`
+    )) return;
+    try {
+      setSavingEnrollment(true);
+      const previous = student?.discontinuation || null;
+      // Keep the departure on file: a student who leaves and returns should still show
+      // why they left the first time. The archived entry is also what skips the months
+      // spent away (see billingSchedule in functions/src/shared/enrollment.mjs), keyed
+      // off reEnrolledOn: a LOCAL calendar day, because the ISO timestamp is UTC and
+      // just after midnight IST it still reads as the previous day (or month).
+      const archived = previous
+        ? { ...previous, reEnrolledOn: todayKey, reEnrolledAt: today.toISOString(), reEnrolledBy: currentUser?.email || null }
+        : null;
+      const update = {
+        enrollmentStatus: 'active',
+        discontinuation: null
+      };
+      if (archived) update.discontinuationHistory = arrayUnion(archived);
+
+      await updateDoc(doc(firestore, 'students', studentId), update);
+      setStudent(prev => ({
+        ...prev,
+        enrollmentStatus: 'active',
+        discontinuation: null,
+        discontinuationHistory: [...(prev?.discontinuationHistory || []), ...(archived ? [archived] : [])]
+      }));
+
+      logAudit({
+        action: 'STUDENT_REENROLLED',
+        module: 'student_directory',
+        targetId: studentId,
+        targetName: student?.name,
+        performedBy: currentUser?.email,
+        details: { previousDiscontinuation: previous }
+      });
+    } catch (err) {
+      console.error('Failed to re-enroll student:', err);
+      alert('Failed to re-enroll this student. Please try again.');
+    } finally {
+      setSavingEnrollment(false);
     }
   };
 
@@ -258,16 +370,54 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                 </button>
               </>
             ) : (
-              <button 
-                onClick={() => setIsEditing(true)}
-                className="flex items-center gap-2 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 px-4 py-2 rounded-md font-medium text-sm transition-colors text-brand-text shadow-sm"
-              >
-                <Edit3 size={16} /> Edit Profile
-              </button>
+              <>
+                {studentLeft ? (
+                  <button
+                    onClick={handleReEnroll}
+                    disabled={savingEnrollment}
+                    className="flex items-center gap-2 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 px-4 py-2 rounded-md font-medium text-sm transition-colors text-brand-text shadow-sm disabled:opacity-50"
+                  >
+                    <RotateCcw size={16} /> Re-enroll
+                  </button>
+                ) : (
+                  <button
+                    onClick={openDiscontinueModal}
+                    disabled={savingEnrollment}
+                    className="flex items-center gap-2 bg-brand-bg border border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 px-4 py-2 rounded-md font-medium text-sm transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    <CircleSlash2 size={16} /> Discontinue
+                  </button>
+                )}
+                <button 
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-2 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 px-4 py-2 rounded-md font-medium text-sm transition-colors text-brand-text shadow-sm"
+                >
+                  <Edit3 size={16} /> Edit Profile
+                </button>
+              </>
             )}
           </div>
         )}
       </div>
+
+      {studentLeft && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row sm:items-start gap-3">
+          <CircleSlash2 size={20} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-bold text-amber-700 dark:text-amber-400">
+              Discontinued{exitDate ? ` · last day ${exitDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+            </p>
+            <p className="text-brand-text-dim mt-0.5">
+              {student.discontinuation?.reason || 'No reason recorded'}
+              {student.discontinuation?.notes ? ` — ${student.discontinuation.notes}` : ''}
+            </p>
+            <p className="text-brand-text-dim text-xs mt-1">
+              Fees stop accruing {student.discontinuation?.waiveFinalMonth ? 'from the exit month' : 'after the exit month'}.
+              {student.discontinuation?.recordedBy ? ` Recorded by ${student.discontinuation.recordedBy}.` : ''}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Hero Card */}
       <div className="bg-brand-card border border-brand-card-border rounded-2xl p-8 mb-8 shadow-sm flex flex-col md:flex-row items-center md:items-start gap-8">
@@ -346,6 +496,11 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                 }`}>
                   {student.studentType || 'preschool'}
                 </span>
+                {studentLeft && (
+                  <span className="bg-amber-500/15 text-amber-700 dark:text-amber-400 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+                    Discontinued
+                  </span>
+                )}
                 <span className="bg-black/5 dark:bg-white/5 text-brand-text-dim px-3 py-1 rounded-full text-xs font-mono">
                   UID: {student.id.slice(-8).toUpperCase()}
                 </span>
@@ -790,6 +945,100 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
         </div>
 
       </div>
+
+      {isDiscontinueOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-brand-card border border-brand-card-border rounded-2xl w-full max-w-lg shadow-xl">
+            <div className="flex items-center justify-between p-5 border-b border-brand-card-border">
+              <h3 className="font-bold text-brand-text flex items-center gap-2">
+                <CircleSlash2 size={18} className="text-amber-600" /> Discontinue {student.name}
+              </h3>
+              <button onClick={() => setIsDiscontinueOpen(false)} className="text-brand-text-dim hover:text-brand-text">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-sm">
+              <p className="text-brand-text-dim">
+                The student stays on record with their full fee and payment history. They move off
+                the active rolls and attendance, and monthly fees stop accruing past the exit month.
+              </p>
+
+              <div>
+                <label className="text-brand-text-dim text-xs block mb-1">Last Attending Date</label>
+                <input
+                  type="date"
+                  value={discontinueForm.effectiveDate}
+                  onChange={e => setDiscontinueForm({ ...discontinueForm, effectiveDate: e.target.value })}
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <label className="text-brand-text-dim text-xs block mb-1">Reason</label>
+                <select
+                  value={discontinueForm.reason}
+                  onChange={e => setDiscontinueForm({ ...discontinueForm, reason: e.target.value })}
+                  className={inputClass}
+                >
+                  <option value="">Select a reason</option>
+                  <option value="Relocation">Relocation</option>
+                  <option value="Transferred to another school">Transferred to another school</option>
+                  <option value="Financial reasons">Financial reasons</option>
+                  <option value="Health reasons">Health reasons</option>
+                  <option value="Course/Programme completed">Course/Programme completed</option>
+                  <option value="Parent request">Parent request</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-brand-text-dim text-xs block mb-1">Notes (optional)</label>
+                <textarea
+                  rows={3}
+                  value={discontinueForm.notes}
+                  onChange={e => setDiscontinueForm({ ...discontinueForm, notes: e.target.value })}
+                  className={inputClass}
+                  placeholder="Anything worth recording for later reference"
+                />
+              </div>
+
+              <label className="flex items-start gap-2 text-brand-text cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={discontinueForm.waiveFinalMonth}
+                  onChange={e => setDiscontinueForm({ ...discontinueForm, waiveFinalMonth: e.target.checked })}
+                  className="w-4 h-4 mt-0.5 text-brand-primary rounded focus:ring-brand-primary"
+                />
+                <span>
+                  Do not charge fees for the exit month
+                  <span className="block text-brand-text-dim text-xs">
+                    By default the month they left is billed in full.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 p-5 border-t border-brand-card-border">
+              <button
+                onClick={() => setIsDiscontinueOpen(false)}
+                disabled={savingEnrollment}
+                className="bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 px-4 py-2 rounded-md font-medium text-sm text-brand-text disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDiscontinue}
+                disabled={savingEnrollment}
+                className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-md font-bold text-sm flex items-center gap-2 disabled:opacity-50"
+              >
+                {savingEnrollment ? <Loader size={16} className="animate-spin" /> : <CircleSlash2 size={16} />}
+                Confirm Discontinuation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -353,6 +353,20 @@ export const rangeLabel = (r) => `${fmtDate(r.start)} — ${fmtDate(r.end)}`;
 // (Reports, FeesTransactions, MainDashboard) keeps importing it from reportUtils.
 export { classifyIncomeTx } from '../../../functions/src/shared/feeTx.mjs';
 
+// Enrollment status + the billing cutoff for a student who has left, shared with the
+// dues engine for the same reason: see functions/src/shared/enrollment.mjs.
+export {
+  ENROLLMENT_ACTIVE,
+  ENROLLMENT_DISCONTINUED,
+  getEnrollmentStatus,
+  isDiscontinued,
+  getDiscontinuationDate,
+  isEnrolledOn,
+  isOnRolls,
+  billingSchedule,
+  billableInstallments
+} from '../../../functions/src/shared/enrollment.mjs';
+
 /**
  * A receipt that still stands: an incoming row that has not been voided.
  * Voided originals stay in the row set so gross/net maths can net them off,

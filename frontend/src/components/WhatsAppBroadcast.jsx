@@ -1,3 +1,4 @@
+import { isOnRolls } from '../utils/reportUtils';
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
@@ -113,6 +114,9 @@ export default function WhatsAppBroadcast() {
         const snap = await getDocs(collection(firestore, 'students'));
         const processStudent = (doc) => {
           const data = doc.data();
+          // A dynamic list means "current parents" — don't message families who left
+          // (a family serving out a notice period is still current).
+          if (!isOnRolls(data)) return;
           if (data.fatherPhone) tempRecipients.push(String(data.fatherPhone).replace(/[^\d]/g, "").slice(-10));
           if (data.motherPhone) tempRecipients.push(String(data.motherPhone).replace(/[^\d]/g, "").slice(-10));
         };
@@ -188,6 +192,7 @@ export default function WhatsAppBroadcast() {
         
         const processStudent = (doc) => {
           const data = doc.data();
+          if (!isOnRolls(data)) return;
           if (data.fatherPhone) {
             const raw = String(data.fatherPhone).replace(/[^\d]/g, "");
             if (raw.length >= 10) recipients.push({ name: data.fatherName || 'Parent of ' + (data.name || 'Student'), phone: raw });

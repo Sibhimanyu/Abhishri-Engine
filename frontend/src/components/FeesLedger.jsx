@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, getDocs, setDoc, collectionGroup } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { Search, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Search, ChevronRight, CheckCircle2, AlertCircle, CircleSlash2 } from 'lucide-react';
+import { isDiscontinued, isOnRolls } from '../utils/reportUtils';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import StudentLedgerView from './StudentLedgerView';
 
@@ -19,6 +20,9 @@ export default function FeesLedger({ wing }) {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  // Leavers stay in the ledger by default: a student can discontinue owing money, and
+  // hiding them would hide the arrears. This only drops the ones already settled.
+  const [hideSettledLeavers, setHideSettledLeavers] = useState(true);
 
   useEffect(() => {
     setLoading(true);
@@ -38,6 +42,9 @@ export default function FeesLedger({ wing }) {
           id: d.id,
           name: s.name || 'Unknown',
           status: status,
+          discontinued: isDiscontinued(s),
+          // Already gone (exit date passed), as opposed to serving out notice.
+          departed: !isOnRolls(s),
           dueNow: f.dueNow || 0,
           aheadBy: f.aheadBy || 0,
           discount: f.totalDiscounted || 0,
@@ -64,7 +71,11 @@ export default function FeesLedger({ wing }) {
     );
   }
 
-  const filtered = students.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filtered = students.filter(s => {
+    if (hideSettledLeavers && s.departed && s.dueNow <= 0) return false;
+    return s.name.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+  const hiddenLeavers = students.filter(s => s.departed && s.dueNow <= 0).length;
 
   return (
     <Routes>
@@ -79,8 +90,21 @@ export default function FeesLedger({ wing }) {
             className="bg-brand-bg border border-brand-card-border rounded-md py-1.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary w-full sm:w-64 text-brand-text"
           />
         </div>
-        <div className="text-sm font-medium text-brand-text-dim">
-          {filtered.length} Students found
+        <div className="flex items-center gap-4">
+          {hiddenLeavers > 0 && (
+            <label className="flex items-center gap-2 text-sm text-brand-text-dim cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hideSettledLeavers}
+                onChange={(e) => setHideSettledLeavers(e.target.checked)}
+                className="w-4 h-4 text-brand-primary rounded focus:ring-brand-primary"
+              />
+              Hide {hiddenLeavers} settled discontinued
+            </label>
+          )}
+          <div className="text-sm font-medium text-brand-text-dim">
+            {filtered.length} Students found
+          </div>
         </div>
       </div>
 
@@ -112,7 +136,14 @@ export default function FeesLedger({ wing }) {
                   className="border-b border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors group cursor-pointer"
                 >
                   <td className="px-6 py-4 font-medium text-brand-text">
-                    {student.name}
+                    <span className="flex items-center gap-2">
+                      {student.name}
+                      {student.discontinued && (
+                        <span title="Discontinued" className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                          <CircleSlash2 size={11} /> Left
+                        </span>
+                      )}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     {student.status === 'unconfigured' ? (

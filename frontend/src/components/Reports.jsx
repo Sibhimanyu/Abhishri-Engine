@@ -99,6 +99,10 @@ export default function Reports() {
               wing,
               grade,
               status: s.status || 'active',
+              // Enrollment status is separate from the fee `status` above: a discontinued
+              // student can still be carrying arrears and must stay visible in receivables.
+              enrollmentStatus: s.enrollmentStatus || 'active',
+              discontinuation: s.discontinuation || null,
               enrollmentDate: s.enrollmentDate || null,
               financialSummary: s.financialSummary || null
             });
