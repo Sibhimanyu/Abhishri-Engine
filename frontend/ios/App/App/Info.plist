@@ -33,6 +33,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo to attach it, for example a receipt or a student photo.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save exported images, such as the weekly menu, to your photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a photo to attach, for example a receipt or a student photo.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -17,9 +17,10 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-// Inside the iOS app getAuth() stalls: its default popup/redirect resolver
-// loads an iframe from authDomain, which never completes under capacitor://.
-// Native sign-in hands the JS SDK a credential instead (see Login.jsx).
+// Inside the iOS app, skip getAuth()'s popup/redirect resolver: popups can't
+// open there, and its authDomain iframe stalls when the app runs from the
+// bundled copy (capacitor://). Native sign-in hands the JS SDK a credential
+// instead (see Login.jsx).
 export const auth = isNative
     ? initializeAuth(app, { persistence: indexedDBLocalPersistence })
     : getAuth(app);
