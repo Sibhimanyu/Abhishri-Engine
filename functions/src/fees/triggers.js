@@ -16,6 +16,9 @@ async function reconcileStudent(studentId, db) {
     // with a dynamic import because this file is CommonJS and the shared rule is ESM;
     // Node caches the module after the first call, so this is free per-invocation.
     const { classifyIncomeTx } = await import("../shared/feeTx.mjs");
+    // Same shared-module arrangement: the billing cutoff for a discontinued student
+    // must be identical here and in the ledger screen, or the two disagree on dues.
+    const { billingSchedule, isDiscontinued } = await import("../shared/enrollment.mjs");
     const studentRef = db.collection("students").doc(studentId);
     const planRef = studentRef.collection("fee_ledger").doc("plan_details");
     const txRef = studentRef.collection("transactions");
@@ -51,8 +54,14 @@ async function reconcileStudent(studentId, db) {
     const now = new Date();
     const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
     const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
-    const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
-    const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(1, monthsPassed + 1));
+    const student = studentDoc.exists ? studentDoc.data() : {};
+    const studentLeft = isDiscontinued(student);
+    // Which months are billed. A discontinued student stops accruing at their exit
+    // month, and months spent away between an earlier exit and a re-enrollment are
+    // skipped. `chargeable` is the whole obligation: the full cycle for an active
+    // student, and the final settlement (through the exit month) for one who has left.
+    const schedule = billingSchedule(f, student, now);
+    const installmentsExpected = schedule.due.length;
 
     const allReqs = [];
     components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount >= 0).forEach(c => {
@@ -78,15 +87,21 @@ async function reconcileStudent(studentId, db) {
     });
 
     const expectedToDate = effectiveRequirements
-        .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && r.relativeIdx < installmentsExpected))
+        .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isDue(r.relativeIdx)))
         .reduce((acc, r) => acc + r.effectiveAmount, 0);
 
-    const annualNetFee = effectiveRequirements.reduce((acc, r) => acc + r.effectiveAmount, 0);
+    const chargeableRequirements = effectiveRequirements
+        .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isChargeable(r.relativeIdx)));
+
+    const annualNetFee = chargeableRequirements.reduce((acc, r) => acc + r.effectiveAmount, 0);
 
     const componentPayments = {};
     let remainingFunds = totalPaid + totalDiscounted;
 
-    effectiveRequirements.forEach(req => {
+    // Allocate only against chargeable rows: money a departed student paid beyond
+    // their exit month must surface as aheadBy (a refund) rather than being parked
+    // against months they will never attend (or months they were away).
+    chargeableRequirements.forEach(req => {
         if (remainingFunds <= 0) return;
         const primaryKey = getComponentKey(req, req.month, f.academicStartYear !== undefined ? academicStartYear : null);
         const allocation = Math.min(remainingFunds, req.effectiveAmount);
@@ -109,6 +124,8 @@ async function reconcileStudent(studentId, db) {
 
     const financialSummary = {
         status,
+        enrollmentStatus: studentLeft ? 'discontinued' : 'active',
+        installmentsBilled: installmentsExpected,
         dueNow,
         aheadBy,
         totalPaid,
@@ -156,11 +173,13 @@ async function reconcileStudent(studentId, db) {
         existingSummary.totalDiscounted !== totalDiscounted ||
         existingSummary.annualRemaining !== annualRemaining ||
         existingSummary.annualNetFee !== annualNetFee ||
+        existingSummary.installmentsBilled !== installmentsExpected ||
+        existingSummary.enrollmentStatus !== (studentLeft ? 'discontinued' : 'active') ||
         existingSummary.expectedToDate !== adjustedExpectedToDate);
 
-    // No trigger currently watches students/{studentId} for updates, but guard
-    // anyway so this can never become the same kind of self-retriggering loop
-    // that plan_details had (see planChanged above).
+    // Required, not defensive: syncStudentEnrollmentChanges watches students/{id},
+    // so an unconditional write here would re-trigger it. That trigger also ignores
+    // writes that only touch financialSummary; both guards together stop the loop.
     if (summaryChanged) {
         batch.update(studentRef, {
             financialSummary: financialSummary
@@ -193,6 +212,44 @@ exports.syncFeePlanUpdates = onDocumentWritten("students/{studentId}/fee_ledger/
     const db = admin.firestore();
     const studentId = event.params.studentId;
     if (!studentId) return;
+
+    await reconcileStudent(studentId, db);
+});
+
+/**
+ * Recompute dues when the student record itself changes.
+ *
+ * Discontinuing a student freezes their billing at the exit month, but that lives on
+ * students/{id} — which neither of the triggers above watches — so without this the
+ * ledger kept showing pre-exit dues until the nightly job caught up.
+ *
+ * The loop guard matters: reconcileStudent writes financialSummary back onto this very
+ * document, so a write that only touched financialSummary must not re-enter.
+ */
+exports.syncStudentEnrollmentChanges = onDocumentWritten("students/{studentId}", async (event) => {
+    const db = admin.firestore();
+    const studentId = event.params.studentId;
+    if (!studentId) return;
+
+    const before = event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return; // deletion is handled by onStudentDeleted
+
+    if (before) {
+        const strip = (d) => {
+            const { financialSummary, ...rest } = d;
+            return JSON.stringify(rest);
+        };
+        if (strip(before) === strip(after)) return;
+
+        const sameEnrollment = (before.enrollmentStatus || 'active') === (after.enrollmentStatus || 'active') &&
+            JSON.stringify(before.discontinuation || null) === JSON.stringify(after.discontinuation || null) &&
+            // Past absences decide which months are skipped after a re-enrollment.
+            JSON.stringify(before.discontinuationHistory || null) === JSON.stringify(after.discontinuationHistory || null);
+        // Only enrollment affects the dues maths; skip the churn of every unrelated
+        // profile edit (address, phone, nakshatra, ...) re-running the engine.
+        if (sameEnrollment) return;
+    }
 
     await reconcileStudent(studentId, db);
 });

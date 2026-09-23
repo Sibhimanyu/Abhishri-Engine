@@ -5,6 +5,7 @@ import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { Users, Search, ChevronRight, UserPlus } from 'lucide-react';
+import { isDiscontinued, isOnRolls, getDiscontinuationDate } from '../utils/reportUtils';
 import StudentProfile from './StudentProfile';
 import StudentAdmissionForm from './StudentAdmissionForm';
 
@@ -15,6 +16,9 @@ export default function StudentDirectory() {
   const [searchTerm, setSearchTerm] = useState('');
   const [wingFilter, setWingFilter] = useState('preschool');
   const [selectedStudentId, setSelectedStudentId] = useState(null);
+  // Discontinued students are kept on record, so the directory defaults to the active
+  // roll and keeps them one click away rather than mixing them into everyday lists.
+  const [statusFilter, setStatusFilter] = useState('active');
   const [addingStudentType, setAddingStudentType] = useState(null);
   const location = useLocation();
 
@@ -96,7 +100,14 @@ export default function StudentDirectory() {
     );
   }
 
+  // "Active" means on the rolls today, so a student serving out a notice period (exit
+  // date still ahead) stays in Active, tagged as leaving, until that date passes.
+  const activeCount = students.filter(s => isOnRolls(s)).length;
+  const discontinuedCount = students.length - activeCount;
+
   const filteredStudents = students.filter(s => {
+    if (statusFilter === 'active' && !isOnRolls(s)) return false;
+    if (statusFilter === 'discontinued' && isOnRolls(s)) return false;
     return (s.name || '').toLowerCase().includes(searchTerm.toLowerCase());
   });
 
@@ -111,8 +122,20 @@ export default function StudentDirectory() {
           </div>
           
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1 lg:justify-end">
-            <div className="text-sm font-medium text-brand-text-dim px-2 hidden sm:block">
-              {students.length} Enrolled
+            <div className="flex bg-black/5 dark:bg-white/5 rounded-lg p-1 self-start">
+              {[
+                { id: 'active', label: `Active (${activeCount})` },
+                { id: 'discontinued', label: `Discontinued (${discontinuedCount})` },
+                { id: 'all', label: 'All' }
+              ].map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => setStatusFilter(opt.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${statusFilter === opt.id ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={16} />
@@ -153,7 +176,7 @@ export default function StudentDirectory() {
               <div 
                 key={student.id} 
                 onClick={() => setSelectedStudentId(student.id)}
-                className="group border border-brand-card-border hover:border-brand-primary/40 rounded-xl p-5 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-primary/5 transition-all cursor-pointer bg-brand-card"
+                className={`group border rounded-xl p-5 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand-primary/5 transition-all cursor-pointer bg-brand-card ${isDiscontinued(student) ? 'border-amber-500/40' : 'border-brand-card-border hover:border-brand-primary/40'}`}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
@@ -162,13 +185,22 @@ export default function StudentDirectory() {
                     </div>
                     <div>
                       <h4 className="font-bold text-brand-text transition-colors">{student.name}</h4>
-                      <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full ${
-                        wingFilter === 'preschool' 
-                          ? 'bg-brand-secondary/10 text-brand-secondary' 
-                          : 'bg-yellow-500/10 text-yellow-600'
-                      }`}>
-                        {wingFilter}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full ${
+                          wingFilter === 'preschool' 
+                            ? 'bg-brand-secondary/10 text-brand-secondary' 
+                            : 'bg-yellow-500/10 text-yellow-600'
+                        }`}>
+                          {wingFilter}
+                        </span>
+                        {isDiscontinued(student) && (
+                          <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                            {isOnRolls(student) && getDiscontinuationDate(student)
+                              ? `Leaving ${getDiscontinuationDate(student).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                              : 'Discontinued'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

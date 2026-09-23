@@ -1,4 +1,4 @@
-import { localKey } from '../utils/reportUtils';
+import { localKey, isDiscontinued, getDiscontinuationDate, isOnRolls, billingSchedule } from '../utils/reportUtils';
 import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
@@ -57,20 +57,32 @@ export default function StudentPortal() {
         // Fee Calculation Logic
         let calculatedFees = null;
         if (feeData && feeData.components) {
-          let annualNetFee = feeData.annualNetFee;
-          if (annualNetFee === undefined) {
-             const onetime = feeData.components.filter(c => c.frequency !== 'monthly').reduce((a, b) => a + (b.amount || 0), 0);
-             const monthly = feeData.components.filter(c => c.frequency === 'monthly').reduce((a, b) => a + (b.amount || 0), 0);
-             annualNetFee = onetime + (monthly * (feeData.billingCycle || 12));
-          }
+          // Months actually charged this year: the full cycle for an active student, only
+          // through the exit month for one who has left, and never the months someone
+          // was away between leaving and re-enrolling. The plan's stored annual figures
+          // are always full-cycle, so they cannot be used as-is for those students.
+          const monthsCharged = billingSchedule(feeData, sData).chargeable.length;
+          const sumOf = (pred, pick) => feeData.components.filter(pred).reduce((a, b) => a + (pick(b) || 0), 0);
+          const isMonthly = c => c.frequency === 'monthly';
+          const onetime = sumOf(c => !isMonthly(c), c => c.amount);
+          const monthly = sumOf(isMonthly, c => c.amount);
+          const baseOnetime = sumOf(c => !isMonthly(c), c => c.baseAmount !== undefined ? c.baseAmount : c.amount);
+          const baseMonthly = sumOf(isMonthly, c => c.baseAmount !== undefined ? c.baseAmount : c.amount);
+          const annualNetFee = onetime + (monthly * monthsCharged);
           const paid = feeData.paid || 0;
           const discounted = feeData.discounted || 0;
-          
-          calculatedFees = { 
-             ...feeData, 
-             totalAnnual: feeData.annualBaseFee || annualNetFee, 
-             paid, 
-             due: Math.max(0, annualNetFee - paid - discounted) 
+          // Prefer the dues engine's own figure (functions/src/fees/triggers.js), which
+          // also applies structural discounts; fall back to the local estimate.
+          const summary = sData.financialSummary || {};
+
+          calculatedFees = {
+             ...feeData,
+             monthsCharged,
+             totalAnnual: baseOnetime + (baseMonthly * monthsCharged),
+             paid,
+             due: typeof summary.annualRemaining === 'number'
+               ? summary.annualRemaining
+               : Math.max(0, annualNetFee - paid - discounted)
           };
         }
         setFees(calculatedFees);
@@ -233,6 +245,21 @@ export default function StudentPortal() {
               </span>
             )}
           </div>
+          {/* A family whose child has left still signs in to settle or check the ledger;
+              say plainly that enrollment has ended rather than showing a live-looking page. */}
+          {isDiscontinued(student) && (() => {
+            const exit = getDiscontinuationDate(student);
+            const on = exit ? ` on ${exit.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
+            // An exit recorded in advance (notice period) has not happened yet.
+            const upcoming = isOnRolls(student);
+            return (
+              <p className="mt-4 text-sm font-semibold text-amber-700 dark:text-amber-400">
+                {upcoming
+                  ? `Enrollment ends${on}. Fees are charged up to that month only.`
+                  : `Enrollment ended${on}. Fees are no longer being charged.`}
+              </p>
+            );
+          })()}
         </div>
 
         {/* Quick Stats Grid */}
@@ -312,8 +339,8 @@ export default function StudentPortal() {
                         <div key={i} className="flex justify-between items-center border-b border-brand-card-border pb-3 last:border-0 last:pb-0">
                           <span className="text-sm font-semibold text-brand-text">{c.name}</span>
                           <div className="text-right">
-                            <span className="text-sm font-bold text-brand-text">₹{(c.amount * (c.frequency === 'monthly' ? fees.billingCycle : 1)).toLocaleString()}</span>
-                            <p className="text-[10px] text-brand-text-dim">{c.frequency === 'monthly' ? `₹${c.amount}/mo × ${fees.billingCycle}` : 'One-time'}</p>
+                            <span className="text-sm font-bold text-brand-text">₹{(c.amount * (c.frequency === 'monthly' ? fees.monthsCharged : 1)).toLocaleString()}</span>
+                            <p className="text-[10px] text-brand-text-dim">{c.frequency === 'monthly' ? `₹${c.amount}/mo × ${fees.monthsCharged}` : 'One-time'}</p>
                           </div>
                         </div>
                       ))}

@@ -1,11 +1,14 @@
-import { localKey } from '../utils/reportUtils';
+import { localKey, parseISODate, isDiscontinued, isEnrolledOn } from '../utils/reportUtils';
 import { Spinner } from './Spinner';
-import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, query, where } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
 import { ref, onValue, set, serverTimestamp, get } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Calendar, CheckCircle, XCircle, Clock, BarChart2, CheckSquare } from 'lucide-react';
+
+// Width of the attendance report window, in calendar days.
+const REPORT_DAYS = 30;
 
 export default function Attendance() {
   const { currentUser, userData } = useAuth();
@@ -13,9 +16,10 @@ export default function Attendance() {
   const [mode, setMode] = useState('mark'); // 'mark' | 'report'
   const [selectedDate, setSelectedDate] = useState(() => localKey(new Date()));
   const [entities, setEntities] = useState([]);
-  const [attendance, setAttendance] = useState({});
+  // The live snapshot, tagged with the tab+day it belongs to (see `attendance` below).
+  const [attendanceSnap, setAttendanceSnap] = useState({ key: '', data: {} });
   const [loadingEntities, setLoadingEntities] = useState(true);
-  const [reportData, setReportData] = useState({});
+  const [reportDays, setReportDays] = useState({}); // { 'YYYY-MM-DD': { [id]: record } }
   const [loadingReport, setLoadingReport] = useState(false);
 
   const isAdmin = userData?.isAdmin;
@@ -35,6 +39,9 @@ export default function Attendance() {
 
   // Fetch Entities (Firestore)
   useEffect(() => {
+    // Switching tabs quickly can leave an older fetch still in flight; without this its
+    // result would land after the newer one and show (and let you mark) the wrong list.
+    let cancelled = false;
     async function fetchEntities() {
       setEntities([]);
       setLoadingEntities(true);
@@ -45,7 +52,7 @@ export default function Attendance() {
           const data = [];
           snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
           data.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-          setEntities(data);
+          if (!cancelled) setEntities(data);
         } else {
           if (!canViewStudents) return;
           const snap = await getDocs(collection(firestore, 'students'));
@@ -58,62 +65,123 @@ export default function Attendance() {
             }
           });
           data.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-          setEntities(data);
+          if (!cancelled) setEntities(data);
         }
       } catch (err) {
         console.error("Failed to fetch entities:", err);
       } finally {
-        setLoadingEntities(false);
+        if (!cancelled) setLoadingEntities(false);
       }
     }
     fetchEntities();
+    return () => { cancelled = true; };
   }, [activeTab, canViewStaff, canViewStudents]);
 
   // Fetch Attendance Records (RTDB) for Single Day
   useEffect(() => {
     if (mode !== 'mark' || !selectedDate) return;
+    const key = `${activeTab}|${selectedDate}`;
     let modulePath = activeTab === 'staff' ? 'staff_directory' : 'student_directory';
     const dbRef = ref(rtdb, `modules/${modulePath}/attendance/${selectedDate}`);
     
     const unsubscribe = onValue(dbRef, (snap) => {
-      setAttendance(snap.val() || {});
+      setAttendanceSnap({ key, data: snap.val() || {} });
+    }, (err) => {
+      console.error('Failed to load attendance for', selectedDate, err);
     });
 
     return () => unsubscribe();
   }, [activeTab, selectedDate, mode]);
 
-  // Fetch Report Data for 30 Days
+  // Report: the last REPORT_DAYS calendar days, read straight from the per-day records.
+  //
+  // This used to read attendance_aggregates, which the nightly job only ever adds TODAY's
+  // marks to. So a correction to an earlier day never reached it, anything marked after
+  // 23:59 was lost, and the counters were lifetime totals rather than the "30 days" this
+  // screen claims. Reading the days directly is exact, and lets each student's days be
+  // limited to the ones they were actually enrolled on.
   useEffect(() => {
     if (mode !== 'report') return;
-    
+    let cancelled = false;
+
     async function fetchReport() {
       setLoadingReport(true);
-      const map = {}; 
-      
+      const modulePath = activeTab === 'staff' ? 'staff_directory' : 'student_directory';
+      const days = [];
+      for (let i = 0; i < REPORT_DAYS; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push(localKey(d));
+      }
+
       try {
-        const snap = await getDocs(collection(firestore, 'attendance_aggregates'));
-        snap.forEach(doc => {
-          const data = doc.data();
-          map[doc.id] = {
-            present: data.presentDays || 0,
-            absent: data.absentDays || 0,
-            late: data.lateDays || 0,
-            total: data.totalDays || 0
-          };
-        });
-        setReportData(map);
+        const snaps = await Promise.all(days.map(dk => get(ref(rtdb, `modules/${modulePath}/attendance/${dk}`))));
+        const byDay = {};
+        snaps.forEach((snap, i) => { if (snap.exists()) byDay[days[i]] = snap.val() || {}; });
+        if (!cancelled) setReportDays(byDay);
       } catch (err) {
         console.error("Failed to fetch attendance report:", err);
+        if (!cancelled) setReportDays({});
       } finally {
-        setLoadingReport(false);
+        if (!cancelled) setLoadingReport(false);
       }
     }
     fetchReport();
+    return () => { cancelled = true; };
   }, [activeTab, mode]);
+
+  // Only trust a snapshot for the tab+day on screen: after switching either, the old
+  // day's marks would otherwise show (and count) until the new listener's first reply.
+  const attendance = attendanceSnap.key === `${activeTab}|${selectedDate}` ? attendanceSnap.data : {};
+
+  const todayKey = localKey(new Date());
+  // Day-level enrollment only applies to students; staff have no discontinuation.
+  const enrolledOn = (entity, dayKey) =>
+    activeTab === 'staff' ? true : isEnrolledOn(entity, parseISODate(dayKey));
+
+  // The roster to mark. A discontinued student must not sit on the daily sheet after
+  // they left, but they were on it for the days they did attend, so the cutoff is their
+  // exit date (and any earlier absence between leaving and re-enrolling), not "hide them
+  // everywhere".
+  const roster = useMemo(() => {
+    if (activeTab === 'staff' || !selectedDate) return entities;
+    return entities.filter(e => enrolledOn(e, selectedDate));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entities, activeTab, selectedDate]);
+
+  // Per-entity totals, counting only days the entity was enrolled on: marks left behind
+  // for dates after an exit (e.g. an exit recorded late, backdated) must not drag down,
+  // or pad, their percentage.
+  const reportRows = useMemo(() => {
+    const dayKeys = Object.keys(reportDays);
+    return entities
+      .map(e => {
+        const r = { present: 0, absent: 0, late: 0, total: 0 };
+        dayKeys.forEach(dk => {
+          const status = reportDays[dk]?.[e.id]?.status;
+          if (!status || !enrolledOn(e, dk)) return;
+          r.total++;
+          if (status === 'present') r.present++;
+          else if (status === 'absent') r.absent++;
+          else if (status === 'late') r.late++;
+        });
+        return { entity: e, ...r };
+      })
+      // Leavers stay listed while the window still covers days they were enrolled for,
+      // then drop off; everyone on the rolls is always listed, even with nothing marked.
+      .filter(row => row.total > 0 || enrolledOn(row.entity, todayKey));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entities, reportDays, activeTab, todayKey]);
 
   const markAttendance = (entityId, status) => {
     const canMark = activeTab === 'staff' ? canMarkStaff : canMarkStudents;
     if (!canMark) return;
+    // A cleared date input gives '' and would write to attendance//{id}.
+    if (!selectedDate) return;
+    // Days that haven't happened can't be attended; 'YYYY-MM-DD' compares as a date.
+    if (selectedDate > todayKey) return;
+    // Only people on that day's roster: never a student who had left by then.
+    if (!roster.some(e => e.id === entityId)) return;
 
     let modulePath = activeTab === 'staff' ? 'staff_directory' : 'student_directory';
     const dbRef = ref(rtdb, `modules/${modulePath}/attendance/${selectedDate}/${entityId}`);
@@ -121,19 +189,22 @@ export default function Attendance() {
     set(dbRef, {
       status,
       timestamp: serverTimestamp(),
-      performedBy: currentUser.email
+      performedBy: currentUser?.email || null
+    }).catch(err => {
+      console.error('Failed to save attendance:', err);
+      alert('Could not save attendance. Check your connection and permissions, then try again.');
     });
   };
 
   const getStatusCounts = () => {
     let present = 0, absent = 0, late = 0;
-    entities.forEach(e => {
+    roster.forEach(e => {
       const status = attendance[e.id]?.status;
       if (status === 'present') present++;
       if (status === 'absent') absent++;
       if (status === 'late') late++;
     });
-    return { present, absent, late, total: entities.length };
+    return { present, absent, late, total: roster.length };
   };
 
   const stats = getStatusCounts();
@@ -147,7 +218,8 @@ export default function Attendance() {
     );
   }
 
-  const canMarkActive = activeTab === 'staff' ? canMarkStaff : canMarkStudents;
+  // Disabled, not just ignored, for a future date so the sheet doesn't look markable.
+  const canMarkActive = (activeTab === 'staff' ? canMarkStaff : canMarkStudents) && !!selectedDate && selectedDate <= todayKey;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -182,6 +254,7 @@ export default function Attendance() {
               <input 
                 type="date" 
                 value={selectedDate}
+                max={todayKey}
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="bg-brand-bg border border-brand-card-border rounded-md py-1.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary w-full md:w-40 text-brand-text font-medium"
               />
@@ -216,7 +289,7 @@ export default function Attendance() {
           <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm overflow-hidden">
             {loadingEntities ? (
               <div className="py-12 flex justify-center"><Spinner /></div>
-            ) : entities.length === 0 ? (
+            ) : roster.length === 0 ? (
               <div className="py-12 text-center text-brand-text-dim">No records found for this category.</div>
             ) : (
               <>
@@ -230,7 +303,7 @@ export default function Attendance() {
                       </tr>
                     </thead>
                     <tbody>
-                      {entities.map(entity => {
+                      {roster.map(entity => {
                         const name = entity.name || entity.email;
                         const currentStatus = attendance[entity.id]?.status || 'none';
                         
@@ -292,7 +365,7 @@ export default function Attendance() {
 
                 {/* Mobile Cards List View */}
                 <div className="block sm:hidden divide-y divide-brand-card-border">
-                  {entities.map(entity => {
+                  {roster.map(entity => {
                     const name = entity.name || entity.email;
                     const currentStatus = attendance[entity.id]?.status || 'none';
                     return (
@@ -350,13 +423,13 @@ export default function Attendance() {
         /* Report Mode View */
         <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm overflow-hidden">
           <div className="p-6 border-b border-brand-card-border">
-            <h3 className="font-bold text-brand-text text-lg">30-Day Attendance Report</h3>
-            <p className="text-sm text-brand-text-dim">Summarized metrics for the last 30 working days.</p>
+            <h3 className="font-bold text-brand-text text-lg">{REPORT_DAYS}-Day Attendance Report</h3>
+            <p className="text-sm text-brand-text-dim">Marked days in the last {REPORT_DAYS} calendar days. Students who left are counted only up to their exit date.</p>
           </div>
           
           {loadingReport || loadingEntities ? (
             <div className="py-12 flex justify-center"><Spinner /></div>
-          ) : entities.length === 0 ? (
+          ) : reportRows.length === 0 ? (
             <div className="py-12 text-center text-brand-text-dim">No records found.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -371,21 +444,32 @@ export default function Attendance() {
                   </tr>
                 </thead>
                 <tbody>
-                  {entities.map(entity => {
+                  {reportRows.map(({ entity, ...rData }) => {
                     const name = entity.name || entity.email;
-                    const rData = reportData[entity.id] || { present: 0, absent: 0, late: 0, total: 0 };
                     const attendancePct = rData.total > 0 ? Math.round(((rData.present + rData.late) / rData.total) * 100) : 0;
                     
                     return (
                       <tr key={entity.id} className="border-b border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                        <td className="px-6 py-4 font-bold text-brand-text">{name}</td>
+                        <td className="px-6 py-4 font-bold text-brand-text">
+                          <span className="flex items-center gap-2">
+                            {name}
+                            {activeTab !== 'staff' && isDiscontinued(entity) && !enrolledOn(entity, todayKey) && (
+                              <span className="text-[10px] uppercase tracking-wide font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">Left</span>
+                            )}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-center text-green-600 dark:text-green-500 font-medium">{rData.present}</td>
                         <td className="px-6 py-4 text-center text-red-500 font-medium">{rData.absent}</td>
                         <td className="px-6 py-4 text-center text-yellow-500 font-medium">{rData.late}</td>
                         <td className="px-6 py-4 text-right">
-                          <span className={`font-black ${attendancePct >= 75 ? 'text-green-500' : attendancePct >= 50 ? 'text-yellow-500' : 'text-red-500'}`}>
-                            {attendancePct}%
-                          </span>
+                          {rData.total === 0 ? (
+                            // Nothing marked is not the same as 0% attendance.
+                            <span className="font-black text-brand-text-dim">—</span>
+                          ) : (
+                            <span className={`font-black ${attendancePct >= 75 ? 'text-green-500' : attendancePct >= 50 ? 'text-yellow-500' : 'text-red-500'}`}>
+                              {attendancePct}%
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );

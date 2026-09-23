@@ -34,6 +34,7 @@ exports.pruneWhatsAppDebugLog = whatsappWebhook.pruneWhatsAppDebugLog;
 const feeTriggers = require("./src/fees/triggers");
 exports.syncStudentFeeTotals = feeTriggers.syncStudentFeeTotals;
 exports.syncFeePlanUpdates = feeTriggers.syncFeePlanUpdates;
+exports.syncStudentEnrollmentChanges = feeTriggers.syncStudentEnrollmentChanges;
 exports.syncStaffWalletBalance = feeTriggers.syncStaffWalletBalance;
 exports.dailyFeeReconciliation = feeTriggers.dailyFeeReconciliation;
 exports.dailyWalletReconciliation = feeTriggers.dailyWalletReconciliation;

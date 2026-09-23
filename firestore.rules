@@ -201,10 +201,9 @@ service cloud.firestore {
       allow update: if isAuthenticated()
         && (isAdmin() || getPerm('fees_accounting', 'trans_delete') || getPerm('fees_accounting', 'trans_add'))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isVoided']);
-      // Deleting money is never correct - reverse it instead, which leaves both facts.
-      // Note: the catch-all at the foot of this file still grants admins write access,
-      // deliberately retained as a break-glass path; every correction is audit-logged.
-      allow delete: if false;
+      // Deleting is deliberately reserved for administrators. The client presents a
+      // confirmation dialog and records the action in audit_logs.
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Cash settlement. Written only by the createDeposit callable (Admin SDK, bypasses

@@ -1,12 +1,12 @@
 import { CenteredSpinner } from './Spinner';
-import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, updateDoc, onSnapshot, limit, writeBatch } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, onSnapshot, limit, writeBatch } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
-import { localKey, parseISODate, toDate } from '../utils/reportUtils';
+import { localKey, parseISODate, toDate, isDiscontinued, getDiscontinuationDate, billingSchedule } from '../utils/reportUtils';
 import { requiresReference, validateReference, newIdempotencyKey, buildPaymentAuditFields } from '../utils/paymentFields';
-import { ArrowLeft, PlusCircle, Printer, AlertTriangle, Layers, ListChecks, Settings2, X, Check, Trash2, Plus, IndianRupee, MessageCircle, Edit2 } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Printer, AlertTriangle, Layers, ListChecks, Settings2, X, Check, Trash2, CircleSlash2, Plus, IndianRupee, MessageCircle, Edit2 } from 'lucide-react';
 import PaymentReceipt from './PaymentReceipt';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -34,9 +34,24 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   
   const [receiptTransaction, setReceiptTransaction] = useState(null);
   const [txLimit, setTxLimit] = useState(15);
-  const isAdmin = userData?.isAdmin;
+  const [processingTransactionId, setProcessingTransactionId] = useState(null);
+  const transactionActionRef = useRef(null);
+  // Keep this aligned with the Firestore admin rule, which accepts either flag.
+  const isAdmin = userData?.isAdmin || userData?.role === 'admin';
   const feesPerms = userData?.permissions?.fees_accounting || {};
   const canLogPayment = isAdmin || feesPerms.trans_add;
+
+  const beginTransactionAction = (transactionId) => {
+    if (transactionActionRef.current) return false;
+    transactionActionRef.current = transactionId;
+    setProcessingTransactionId(transactionId);
+    return true;
+  };
+
+  const endTransactionAction = () => {
+    transactionActionRef.current = null;
+    setProcessingTransactionId(null);
+  };
 
   useEffect(() => {
     let unsubscribeFees = () => {};
@@ -233,12 +248,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
   const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
   const isLegacyRecord = f.academicStartYear === undefined;
-  const monthsPassed = (now.getFullYear() - academicStartYear) * 12 + (now.getMonth() - startMonth);
-  const installmentsExpected = Math.min(f.billingCycle || 12, Math.max(1, monthsPassed + 1));
 
-  const monthlyTotal = components.filter(c => c.frequency === 'monthly').reduce((a, b) => a + b.amount, 0);
-  const oneTimeTotal = components.filter(c => c.frequency !== 'monthly').reduce((a, b) => a + b.amount, 0);
-  const expectedToDate = oneTimeTotal + (monthlyTotal * installmentsExpected);
 
   const effectiveRequirements = useMemo(() => {
     const allReqs = [];
@@ -266,6 +276,14 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     });
   }, [components, f.billingCycle, startMonth]);
 
+  // Which months are billed: billing stops at the exit month for a discontinued
+  // student, and months away between an earlier exit and a re-enrollment are skipped.
+  // Same shared rule the backend dues engine uses, so this screen and the arrears
+  // reports cannot disagree.
+  const studentLeft = isDiscontinued(student);
+  const exitDate = getDiscontinuationDate(student);
+  const schedule = billingSchedule(f, student || {}, now);
+
   // We no longer use Hybrid Allocation on the frontend. The backend correctly computes and stores this in componentPayments.
   const reallocatedPayments = compPayments;
 
@@ -282,7 +300,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   const realizedToDate = f.paid || 0;
   
   const totalEffectiveExpectedToDate = effectiveRequirements
-    .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && r.relativeIdx < installmentsExpected))
+    .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isDue(r.relativeIdx)))
     .reduce((acc, r) => acc + r.effectiveAmount, 0);
 
   const currentDuesToDisplay = Math.max(0, totalEffectiveExpectedToDate - (f.paid || 0) - (f.discounted || 0));
@@ -296,7 +314,10 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     const isFullyPaid = reqs.every(r => isRequirementPaid(r, reallocatedPayments, academicStartYear, isLegacyRecord));
     if (isFullyPaid) return 'covered';
     const reqIdx = reqs[0].relativeIdx;
-    if (reqIdx !== undefined && reqIdx >= installmentsExpected) return 'upcoming';
+    // Months that will never be billed (past the exit month, or while the student was
+    // away) read as excluded ("not applicable") rather than 'upcoming' ("not due yet").
+    if (reqIdx !== undefined && !schedule.isChargeable(reqIdx)) return 'excluded';
+    if (reqIdx !== undefined && !schedule.isDue(reqIdx)) return 'upcoming';
     return 'pending';
   };
 
@@ -317,7 +338,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     if (monthStatuses[i] === 'pending') { firstUnpaidRelativeIdx = i; break; }
   }
 
-  const targetRelativeIdx = (firstUnpaidRelativeIdx < 12) ? firstUnpaidRelativeIdx : Math.max(0, installmentsExpected - 1);
+  const targetRelativeIdx = (firstUnpaidRelativeIdx < 12) ? firstUnpaidRelativeIdx : schedule.lastDueIndex;
   const targetMonthName = MONTHS[(startMonth + targetRelativeIdx) % 12];
   const currentStatus = monthStatuses[targetRelativeIdx];
 
@@ -348,11 +369,17 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   const adjustedEffectiveExpectedToDate = Math.max(0, totalEffectiveExpectedToDate - (f.discounted || 0));
   const netBalanceToDate = realizedToDate - adjustedEffectiveExpectedToDate;
 
-  // Total Fees displayed
-  const annualBaseFee = effectiveRequirements.reduce((acc, r) => acc + r.baseAmount, 0);
-  const annualNetFee = effectiveRequirements.reduce((acc, r) => acc + r.effectiveAmount, 0);
+  // Total Fees displayed. Once a student has left, their "annual" figures collapse to
+  // what they are billed through the exit month — that total IS the final settlement,
+  // not a full year they will never attend. Months spent away are left out too.
+  const chargeableRequirements = effectiveRequirements
+    .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isChargeable(r.relativeIdx)));
+  const annualBaseFee = chargeableRequirements.reduce((acc, r) => acc + r.baseAmount, 0);
+  const annualNetFee = chargeableRequirements.reduce((acc, r) => acc + r.effectiveAmount, 0);
   const annualAdjustedExpected = Math.max(0, annualNetFee - (f.discounted || 0));
   const annualRemaining = Math.max(0, annualAdjustedExpected - realizedToDate);
+  // For a student who has left: positive = refund owed against the final settlement.
+  const settlementBalance = realizedToDate - annualAdjustedExpected;
 
   let standingStatus = 'CLEAR', standingColor = 'text-green-500';
   if (currentDuesToDisplay > 0) {
@@ -366,7 +393,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   const overdueItems = [];
   if (currentDuesToDisplay > 0) {
     effectiveRequirements.forEach(r => {
-      const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && r.relativeIdx < installmentsExpected);
+      const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isDue(r.relativeIdx));
       if (!isExpected) return;
 
       if (!isRequirementPaid(r, reallocatedPayments, academicStartYear)) {
@@ -389,11 +416,12 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   };
 
   const handleVoidTransaction = async (tx) => {
-    if (tx.isVoided || tx.type === 'void') return;
-    const reason = window.prompt(`Are you sure you want to void this transaction of ₹${tx.amount.toLocaleString()}?\n\nPlease enter a reason:`);
-    if (reason === null) return;
+    if (tx.isVoided || tx.type === 'void' || !beginTransactionAction(tx.id)) return;
     
     try {
+      const reason = window.prompt(`Void this transaction of ₹${tx.amount.toLocaleString()}?\n\nPlease enter a reason:`);
+      if (reason === null) return;
+
       const vAmt = -Math.abs(tx.amount);
       
       const breakdown = {};
@@ -403,8 +431,10 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
          });
       }
 
-      const txRef = doc(collection(firestore, 'students', studentId, 'transactions'));
-      await setDoc(txRef, {
+      const txCollection = collection(firestore, 'students', studentId, 'transactions');
+      const txRef = doc(txCollection);
+      const batch = writeBatch(firestore);
+      batch.set(txRef, {
         studentId: studentId,
         studentName: student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown',
         amount: vAmt,
@@ -418,11 +448,8 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         timestamp: serverTimestamp(),
         addedBy: userData?.email || 'Unknown'
       });
-
-      // Update original transaction to mark it as voided
-      await updateDoc(doc(firestore, 'students', studentId, 'transactions', tx.id), {
-        isVoided: true
-      });
+      batch.update(doc(txCollection, tx.id), { isVoided: true });
+      await batch.commit();
 
       logAudit({
         action: 'TRANSACTION_VOIDED',
@@ -437,6 +464,124 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     } catch (err) {
       console.error(err);
       alert("Failed to void transaction.");
+    } finally {
+      endTransactionAction();
+    }
+  };
+
+  /**
+   * Remove an accidental void reversal. The original payment is restored only when
+   * this is its last reversal, so a duplicate/legacy reversal cannot make an
+   * otherwise voided payment live again.
+   */
+  const handleRemoveVoidRecord = async (voidTx) => {
+    if (!isAdmin || voidTx.type !== 'void' || !beginTransactionAction(voidTx.id)) return;
+
+    try {
+      const txCollection = collection(firestore, 'students', studentId, 'transactions');
+      const originalSnapshot = voidTx.voidRefId
+        ? await getDoc(doc(txCollection, voidTx.voidRefId))
+        : null;
+      const originalTx = originalSnapshot?.exists()
+        ? { id: originalSnapshot.id, ...originalSnapshot.data() }
+        : null;
+      const reversalSnapshot = voidTx.voidRefId
+        ? await getDocs(query(txCollection, where('voidRefId', '==', voidTx.voidRefId)))
+        : null;
+      const hasOtherReversals = reversalSnapshot?.docs.some(reversalDoc =>
+        reversalDoc.id !== voidTx.id && reversalDoc.data().type === 'void'
+      ) || false;
+      const restorationMessage = originalTx && !hasOtherReversals
+        ? '\n\nThe linked original payment will become active again.'
+        : '';
+
+      if (!window.confirm(
+        `Permanently delete this void record? This cannot be undone.${restorationMessage}`
+      )) return;
+
+      const batch = writeBatch(firestore);
+      batch.delete(doc(txCollection, voidTx.id));
+
+      if (originalTx && !hasOtherReversals) {
+        batch.update(doc(txCollection, originalTx.id), { isVoided: false });
+      }
+
+      await batch.commit();
+
+      logAudit({
+        action: 'VOID_RECORD_REMOVED',
+        module: 'fees_accounting',
+        targetId: voidTx.id,
+        targetName: student?.name || voidTx.studentName || 'Unknown',
+        performedBy: userData?.email,
+        details: {
+          amount: voidTx.amount,
+          description: voidTx.description,
+          voidRefId: voidTx.voidRefId || null,
+          originalPaymentRestored: Boolean(originalTx && !hasOtherReversals)
+        }
+      });
+
+      alert(originalTx && !hasOtherReversals
+        ? 'Void record removed and the original payment restored.'
+        : 'Void record removed.');
+    } catch (err) {
+      console.error('Failed to remove void record:', err);
+      alert('Failed to remove the void record.');
+    } finally {
+      endTransactionAction();
+    }
+  };
+
+  /**
+   * Admin-only permanent deletion for a ledger entry. If an original payment was
+   * already voided, its reversal rows must go with it; otherwise the reversal would
+   * remain as an orphaned negative amount in the student's ledger.
+   */
+  const handleDeleteTransaction = async (tx) => {
+    if (!isAdmin || tx.type === 'void') {
+      if (tx.type === 'void') await handleRemoveVoidRecord(tx);
+      return;
+    }
+    if (!beginTransactionAction(tx.id)) return;
+
+    try {
+      const txCollection = collection(firestore, 'students', studentId, 'transactions');
+      const linkedVoidSnapshot = await getDocs(query(txCollection, where('voidRefId', '==', tx.id)));
+      const linkedVoids = linkedVoidSnapshot.docs.filter(voidDoc => voidDoc.data().type === 'void');
+      const linkedVoidMessage = linkedVoids.length
+        ? ` Its ${linkedVoids.length} linked void record${linkedVoids.length === 1 ? '' : 's'} will also be deleted.`
+        : '';
+
+      if (!window.confirm(
+        `Permanently delete this ${tx.type === 'discount' ? 'concession' : 'payment'} record? This cannot be undone.${linkedVoidMessage}`
+      )) return;
+
+      const batch = writeBatch(firestore);
+      batch.delete(doc(txCollection, tx.id));
+      linkedVoids.forEach(voidDoc => batch.delete(voidDoc.ref));
+      await batch.commit();
+
+      logAudit({
+        action: 'TRANSACTION_DELETED',
+        module: 'fees_accounting',
+        targetId: tx.id,
+        targetName: student?.name || tx.studentName || 'Unknown',
+        performedBy: userData?.email,
+        details: {
+          amount: tx.amount,
+          description: tx.description,
+          type: tx.type || 'incoming',
+          deletedVoidRecordIds: linkedVoids.map(voidDoc => voidDoc.id)
+        }
+      });
+
+      alert('Ledger record deleted.');
+    } catch (err) {
+      console.error('Failed to delete ledger record:', err);
+      alert('Failed to delete the ledger record.');
+    } finally {
+      endTransactionAction();
     }
   };
 
@@ -459,7 +604,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       if (currentDuesToDisplay > 0 && remaining > 0) {
         effectiveRequirements.forEach(r => {
           if (remaining <= 0) return;
-          const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && r.relativeIdx < installmentsExpected);
+          const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isDue(r.relativeIdx));
           if (!isExpected) return;
 
           if (!isRequirementPaid(r, currentCompPayments, academicStartYear)) {
@@ -483,8 +628,10 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       if (remaining > 0) {
         effectiveRequirements.forEach(r => {
           if (remaining <= 0) return;
-          const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && r.relativeIdx < installmentsExpected);
+          const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isDue(r.relativeIdx));
           if (isExpected) return; 
+          // Advance payments only go to months that will actually be billed.
+          if (r.relativeIdx !== undefined && !schedule.isChargeable(r.relativeIdx)) return;
 
           if (!isRequirementPaid(r, currentCompPayments, academicStartYear)) {
             const mLong = r.month;
@@ -811,15 +958,46 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         <ArrowLeft size={16} /> Back to Ledger
       </button>
 
+      {studentLeft && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <CircleSlash2 size={20} className="text-amber-600 shrink-0" />
+          <div className="text-sm">
+            <p className="font-bold text-amber-700 dark:text-amber-400">
+              Discontinued{exitDate ? ` · last day ${exitDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+            </p>
+            <p className="text-brand-text-dim mt-0.5">
+              Fees are billed for {schedule.chargeable.length} month{schedule.chargeable.length === 1 ? '' : 's'} only.
+              {/* Measured against the final settlement, not dues-to-date: with an exit date
+                  still ahead, the months up to it are owed even though not yet due. */}
+              {' '}{annualRemaining > 0
+                ? `Final settlement outstanding: ₹${annualRemaining.toLocaleString('en-IN')}.`
+                : settlementBalance > 0
+                  ? `Overpaid by ₹${settlementBalance.toLocaleString('en-IN')} — refund due.`
+                  : 'Account fully settled.'}
+              {student.discontinuation?.reason ? ` Reason: ${student.discontinuation.reason}.` : ''}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-brand-card border border-brand-card-border p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-brand-text flex items-center gap-2">
             {student.name}
+            {studentLeft && (
+              <span className="text-[10px] uppercase tracking-wide bg-amber-500/15 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-bold">
+                Discontinued
+              </span>
+            )}
             <span className="text-[10px] bg-black/5 dark:bg-white/5 text-brand-text-dim px-2 py-0.5 rounded-full font-mono font-medium">
               ID: {student.id.slice(-6).toUpperCase()}
             </span>
           </h1>
-          <p className="text-sm font-medium text-brand-text-dim mt-1">{f.billingCycle || 12}-Month Cycle</p>
+          <p className="text-sm font-medium text-brand-text-dim mt-1">
+            {studentLeft
+              ? `Billed ${schedule.chargeable.length} of ${f.billingCycle || 12} months`
+              : `${f.billingCycle || 12}-Month Cycle${schedule.paused.length ? ` · ${schedule.paused.length} month${schedule.paused.length === 1 ? '' : 's'} not billed (away)` : ''}`}
+          </p>
         </div>
         <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
           <div className="text-left md:text-right">
@@ -858,7 +1036,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <div className="bg-brand-card border border-brand-card-border p-5 rounded-2xl flex flex-col justify-between">
-          <p className="text-[10px] font-bold text-brand-text-dim uppercase tracking-wider mb-2">Base Annual Fee</p>
+          <p className="text-[10px] font-bold text-brand-text-dim uppercase tracking-wider mb-2">{studentLeft ? 'Base Fee Billed' : 'Base Annual Fee'}</p>
           <p className="text-2xl font-black text-brand-text">₹{annualBaseFee.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-brand-card border border-brand-card-border p-5 rounded-2xl flex flex-col justify-between">
@@ -870,7 +1048,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           <p className="text-2xl font-black text-brand-secondary">₹{displayedDiscountTotal.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-brand-card border border-brand-card-border p-5 rounded-2xl flex flex-col justify-between">
-          <p className="text-[10px] font-bold text-brand-text-dim uppercase tracking-wider mb-2">Annual Remaining</p>
+          <p className="text-[10px] font-bold text-brand-text-dim uppercase tracking-wider mb-2">{studentLeft ? 'Final Settlement' : 'Annual Remaining'}</p>
           <p className="text-2xl font-black text-brand-text">₹{annualRemaining.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-brand-card border border-brand-card-border p-5 rounded-2xl flex flex-col justify-between">
@@ -1100,10 +1278,37 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                           {canLogPayment && !isDynamicallyVoided && t.type !== 'void' && (
                             <button 
                               onClick={() => handleVoidTransaction(t)}
-                              className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                              disabled={processingTransactionId !== null}
+                              className="inline-flex items-center gap-1.5 px-2 py-1.5 text-amber-600 hover:bg-amber-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                               title="Void Transaction"
+                              aria-label="Void transaction"
+                            >
+                              <CircleSlash2 size={16} />
+                              <span className="text-xs font-bold">Void</span>
+                            </button>
+                          )}
+                          {isAdmin && t.type === 'void' && (
+                            <button
+                              onClick={() => handleDeleteTransaction(t)}
+                              disabled={processingTransactionId !== null}
+                              className="inline-flex items-center gap-1.5 px-2 py-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              title="Remove void record and restore original payment"
+                              aria-label="Delete void record"
                             >
                               <Trash2 size={16} />
+                              <span className="text-xs font-bold">Delete</span>
+                            </button>
+                          )}
+                          {isAdmin && t.type !== 'void' && (
+                            <button
+                              onClick={() => handleDeleteTransaction(t)}
+                              disabled={processingTransactionId !== null}
+                              className="inline-flex items-center gap-1.5 px-2 py-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              title="Permanently delete ledger record"
+                              aria-label="Permanently delete ledger record"
+                            >
+                              <Trash2 size={16} />
+                              <span className="text-xs font-bold">Delete</span>
                             </button>
                           )}
                         </div>

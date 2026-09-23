@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { collection, query, getDocs, limit } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { Search, User, Briefcase, ChevronRight, X, LayoutDashboard, FileText, Settings, Users, MessageSquare } from 'lucide-react';
+import { isDiscontinued, isOnRolls } from '../utils/reportUtils';
 
 export default function GlobalSearch() {
   const navigate = useNavigate();
@@ -160,7 +161,10 @@ export default function GlobalSearch() {
                     </div>
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-brand-text truncate">{student.name}</div>
-                      <div className="text-xs text-brand-text-dim truncate">{student.studentType || 'Preschool'}</div>
+                      <div className="text-xs text-brand-text-dim truncate">
+                        {student.studentType || 'Preschool'}
+                        {isDiscontinued(student) && <span className="ml-1 text-amber-600 font-semibold">· {isOnRolls(student) ? 'Leaving' : 'Discontinued'}</span>}
+                      </div>
                     </div>
                   </div>
                   <ChevronRight size={16} className="text-brand-text-dim opacity-0 group-hover:opacity-100 transition-opacity" />
