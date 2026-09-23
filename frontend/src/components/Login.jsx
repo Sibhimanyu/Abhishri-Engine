@@ -43,7 +43,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-brand-bg text-brand-text transition-colors duration-300">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-brand-bg text-brand-text transition-colors duration-300">
       <div className="w-full max-w-md p-8 bg-brand-card border border-brand-card-border rounded-2xl shadow-lg transition-colors duration-300">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-8">
