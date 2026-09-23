@@ -1,5 +1,6 @@
 import React from 'react';
 import { Printer, X } from 'lucide-react';
+import { printPage } from '../utils/native';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -13,7 +14,7 @@ export default function PaymentReceipt({ receiptTransaction, student, wing, comp
           <h2 className="text-lg font-bold text-gray-800">Payment Receipt</h2>
           <div className="flex gap-3">
             <button 
-              onClick={onPrint || (() => window.print())}
+              onClick={onPrint || printPage}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors text-sm"
             >
               <Printer size={16} /> Print

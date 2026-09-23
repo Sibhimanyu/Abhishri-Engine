@@ -86,3 +86,43 @@ body {
     margin: 12mm;
   }
 }
+
+/* iOS app (class set in index.html). The web view runs edge to edge under the
+   status bar and home indicator, so #root is inset by the safe areas and the
+   full-height layouts are shrunk to match. The strip behind the status bar takes
+   the header colour so it reads as part of the top bar. */
+html.native body {
+  background-color: var(--sidebar-bg);
+  -webkit-tap-highlight-color: transparent;
+}
+html.native #root {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+html.native .h-screen {
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+html.native .min-h-screen {
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+/* Full-screen overlays (modals, the mobile nav drawer) are position: fixed, so
+   #root's padding doesn't reach them. */
+html.native .fixed.inset-0 {
+  top: env(safe-area-inset-top);
+  bottom: env(safe-area-inset-bottom);
+}
+/* Pages that scroll the whole document (the student portal) would otherwise slide
+   their content up behind the status bar: pin an opaque strip there, and keep
+   sticky headers below it. */
+html.native body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top);
+  background-color: var(--sidebar-bg);
+  z-index: 9999;
+}
+html.native header.sticky.top-0 {
+  top: env(safe-area-inset-top);
+}

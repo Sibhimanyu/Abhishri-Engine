@@ -1,9 +1,10 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, initializeAuth, indexedDBLocalPersistence, onAuthStateChanged, GoogleAuthProvider, connectAuthEmulator } from 'firebase/auth';
 import { initializeFirestore, connectFirestoreEmulator, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
+import { isNative } from './utils/native';
 
 const firebaseConfig = {
     apiKey: "AIzaSyCkhTwa6sG7mCx-RW1E2FWhKqB--yDRUmk",
@@ -16,7 +17,12 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+// Inside the iOS app getAuth() stalls: its default popup/redirect resolver
+// loads an iframe from authDomain, which never completes under capacitor://.
+// Native sign-in hands the JS SDK a credential instead (see Login.jsx).
+export const auth = isNative
+    ? initializeAuth(app, { persistence: indexedDBLocalPersistence })
+    : getAuth(app);
 // Persistent IndexedDB cache: listeners (dashboard/reports pull whole collections)
 // resume from local data and only sync the delta, instead of re-downloading the
 // full transaction history on every page load.
@@ -29,7 +35,19 @@ export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
 // Auto-connect to emulators if running locally (assuming standard ports)
-if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+// Signing out of Firebase must also drop the native Google session, or the
+// next "Continue with Google" silently reuses the previous account.
+if (isNative) {
+    onAuthStateChanged(auth, (user) => {
+        if (user) return;
+        import('@capacitor-firebase/authentication')
+            .then(({ FirebaseAuthentication }) => FirebaseAuthentication.signOut())
+            .catch(() => {});
+    });
+}
+
+// The iOS app is also served from "localhost", so it must never hit the emulators.
+if (!isNative && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     // connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
     // connectFirestoreEmulator(firestore, '127.0.0.1', 8080);
 }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CalendarRange, SlidersHorizontal, Download, Printer, RotateCcw, GitCompareArrows } from 'lucide-react';
 import { DATE_PRESETS, GRANULARITIES, GRANULARITY_ADVERB, rangeLabel } from '../utils/reportUtils';
 import { Field, Select, SavedViews } from './ReportsUI';
+import { printPage } from '../utils/native';
 
 /**
  * The control strip every report sits under: period selection, comparison, bucket size,
@@ -111,7 +112,7 @@ export default function ReportToolbar({
             <Download size={13} /> CSV
           </button>
           <button
-            type="button" onClick={() => window.print()}
+            type="button" onClick={printPage}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-brand-card-border text-xs font-bold text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
             <Printer size={13} /> Print
