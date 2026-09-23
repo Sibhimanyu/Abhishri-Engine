@@ -11,7 +11,8 @@
     "test": "TZ=Asia/Kolkata vitest run",
     "ios": "vite build && cap sync ios && cap open ios",
     "ios:sync": "vite build && cap sync ios",
-    "ios:assets": "capacitor-assets generate --ios --iconBackgroundColor '#F1615B' --splashBackgroundColor '#F8FAFC' --splashBackgroundColorDark '#0d1117'"
+    "ios:assets": "capacitor-assets generate --ios --iconBackgroundColor '#F1615B' --splashBackgroundColor '#F8FAFC' --splashBackgroundColorDark '#0d1117'",
+    "ios:ipa": "ios/build-ipa.sh"
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.5.2",

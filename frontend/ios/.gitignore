@@ -14,3 +14,7 @@ App/App/config.xml
 
 # Absolute symlinks written by `cap sync` (machine-specific)
 App/CapApp-SPM/symlinks
+
+# Sideload builds (ios/build-ipa.sh)
+build
+dist

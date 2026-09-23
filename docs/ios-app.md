@@ -50,7 +50,68 @@ If the web API key in `firebase.js` has HTTP-referrer restrictions in Google Clo
 Console, requests from the app come from origin `capacitor://localhost` and need
 to be allowed there too.
 
-## Releasing
+## Installing on an iPhone with SideStore (free Apple ID)
+
+This route needs no paid Apple Developer account. [SideStore](https://sidestore.io)
+signs the app on the phone with your own Apple ID.
+
+**Limits of a free Apple ID.** The signature expires every 7 days. That can't be
+removed without a paid account, but SideStore renews it automatically (see below).
+You can have 3 sideloaded apps at a time, and SideStore counts as one. You can
+install 10 different apps per week. SideStore may also append your team ID to the
+bundle ID; the app doesn't depend on it.
+
+### 1. Build the IPA (Mac)
+
+```sh
+cd frontend
+npm run ios:ipa        # → frontend/ios/dist/Abhishri.ipa
+```
+
+This is an unsigned Release build; SideStore signs it during install. Rebuild
+whenever you want the phone to get the latest web changes.
+
+### 2. Install SideStore (one time)
+
+Follow the [SideStore install guide](https://docs.sidestore.io/docs/installation/prerequisites).
+In short:
+
+1. Install **LocalDevVPN** from the App Store on the iPhone. It has to be connected
+   whenever SideStore installs or refreshes apps.
+2. On a computer, run **iloader**, connect the iPhone by cable and sign in with the
+   Apple ID. It installs SideStore and its pairing file.
+3. On the iPhone, go to Settings → General → VPN & Device Management and trust
+   your Apple ID's developer profile. Then turn on Settings → Privacy & Security →
+   **Developer Mode** (iOS 16+) and restart the phone.
+
+### 3. Install Abhishri
+
+1. AirDrop `Abhishri.ipa` to the iPhone (or put it in iCloud Drive) so it's in Files.
+2. Connect LocalDevVPN, open SideStore → **My Apps** → **+**, and pick `Abhishri.ipa`.
+
+To update, build a new IPA and install it the same way. It replaces the app in
+place, and the sign-in is kept.
+
+### 4. Automatic refresh (instead of by hand every 7 days)
+
+SideStore renews apps in the background when iOS lets it. Settings → General →
+**Background App Refresh** must be on, for SideStore too. iOS doesn't guarantee
+background time, so also add a daily Shortcuts automation that guarantees it:
+
+1. Shortcuts → **Automation** → **+** → **Time of Day** (e.g. 3:00 AM, while the
+   phone is usually on Wi-Fi and charging) → **Daily** → **Run Immediately**.
+2. Add the actions:
+   1. **Set VPN** → *Connect* → **LocalDevVPN** (or *Open App* → LocalDevVPN, if
+      the VPN doesn't appear there)
+   2. **Wait** 5 seconds
+   3. SideStore → **Refresh All Apps**
+
+A refresh needs Wi-Fi and LocalDevVPN, and the signature has a 7-day margin. So
+one missed night doesn't matter; the next successful run renews it. If the phone
+is off Wi-Fi for 7 days, the app won't open until you connect LocalDevVPN and tap
+**Refresh All** in SideStore. The app's data and sign-in are not lost.
+
+## Releasing (App Store / TestFlight, paid account)
 
 1. In Xcode → App target → *Signing & Capabilities*, pick the Apple Developer team.
 2. Bump *Version* / *Build* (they are `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`).
