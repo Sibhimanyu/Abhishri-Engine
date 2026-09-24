@@ -30,6 +30,9 @@ DIST="$IOS_DIR/dist"
 
 echo "==> Abhishri $VERSION ($BUILD)"
 npm test --silent >/dev/null 2>&1 || { echo "frontend tests failed — run npm test" >&2; exit 1; }
+# The native screens' shared rules (enrollment, transaction classification, permissions).
+(cd "$IOS_DIR/App/AbhishriKit" && swift test >/dev/null 2>&1) || {
+  echo "native tests failed — run: cd ios/App/AbhishriKit && swift test" >&2; exit 1; }
 # The bundled copy is only the offline fallback (server.errorPath), but it must exist.
 npx vite build >/dev/null
 npx cap sync ios >/dev/null
