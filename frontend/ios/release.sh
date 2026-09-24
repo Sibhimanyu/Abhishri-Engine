@@ -39,6 +39,7 @@ npx vite build >/dev/null
 npx cap sync ios >/dev/null
 
 rm -rf "$BUILD_DIR/Build/Products/Release-iphoneos" "$BUILD_DIR/ipa"
+mkdir -p "$BUILD_DIR"   # the log below is written here; a fresh checkout has no build/
 xcodebuild -project "$IOS_DIR/App/App.xcodeproj" -scheme App -configuration Release -sdk iphoneos \
   -destination 'generic/platform=iOS' -derivedDataPath "$BUILD_DIR" \
   CURRENT_PROJECT_VERSION="$BUILD" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
