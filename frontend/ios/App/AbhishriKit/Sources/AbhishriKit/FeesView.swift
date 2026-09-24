@@ -54,6 +54,11 @@ struct FeesView: View {
 
     private var wingDue: Double { inWing.reduce(0) { $0 + ($1.summary?.dueNow ?? 0) } }
 
+    private var owingLabel: String {
+        let n = inWing.filter { ($0.summary?.dueNow ?? 0) > 0 }.count
+        return n == 1 ? "1 student owing" : "\(n) students owing"
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             List {
@@ -69,7 +74,7 @@ struct FeesView: View {
                 Section {
                     HStack {
                         StatTile(title: "Due now", value: students.loaded ? Money.inr(wingDue) : "—",
-                                 detail: "\(inWing.filter { ($0.summary?.dueNow ?? 0) > 0 }.count) students owing",
+                                 detail: owingLabel,
                                  symbol: "exclamationmark.circle.fill", tint: Brand.absent)
                     }
                     .listRowBackground(Color.clear)
@@ -202,6 +207,7 @@ struct StudentLedgerView: View {
     let profile: Profile
     let router: AppRouter
     @State private var ledger = LedgerStore()
+    @State private var loggingPayment = false
 
     private var webPath: String { "/fee-collection/\(student.wing.rawValue)/\(student.id)" }
 
@@ -231,7 +237,7 @@ struct StudentLedgerView: View {
             Section {
                 if profile.permissions.canLogPayment {
                     Button {
-                        router.openWeb(webPath)
+                        loggingPayment = true
                     } label: {
                         Label("Log a payment", systemImage: "plus.circle.fill")
                     }
@@ -242,7 +248,7 @@ struct StudentLedgerView: View {
                     Label("Full ledger, receipts & printing", systemImage: "doc.text.magnifyingglass")
                 }
             } footer: {
-                Text("Payments, concessions, voids and receipts open on the full site in the More tab, so every payment follows the same checks.")
+                Text("Concessions, voids, corrections and receipts are on the full ledger in the More tab.")
             }
 
             Section("Recent entries") {
@@ -260,7 +266,11 @@ struct StudentLedgerView: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Ledger")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { ledger.start(studentId: student.id) }
+        .sheet(isPresented: $loggingPayment) { PaymentSheet(student: student) }
+        .onAppear {
+            ledger.start(studentId: student.id)
+            if DebugLaunch.paymentAmount != nil, profile.permissions.canLogPayment { loggingPayment = true }
+        }
         .onDisappear { ledger.stop() }
     }
 }

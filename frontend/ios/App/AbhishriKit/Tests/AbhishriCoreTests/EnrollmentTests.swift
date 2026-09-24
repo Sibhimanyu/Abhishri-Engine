@@ -121,3 +121,53 @@ final class DateKeysTests: XCTestCase {
         XCTAssertEqual(Money.inr(123456), "₹1,23,456")
     }
 }
+
+final class PaymentRulesTests: XCTestCase {
+    func testMethodsMatchTheSharedRules() {
+        // functions/src/shared/paymentRules.mjs PAYMENT_METHODS, same order.
+        XCTAssertEqual(PaymentMethod.allCases.map(\.rawValue), ["Cash", "GPay/UPI", "Bank Transfer", "Cheque", "Card"])
+        XCTAssertFalse(PaymentMethod.cash.requiresReference)
+        XCTAssertTrue(PaymentMethod.cheque.requiresReference)
+    }
+
+    func testReferenceValidation() {
+        XCTAssertEqual(PaymentMethod.cash.validateReference(""), "")
+        XCTAssertEqual(PaymentMethod.upi.validateReference("  "),
+                       "A reference number is required for GPay/UPI payments so it can be matched against the bank statement.")
+        XCTAssertEqual(PaymentMethod.upi.validateReference("UPI123"), "")
+    }
+
+    func testBreakdownLines() {
+        let lines = PaymentBreakdown.lines(
+            breakdown: ["2026-tui-July": 500, "Unallocated": 100, "2026-adm": 5000, "2026-tui-June": 1000],
+            names: ["2026-tui-July": "Tuition", "2026-tui-June": "Tuition", "2026-adm": "Admission", "Unallocated": "Unallocated Funds"])
+        XCTAssertEqual(lines.map(\.label), ["Admission", "Tuition · June", "Tuition · July", "Unallocated Funds"])
+    }
+
+    func testBreakdownFollowsTheSchoolYear() {
+        let lines = PaymentBreakdown.lines(
+            breakdown: ["2026-tui-January": 1000, "2026-tui-December": 1000],
+            names: ["2026-tui-January": "Tuition", "2026-tui-December": "Tuition"])
+        XCTAssertEqual(lines.map(\.label), ["Tuition · December", "Tuition · January"])
+    }
+}
+
+final class ExpenseRulesTests: XCTestCase {
+    func testStoredValuesMatchTheWeb() {
+        // FeesMyExpenses.jsx <option value=…>, which reports group by.
+        XCTAssertEqual(ExpenseCategory.allCases.map(\.rawValue),
+                       ["Office Supplies", "Maintenance", "Utility Bills", "Transport", "Meals/Entertainment", "Refreshments", "Miscellaneous"])
+        XCTAssertEqual(ExpenseSource.office.storedType, "spend")
+        XCTAssertEqual(ExpenseSource.staffWallet.storedType, "expense")
+    }
+
+    func testWalletBalanceMatchesTheServerRule() {
+        let entries: [(type: String, source: String, amount: Double)] = [
+            ("funding", "staff_wallet", 5000),
+            ("expense", "staff_wallet", 1200),
+            ("spend", "staff_wallet", 300),   // legacy writer: still a debit
+            ("spend", "office", 9999),        // school-paid: not the wallet
+        ]
+        XCTAssertEqual(Wallet.balance(entries), 3500)
+    }
+}

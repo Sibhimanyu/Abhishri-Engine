@@ -76,14 +76,66 @@ public struct Student: Identifiable {
 
 public struct StaffMember: Identifiable {
     public let id: String
+    public let raw: [String: Any]
     public let name: String
     public let designation: String?
+    public let email: String?
+    public let phone: String?
+    /// Maintained by the server (syncStaffWalletBalance / dailyWalletReconciliation).
+    public let walletBalance: Double?
 
     init(id: String, data: [String: Any]) {
         self.id = id
+        raw = data
         name = data.string("name") ?? data.string("email") ?? "Unknown"
         designation = data.string("designation") ?? data.string("role")
+        email = data.string("email")?.lowercased()
+        phone = data.string("phone")
+        walletBalance = (data["walletBalance"] as? NSNumber)?.doubleValue
     }
+
+    public func field(_ key: String) -> String? { raw.string(key) }
+
+    public var initials: String {
+        name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
+    }
+
+    /// The wings they work in, as the staff profile records them.
+    public var wings: [String] {
+        [raw.bool("worksInPreschool") ? "Preschool" : nil, raw.bool("worksInTuition") ? "Tuition" : nil].compactMap { $0 }
+    }
+}
+
+public struct Expense: Identifiable {
+    public let id: String
+    public let amount: Double
+    /// 'spend' (school paid), 'expense' (from a staff wallet) or 'funding' (wallet top-up).
+    public let type: String
+    public let source: String
+    public let category: String
+    public let details: String?
+    public let date: Date?
+    public let attachmentUrl: URL?
+    public let createdBy: String?
+    public let staffEmail: String?
+
+    init(id: String, data: [String: Any]) {
+        self.id = id
+        amount = data.double("amount")
+        type = data.string("type") ?? "spend"
+        source = data.string("source") ?? "office"
+        category = data.string("category") ?? "Miscellaneous"
+        details = data.string("details")
+        date = data.date("timestamp")
+        attachmentUrl = data.string("attachmentUrl").flatMap(URL.init(string:))
+        createdBy = data.string("createdBy")?.lowercased()
+        staffEmail = data.string("staffEmail")?.lowercased()
+    }
+
+    public var isFunding: Bool { type == "funding" }
+    public var isWallet: Bool { source == ExpenseSource.staffWallet.rawValue }
+    public var title: String { details ?? (ExpenseCategory(rawValue: category)?.label ?? category) }
+    public var categorySymbol: String { ExpenseCategory(rawValue: category)?.symbol ?? "tag" }
 }
 
 public enum AttendanceStatus: String, CaseIterable, Identifiable {

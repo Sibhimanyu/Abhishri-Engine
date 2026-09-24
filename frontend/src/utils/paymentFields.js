@@ -17,11 +17,15 @@
  *                   document instead of creating a second payment.
  */
 
-/** Methods where a payment lands in a bank account and therefore has a reference to capture. */
-export const REFERENCE_REQUIRED_METHODS = ['GPay/UPI', 'Bank Transfer', 'Cheque', 'Card'];
+import { requiresReference } from '../../../functions/src/shared/paymentRules.mjs';
 
-/** Cash has no external reference; it is reconciled through a deposit record instead. */
-export const requiresReference = (method) => REFERENCE_REQUIRED_METHODS.includes(method);
+// The method/reference rules are shared with the logPayment callable and ported to the
+// iOS app, so all three agree on which payments need a bank reference.
+export {
+  PAYMENT_METHODS,
+  REFERENCE_REQUIRED_METHODS,
+  requiresReference,
+} from '../../../functions/src/shared/paymentRules.mjs';
 
 /**
  * 'YYYY-MM' in the LOCAL calendar, never via toISOString(): a payment received at
@@ -46,17 +50,7 @@ export function newIdempotencyKey() {
   return `idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/**
- * Validate the reference before a write. Returns an error string, or '' when fine,
- * so callers can surface it without this module knowing about the UI.
- */
-export function validateReference(method, externalRef) {
-  if (!requiresReference(method)) return '';
-  if (!String(externalRef || '').trim()) {
-    return `A reference number is required for ${method} payments so it can be matched against the bank statement.`;
-  }
-  return '';
-}
+export { validateReference } from '../../../functions/src/shared/paymentRules.mjs';
 
 /**
  * The additive Phase 1 fields for one payment write.

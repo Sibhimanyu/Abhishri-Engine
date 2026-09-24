@@ -39,6 +39,9 @@ exports.syncStaffWalletBalance = feeTriggers.syncStaffWalletBalance;
 exports.dailyFeeReconciliation = feeTriggers.dailyFeeReconciliation;
 exports.dailyWalletReconciliation = feeTriggers.dailyWalletReconciliation;
 
+const payments = require("./src/fees/payments");
+exports.logPayment = payments.logPayment;
+
 const feeAllocations = require("./src/fees/allocations");
 exports.syncAllocations = feeAllocations.syncAllocations;
 
@@ -60,10 +63,6 @@ exports.setStatementLineMatch = feeRecon.setStatementLineMatch;
 const staffAttendance = require("./src/staff/attendance");
 exports.selfMarkStaffAttendance = staffAttendance.selfMarkStaffAttendance;
 exports.updateStaffAttendanceConfig = staffAttendance.updateStaffAttendanceConfig;
-
-// --- Global Attendance Aggregation ---
-const attendanceAggregate = require("./src/attendance/aggregate");
-exports.aggregateDailyAttendance = attendanceAggregate.aggregateDailyAttendance;
 
 // --- Auth Triggers ---
 const authTriggers = require("./src/auth/triggers");

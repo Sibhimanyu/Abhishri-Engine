@@ -51,10 +51,12 @@ public struct RootView: View {
             if let tab = DebugLaunch.initialTab { router.tab = tab }
         }
         .task(id: session.state) { await autoSignInIfRequested() }
-        .onChange(of: session.state) { _, state in
+        .onChange(of: session.state) { old, state in
             // Student data is only fetched for staff, and dropped on sign-out.
             if case .staff = state { students.start() } else { students.stop() }
-            if case .signedOut = state { router.tab = .home }
+            // Back to Home after a real sign-out (not on the first launch, which starts
+            // signed out too), so the next person doesn't land on someone else's tab.
+            if case .signedOut = state, case .staff = old { router.tab = .home }
         }
     }
 }

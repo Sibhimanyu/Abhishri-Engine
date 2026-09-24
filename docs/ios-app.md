@@ -5,20 +5,25 @@ app inside it for everything else**.
 
 | Tab | What it is | Code |
 |---|---|---|
-| Home | Greeting, students on the rolls, today's attendance, dues outstanding, this month's collections, recent payments, quick actions | `HomeView.swift` |
+| Home | Greeting, students on the rolls, today's attendance, dues outstanding, this month's collections, recent payments, quick actions; **My wallet & expenses** (log an expense with a receipt photo, see the wallet balance) and the **Staff directory** | `HomeView.swift`, `ExpensesView.swift`, `StaffView.swift` |
 | Attendance | Mark a day (preschool, tuition, staff) and the 30-day report | `AttendanceView.swift` |
 | Students | Directory (Active / Left / All) and profiles with one-tap call and WhatsApp | `StudentsView.swift` |
-| Fees | Dues per wing, and each student's ledger | `FeesView.swift` |
+| Fees | Dues per wing, each student's ledger, and **Log a payment** | `FeesView.swift`, `PaymentSheet.swift` |
 | More | The full web app (accounting, reconciliation, reports, WhatsApp, settings, and anything below) | Capacitor web view |
 
 Tabs appear only when the user's permissions allow them, resolved as `AuthContext.jsx`
 does. Parents and students, and accounts that aren't authorised, get the web app full
 screen, which already handles the portal and the "not authorised" screen.
 
-**Payments, concessions, voids, receipts, editing a profile and discontinuing** open the
-matching web screen in the More tab (for example `/fee-collection/preschool/<id>`), so
-every payment still goes through the one code path with its reference checks and
-idempotency key.
+**Payments are native and go through one server path.** Both the web ledger and the app
+call the `logPayment` Cloud Function (`functions/src/fees/payments.js`). It checks the
+caller's permission (`fees_accounting.trans_add`), the bank reference and the accounting
+period. It splits the amount across fee lines with the dues engine's own rules
+(`functions/src/shared/feeAllocation.mjs`), and writes the payment and its audit entry
+together. The idempotency key is the document id, so a retried submit returns the
+payment already recorded. **Concessions, voids, corrections, receipts, editing a profile
+and discontinuing** still open the matching web screen in the More tab (for example
+`/fee-collection/preschool/<id>`).
 
 ### Where the code is
 
@@ -97,6 +102,10 @@ emulator):
 | `-initialTab home\|attendance\|students\|fees\|more` | Start on a tab |
 | `-openStudent <id>` / `-openLedger <id>` | Open a student profile / ledger |
 | `-attendanceMode report` | Open the attendance report |
+| `-openLedger <id> -paymentAmount 1500 [-paymentAutoSubmit YES]` | Open the payment sheet pre-filled (and record it) |
+| `-openHome expenses\|log-expense\|staff` | Open My expenses / the expense form / the staff directory |
+| `-expenseAmount 350 [-expenseAutoSubmit YES]` | With `log-expense`: pre-fill (and save) a wallet expense |
+| `-functionsPort 5101 -storagePort 9299` | Non-default functions / storage emulator ports (defaults 5001 / 9199) |
 
 Build for the simulator with local signing, or Firebase Auth can't use the keychain
 ("An error occurred when accessing the keychain"):

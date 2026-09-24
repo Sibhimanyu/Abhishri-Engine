@@ -4,6 +4,8 @@ import FirebaseCore
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseDatabase
+import FirebaseFunctions
+import FirebaseStorage
 import GoogleSignIn
 
 public enum AbhishriKit {
@@ -12,7 +14,7 @@ public enum AbhishriKit {
     /// so doing it here means both sides share this one FirebaseApp.
     ///
     /// Debug builds launched with `-useEmulator` talk to the local Firebase emulators
-    /// (auth 9099, firestore 8080, database 9000) instead of production, for screenshots
+    /// (auth 9099, firestore 8080, database 9000, functions 5001, storage 9199) instead of production, for screenshots
     /// and manual testing against seeded data. See docs/ios-app.md.
     public static func configure() {
         if FirebaseApp.app() == nil { FirebaseApp.configure() }
@@ -38,6 +40,8 @@ public enum AbhishriKit {
             settings.cacheSettings = MemoryCacheSettings()
             Firestore.firestore().settings = settings
             Database.database().useEmulator(withHost: host, port: port("databasePort", 9000))
+            Functions.functions().useEmulator(withHost: host, port: port("functionsPort", 5001))
+            Storage.storage().useEmulator(withHost: host, port: port("storagePort", 9199))
             usingEmulator = true
         }
         #endif

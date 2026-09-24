@@ -1,6 +1,7 @@
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const { FieldValue } = require("firebase-admin/firestore");
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -104,7 +105,7 @@ exports.syncAllocations = onDocumentWritten(
           receivedAt: after.receivedAt ?? after.timestamp ?? null,
           voided: after.isVoided === true,
           source: "syncAllocations",
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
       }
     }

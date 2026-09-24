@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const { FieldValue } = require("firebase-admin/firestore");
 
 /**
  * Cash settlement — the other half of "where did the money actually go".
@@ -107,7 +108,7 @@ exports.createDeposit = onCall(async (request) => {
     paymentCount: lines.length,
     status: "deposited",
     createdBy: email,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   });
 
   lines.forEach((l) => {
@@ -120,7 +121,7 @@ exports.createDeposit = onCall(async (request) => {
       amountMinor: Math.round((Number(l.data.amount) || 0) * 100),
       receivedAt: l.data.receivedAt || l.data.timestamp || null,
       receivedPeriodKey: l.data.periodKey || null,
-      addedAt: admin.firestore.FieldValue.serverTimestamp(),
+      addedAt: FieldValue.serverTimestamp(),
     });
   });
 
