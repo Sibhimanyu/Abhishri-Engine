@@ -18,3 +18,7 @@ App/CapApp-SPM/symlinks
 # Sideload builds (ios/build-ipa.sh)
 build
 dist
+
+# AbhishriKit when built on its own (`swift test`); the app resolves packages itself
+App/AbhishriKit/.build
+App/AbhishriKit/Package.resolved

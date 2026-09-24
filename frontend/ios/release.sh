@@ -24,17 +24,22 @@ SITE="https://abhishri-ios.web.app"
 PBX="$IOS_DIR/App/App.xcodeproj/project.pbxproj"
 BUNDLE="$(sed -n 's/^[[:space:]]*PRODUCT_BUNDLE_IDENTIFIER = \(.*\);/\1/p' "$PBX" | head -1)"
 VERSION="$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \(.*\);/\1/p' "$PBX" | head -1)"
+MIN_OS="$(sed -n 's/^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = \(.*\);/\1/p' "$PBX" | head -1)"
 BUILD="$(date -u +%Y%m%d%H%M)"
 BUILD_DIR="$IOS_DIR/build"
 DIST="$IOS_DIR/dist"
 
 echo "==> Abhishri $VERSION ($BUILD)"
 npm test --silent >/dev/null 2>&1 || { echo "frontend tests failed — run npm test" >&2; exit 1; }
+# The native screens' shared rules (enrollment, transaction classification, permissions).
+(cd "$IOS_DIR/App/AbhishriKit" && swift test >/dev/null 2>&1) || {
+  echo "native tests failed — run: cd ios/App/AbhishriKit && swift test" >&2; exit 1; }
 # The bundled copy is only the offline fallback (server.errorPath), but it must exist.
 npx vite build >/dev/null
 npx cap sync ios >/dev/null
 
 rm -rf "$BUILD_DIR/Build/Products/Release-iphoneos" "$BUILD_DIR/ipa"
+mkdir -p "$BUILD_DIR"   # the log below is written here; a fresh checkout has no build/
 xcodebuild -project "$IOS_DIR/App/App.xcodeproj" -scheme App -configuration Release -sdk iphoneos \
   -destination 'generic/platform=iOS' -derivedDataPath "$BUILD_DIR" \
   CURRENT_PROJECT_VERSION="$BUILD" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
@@ -66,12 +71,14 @@ SIZE=$(stat -f%z "$DIST/$IPA")
 SHA=$(shasum -a 256 "$DIST/$IPA" | cut -d' ' -f1)
 cp "$IOS_DIR/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png" "$DIST/icon.png"
 
-python3 - "$VERSION" "$BUILD" "$NOTES" "$SITE/$IPA" "$SIZE" "$SHA" "$BUNDLE" "$SITE" "$DIST/source.json" <<'PY'
+python3 - "$VERSION" "$BUILD" "$NOTES" "$SITE/$IPA" "$SIZE" "$SHA" "$BUNDLE" "$SITE" "$DIST/source.json" "$MIN_OS" <<'PY'
 import json, sys, datetime
-version, build, notes, url, size, sha, bundle, site, out = sys.argv[1:]
+version, build, notes, url, size, sha, bundle, site, out, min_os = sys.argv[1:]
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 v = {"version": version, "buildVersion": build, "date": now, "localizedDescription": notes,
-     "downloadURL": url, "size": int(size), "sha256": sha, "minOSVersion": "15.0"}
+     "downloadURL": url, "size": int(size), "sha256": sha,
+     # From the Xcode project, so SideStore never offers a build to a phone that can't run it.
+     "minOSVersion": min_os}
 source = {
   "name": "Abhishri Academy", "identifier": "com.abhishri.academy.source",
   "subtitle": "School workspace", "website": site,

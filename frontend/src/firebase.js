@@ -5,6 +5,7 @@ import { getDatabase } from 'firebase/database';
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 import { isNative } from './utils/native';
+import { installNativeBridge } from './utils/nativeBridge';
 
 const firebaseConfig = {
     apiKey: "AIzaSyCkhTwa6sG7mCx-RW1E2FWhKqB--yDRUmk",
@@ -35,16 +36,24 @@ export const functions = getFunctions(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Auto-connect to emulators if running locally (assuming standard ports)
 // Signing out of Firebase must also drop the native Google session, or the
-// next "Continue with Google" silently reuses the previous account.
+// next "Continue with Google" silently reuses the previous account. In the native
+// iOS app, signing out here also ends the native screens' session (endNativeSession),
+// so it must only follow a real sign-out (signed in -> signed out), never the null
+// every cold start reports before the native app has handed its session over (see
+// installNativeBridge). The native app's plugin ignores signOut calls that don't ask
+// for endNativeSession, which is what keeps older deploys from signing it out.
 if (isNative) {
+    let hadUser = false;
     onAuthStateChanged(auth, (user) => {
-        if (user) return;
+        if (user) { hadUser = true; return; }
+        if (!hadUser) return;
+        hadUser = false;
         import('@capacitor-firebase/authentication')
-            .then(({ FirebaseAuthentication }) => FirebaseAuthentication.signOut())
+            .then(({ FirebaseAuthentication }) => FirebaseAuthentication.signOut({ endNativeSession: true }))
             .catch(() => {});
     });
+    installNativeBridge(auth);
 }
 
 // The iOS app is also served from "localhost", so it must never hit the emulators.
