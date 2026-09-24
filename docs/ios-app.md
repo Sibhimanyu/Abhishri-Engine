@@ -210,9 +210,11 @@ state to sync. The version is `MARKETING_VERSION` in the Xcode project. `.ipa`
 uploads need the Blaze plan (Spark forbids executables); only the latest `.ipa`
 is kept, well inside the free Hosting allowance.
 
-**Live since 2026-09-24:** `2.0 (202609240129)`, the native app (iOS 17+). Its
-`source.json`, `.ipa` size and SHA-256 were checked against the served files.
-Previous: `1.0 (202609231637)`, the all-web Capacitor app.
+**Live since 2026-09-24:** `2.0 (202609240444)`: native payment logging, expenses
+with receipt photos, the wallet and the staff directory (iOS 17+). Its `source.json`,
+`.ipa` size and SHA-256 were checked against the served files.
+Previous: `2.0 (202609240129)`, the first native app; `1.0 (202609231637)`, the
+all-web Capacitor app.
 
 ### 4. Automatic refresh (instead of by hand every 7 days)
 
