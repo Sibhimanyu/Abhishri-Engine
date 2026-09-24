@@ -24,6 +24,7 @@ SITE="https://abhishri-ios.web.app"
 PBX="$IOS_DIR/App/App.xcodeproj/project.pbxproj"
 BUNDLE="$(sed -n 's/^[[:space:]]*PRODUCT_BUNDLE_IDENTIFIER = \(.*\);/\1/p' "$PBX" | head -1)"
 VERSION="$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \(.*\);/\1/p' "$PBX" | head -1)"
+MIN_OS="$(sed -n 's/^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = \(.*\);/\1/p' "$PBX" | head -1)"
 BUILD="$(date -u +%Y%m%d%H%M)"
 BUILD_DIR="$IOS_DIR/build"
 DIST="$IOS_DIR/dist"
@@ -69,12 +70,14 @@ SIZE=$(stat -f%z "$DIST/$IPA")
 SHA=$(shasum -a 256 "$DIST/$IPA" | cut -d' ' -f1)
 cp "$IOS_DIR/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png" "$DIST/icon.png"
 
-python3 - "$VERSION" "$BUILD" "$NOTES" "$SITE/$IPA" "$SIZE" "$SHA" "$BUNDLE" "$SITE" "$DIST/source.json" <<'PY'
+python3 - "$VERSION" "$BUILD" "$NOTES" "$SITE/$IPA" "$SIZE" "$SHA" "$BUNDLE" "$SITE" "$DIST/source.json" "$MIN_OS" <<'PY'
 import json, sys, datetime
-version, build, notes, url, size, sha, bundle, site, out = sys.argv[1:]
+version, build, notes, url, size, sha, bundle, site, out, min_os = sys.argv[1:]
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 v = {"version": version, "buildVersion": build, "date": now, "localizedDescription": notes,
-     "downloadURL": url, "size": int(size), "sha256": sha, "minOSVersion": "15.0"}
+     "downloadURL": url, "size": int(size), "sha256": sha,
+     # From the Xcode project, so SideStore never offers a build to a phone that can't run it.
+     "minOSVersion": min_os}
 source = {
   "name": "Abhishri Academy", "identifier": "com.abhishri.academy.source",
   "subtitle": "School workspace", "website": site,
