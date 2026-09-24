@@ -150,11 +150,6 @@ service cloud.firestore {
       );
     }
     
-    match /attendance_aggregates/{aggregateId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin() || getPerm('attendance', 'mark') || getPerm('attendance', 'edit');
-    }
-
     // --- Flattened Root Collections (New Architecture) ---
     match /students/{studentId} {
       allow read: if isAuthenticated() && (

@@ -2,14 +2,10 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-function getComponentKey(c, month = null, academicYear = null) {
-  const yearPrefix = academicYear ? `${academicYear}-` : '';
-  const id = c.uid || c.name;
-  return month ? `${yearPrefix}${id}-${month}` : `${yearPrefix}${id}`;
-}
+// Modular import rather than the namespaced admin.firestore statics: identical in
+// production, but the Functions emulator's firebase-admin wrapper leaves those undefined,
+// which made every write here throw when run locally.
+const { FieldValue } = require("firebase-admin/firestore");
 
 async function reconcileStudent(studentId, db) {
     // Shared with the frontend reports (see functions/src/shared/feeTx.mjs). Loaded
@@ -19,6 +15,9 @@ async function reconcileStudent(studentId, db) {
     // Same shared-module arrangement: the billing cutoff for a discontinued student
     // must be identical here and in the ledger screen, or the two disagree on dues.
     const { billingSchedule, isDiscontinued } = await import("../shared/enrollment.mjs");
+    // Line items and their keys come from the same module logPayment splits payments
+    // with, so a payment's breakdown and componentPayments always use one key scheme.
+    const { buildRequirements, componentKey } = await import("../shared/feeAllocation.mjs");
     const studentRef = db.collection("students").doc(studentId);
     const planRef = studentRef.collection("fee_ledger").doc("plan_details");
     const txRef = studentRef.collection("transactions");
@@ -52,8 +51,6 @@ async function reconcileStudent(studentId, db) {
     });
 
     const now = new Date();
-    const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
-    const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
     const student = studentDoc.exists ? studentDoc.data() : {};
     const studentLeft = isDiscontinued(student);
     // Which months are billed. A discontinued student stops accruing at their exit
@@ -63,28 +60,7 @@ async function reconcileStudent(studentId, db) {
     const schedule = billingSchedule(f, student, now);
     const installmentsExpected = schedule.due.length;
 
-    const allReqs = [];
-    components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount >= 0).forEach(c => {
-        allReqs.push({ uid: c.uid, name: c.name, baseAmount: c.baseAmount !== undefined ? c.baseAmount : c.amount, amount: c.amount, frequency: 'onetime', month: null });
-    });
-    
-    for (let i = 0; i < (f.billingCycle || 12); i++) {
-        const mIdx = (startMonth + i) % 12;
-        const mName = MONTHS[mIdx];
-        components.filter(c => (c.frequency || '').toLowerCase() === 'monthly').forEach(c => {
-            allReqs.push({ uid: c.uid, name: c.name, baseAmount: c.baseAmount !== undefined ? c.baseAmount : c.amount, amount: c.amount, frequency: 'monthly', month: mName, relativeIdx: i });
-        });
-    }
-
-    const structuralTotalDiscount = components.filter(c => (c.frequency || '').toLowerCase() !== 'monthly' && c.amount < 0)
-        .reduce((acc, c) => acc + Math.abs(c.amount), 0);
-    
-    let remainingStructDiscount = structuralTotalDiscount;
-    const effectiveRequirements = allReqs.map(req => {
-        const deduction = Math.min(req.amount, remainingStructDiscount);
-        remainingStructDiscount -= deduction;
-        return { ...req, effectiveAmount: req.amount - deduction };
-    });
+    const effectiveRequirements = buildRequirements(f);
 
     const expectedToDate = effectiveRequirements
         .filter(r => (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isDue(r.relativeIdx)))
@@ -103,7 +79,7 @@ async function reconcileStudent(studentId, db) {
     // against months they will never attend (or months they were away).
     chargeableRequirements.forEach(req => {
         if (remainingFunds <= 0) return;
-        const primaryKey = getComponentKey(req, req.month, f.academicStartYear !== undefined ? academicStartYear : null);
+        const primaryKey = componentKey(req, f);
         const allocation = Math.min(remainingFunds, req.effectiveAmount);
         if (allocation > 0) {
             componentPayments[primaryKey] = allocation;
@@ -133,7 +109,7 @@ async function reconcileStudent(studentId, db) {
         annualRemaining,
         annualNetFee,
         expectedToDate: adjustedExpectedToDate,
-        lastCalculated: admin.firestore.FieldValue.serverTimestamp()
+        lastCalculated: FieldValue.serverTimestamp()
     };
 
     const batch = db.batch();
@@ -154,7 +130,7 @@ async function reconcileStudent(studentId, db) {
                 discounted: totalDiscounted,
                 componentPayments: componentPayments,
                 total: annualNetFee,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                updatedAt: FieldValue.serverTimestamp()
             });
         }
     }
@@ -316,7 +292,7 @@ async function resyncWalletBalance(db, staffId) {
         if ((staffDoc.data().walletBalance || 0) !== walletBalance) {
             transaction.update(staffRef, {
                 walletBalance: walletBalance,
-                lastWalletSync: admin.firestore.FieldValue.serverTimestamp()
+                lastWalletSync: FieldValue.serverTimestamp()
             });
         }
     });

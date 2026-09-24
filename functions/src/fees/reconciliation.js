@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const { FieldValue } = require("firebase-admin/firestore");
 
 /**
  * Bank statement reconciliation.
@@ -94,7 +95,7 @@ exports.importStatement = onCall(async (request) => {
     bankLabel: bankLabel || null,
     source: "bank",
     status: "draft",
-    importedAt: admin.firestore.FieldValue.serverTimestamp(),
+    importedAt: FieldValue.serverTimestamp(),
     importedBy: email,
     stats: {
       lineCount: lines.length,
@@ -190,7 +191,7 @@ exports.autoMatchStatement = onCall(async (request) => {
       matchedDepositId: r.matchedDepositId ?? null,
       candidates: r.candidates ?? [],
       matchedBy: r.status === "matched" ? "auto" : null,
-      matchedAt: r.status === "matched" ? admin.firestore.FieldValue.serverTimestamp() : null,
+      matchedAt: r.status === "matched" ? FieldValue.serverTimestamp() : null,
     }, { merge: true });
   }
 
@@ -200,7 +201,7 @@ exports.autoMatchStatement = onCall(async (request) => {
 
   batch.set(runRef, {
     status: "matched",
-    matchedAt: admin.firestore.FieldValue.serverTimestamp(),
+    matchedAt: FieldValue.serverTimestamp(),
     matchedBy: email,
     stats: {
       ...run.stats,
@@ -252,7 +253,7 @@ exports.setStatementLineMatch = onCall(async (request) => {
     await lineRef.set({
       status: "matched", matchedPaymentPath: paymentPath, matchedPaymentId: pay.id,
       matchType: "manual", confidence: "manual", matchNote: `Matched by ${email}.`,
-      matchedBy: email, matchedAt: admin.firestore.FieldValue.serverTimestamp(),
+      matchedBy: email, matchedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
   } else if (action === "unmatch") {
     await lineRef.set({
@@ -262,7 +263,7 @@ exports.setStatementLineMatch = onCall(async (request) => {
   } else if (action === "ignore") {
     await lineRef.set({
       status: "ignored", matchNote: String(request.data?.note || `Ignored by ${email}.`).slice(0, 300),
-      matchedBy: email, matchedAt: admin.firestore.FieldValue.serverTimestamp(),
+      matchedBy: email, matchedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
   } else {
     throw new HttpsError("invalid-argument", "action must be match, unmatch or ignore.");

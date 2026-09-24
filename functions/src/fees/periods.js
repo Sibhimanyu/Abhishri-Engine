@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const { FieldValue } = require("firebase-admin/firestore");
 
 /**
  * Accounting period close.
@@ -110,7 +111,7 @@ exports.closePeriod = onCall(async (request) => {
       periodKey,
       status: "closed",
       totals,
-      closedAt: admin.firestore.FieldValue.serverTimestamp(),
+      closedAt: FieldValue.serverTimestamp(),
       closedBy: email,
       // Kept so a later recomputation can be diffed against what was signed off.
       frozenTotals: totals,
@@ -145,12 +146,12 @@ exports.reopenPeriod = onCall(async (request) => {
   await ref.set(
     {
       status: "open",
-      reopenedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reopenedAt: FieldValue.serverTimestamp(),
       reopenedBy: email,
       reopenReason: reason,
       // The totals at sign-off survive the reopen, so the drift introduced afterwards
       // stays visible rather than being quietly overwritten.
-      reopenHistory: admin.firestore.FieldValue.arrayUnion({
+      reopenHistory: FieldValue.arrayUnion({
         at: new Date().toISOString(),
         by: email,
         reason,

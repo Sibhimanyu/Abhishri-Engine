@@ -1,10 +1,12 @@
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, onSnapshot, limit, writeBatch } from 'firebase/firestore';
-import { firestore } from '../firebase';
+import { firestore, functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
 import { localKey, parseISODate, toDate, isDiscontinued, getDiscontinuationDate, billingSchedule } from '../utils/reportUtils';
+import { componentKey } from '../../../functions/src/shared/feeAllocation.mjs';
 import { requiresReference, validateReference, newIdempotencyKey, buildPaymentAuditFields } from '../utils/paymentFields';
 import { ArrowLeft, PlusCircle, Printer, AlertTriangle, Layers, ListChecks, Settings2, X, Check, Trash2, CircleSlash2, Plus, IndianRupee, MessageCircle, Edit2 } from 'lucide-react';
 import PaymentReceipt from './PaymentReceipt';
@@ -223,20 +225,15 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
 
 
 
-  const getComponentKey = (c, month = null, academicYear = null) => {
-    const yearPrefix = academicYear ? `${academicYear}-` : '';
-    const id = c.uid || c.name;
-    return month ? `${yearPrefix}${id}-${month}` : `${yearPrefix}${id}`;
-  };
+  // The key a line's payments are stored under (componentPayments / breakdown), from the
+  // same shared module the dues engine and logPayment use. It used to be rebuilt here
+  // with an always-on year prefix, so plans saved without academicStartYear (stored
+  // unprefixed) never showed a month as paid.
+  const keyOf = (r) => componentKey(r, fees || {});
 
-  const isRequirementPaid = (r, paymentsDict, academicStartYear) => {
+  const isRequirementPaid = (r, paymentsDict) => {
     if (!r || r.effectiveAmount <= 0) return true;
-
-    const mLong = r.month;
-    const id = r.uid || r.name;
-    const primaryKey = academicStartYear ? getComponentKey(r, mLong, academicStartYear) : (mLong ? `${id}-${mLong}` : id);
-
-    const paid = paymentsDict[primaryKey] || 0;
+    const paid = paymentsDict[keyOf(r)] || 0;
     return paid >= r.effectiveAmount;
   };
 
@@ -246,8 +243,6 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
 
   const now = new Date();
   const startMonth = f.startMonth !== undefined ? f.startMonth : 5;
-  const academicStartYear = f.academicStartYear !== undefined ? f.academicStartYear : ((now.getMonth() < startMonth) ? now.getFullYear() - 1 : now.getFullYear());
-  const isLegacyRecord = f.academicStartYear === undefined;
 
 
   const effectiveRequirements = useMemo(() => {
@@ -311,7 +306,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     const mName = MONTHS[mIdx];
     const reqs = effectiveRequirements.filter(r => r.month === mName);
     if (reqs.length === 0) return 'excluded';
-    const isFullyPaid = reqs.every(r => isRequirementPaid(r, reallocatedPayments, academicStartYear, isLegacyRecord));
+    const isFullyPaid = reqs.every(r => isRequirementPaid(r, reallocatedPayments));
     if (isFullyPaid) return 'covered';
     const reqIdx = reqs[0].relativeIdx;
     // Months that will never be billed (past the exit month, or while the student was
@@ -322,7 +317,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   };
 
   const oneTimeRequirements = effectiveRequirements.filter(r => (r.frequency || '').toLowerCase() !== 'monthly');
-  const oneTimePaid = oneTimeRequirements.every(r => isRequirementPaid(r, reallocatedPayments, academicStartYear, isLegacyRecord));
+  const oneTimePaid = oneTimeRequirements.every(r => isRequirementPaid(r, reallocatedPayments));
   const oneTimeStatus = oneTimePaid ? 'covered' : 'pending';
 
   const months = [];
@@ -396,10 +391,8 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isDue(r.relativeIdx));
       if (!isExpected) return;
 
-      if (!isRequirementPaid(r, reallocatedPayments, academicStartYear)) {
-        const mLong = r.month;
-        const id = r.uid || r.name;
-        const primaryKey = academicStartYear ? getComponentKey(r, mLong, academicStartYear) : (mLong ? `${id}-${mLong}` : id);
+      if (!isRequirementPaid(r, reallocatedPayments)) {
+        const primaryKey = keyOf(r);
         
         const paid = reallocatedPayments[primaryKey] || 0;
         overdueItems.push({ name: r.name, detail: r.month, due: r.effectiveAmount - paid, targetKey: primaryKey, req: r });
@@ -607,10 +600,8 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           const isExpected = (r.frequency || '').toLowerCase() !== 'monthly' || (r.relativeIdx !== undefined && schedule.isDue(r.relativeIdx));
           if (!isExpected) return;
 
-          if (!isRequirementPaid(r, currentCompPayments, academicStartYear)) {
-            const mLong = r.month;
-            const id = r.uid || r.name;
-            const primaryKey = academicStartYear ? getComponentKey(r, mLong, academicStartYear) : (mLong ? `${id}-${mLong}` : id);
+          if (!isRequirementPaid(r, currentCompPayments)) {
+            const primaryKey = keyOf(r);
             
             const p = currentCompPayments[primaryKey] || 0;
             const due = r.effectiveAmount - p;
@@ -633,10 +624,8 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           // Advance payments only go to months that will actually be billed.
           if (r.relativeIdx !== undefined && !schedule.isChargeable(r.relativeIdx)) return;
 
-          if (!isRequirementPaid(r, currentCompPayments, academicStartYear)) {
-            const mLong = r.month;
-            const id = r.uid || r.name;
-            const targetKey = academicStartYear ? getComponentKey(r, mLong, academicStartYear) : (mLong ? `${id}-${mLong}` : id);
+          if (!isRequirementPaid(r, currentCompPayments)) {
+            const targetKey = keyOf(r);
             
             const currentP = currentCompPayments[targetKey] || 0;
             const due = r.effectiveAmount - currentP;
@@ -668,78 +657,35 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     if (refError) return alert(refError);
 
     setIsProcessingPayment(true);
+    // Reused if this submit is retried, so the server returns the payment it already
+    // recorded instead of creating a second one.
+    const idemKey = paymentForm.idemKey || newIdempotencyKey();
+    if (!paymentForm.idemKey) setPaymentForm(prev => ({ ...prev, idemKey }));
     try {
-      const pAmt = Number(paymentForm.amount);
-
-      // Auto-allocator logic for breakdown
-      const { breakdown, breakdownNames } = allocateFunds(pAmt, compPayments, selectedDues);
-
-      // We ONLY write to the 'transactions' collection. 
-      // The `syncStudentFeeTotals` Cloud Function handles updating the `student_fees` document 
-      // via an onSnapshot trigger, and our UI syncs via its own onSnapshot.
-      // parseISODate: LOCAL midnight, matching the edit path — new Date('YYYY-MM-DD')
-      // parses as UTC midnight and gives the same field two different day conventions.
-      const timestampValue = paymentForm.date ? parseISODate(paymentForm.date) : serverTimestamp();
-
-      const paymentName = student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown';
-
-      // Phase 1 additive fields (docs/payments-data-model-review.md). `timestamp` is still
-      // written exactly as before so every existing reader is unaffected; receivedAt is the
-      // same instant under its accounting name, recordedAt is when it was actually entered.
-      const receivedAt = paymentForm.date ? parseISODate(paymentForm.date) : new Date();
-      const idemKey = paymentForm.idemKey || newIdempotencyKey();
-
-      // The idempotency key doubles as the document id: a double-submit (or a retry after a
-      // dropped response) rewrites the same document instead of creating a second payment.
-      const newTxRef = doc(firestore, 'students', studentId, 'transactions', idemKey);
-      await setDoc(newTxRef, {
-        studentId: studentId,
-        studentName: paymentName,
-        amount: pAmt,
+      // The logPayment callable (functions/src/fees/payments.js) is the one write path
+      // for payments: it checks permission, the reference and the accounting period,
+      // splits the amount across fee lines with the dues engine's own rules, and writes
+      // the transaction and its audit entry together. The iOS app uses it too.
+      const logPayment = httpsCallable(functions, 'logPayment');
+      await logPayment({
+        studentId,
+        amount: Number(paymentForm.amount),
         method: paymentForm.method,
         description: paymentForm.description || 'Fee Payment',
-        category: 'General Fees',
-        type: 'incoming',
-        breakdown: breakdown,
-        breakdownNames: breakdownNames,
-        timestamp: timestampValue,
-        addedBy: userData?.email || 'Unknown',
-        recordedAt: serverTimestamp(),
-        ...buildPaymentAuditFields({
-          receivedAt,
-          method: paymentForm.method,
-          externalRef: paymentForm.externalRef,
-          idempotencyKey: idemKey,
-        }),
-      });
-
-      logAudit({
-        action: 'PAYMENT_LOGGED',
-        module: 'fees_accounting',
-        targetId: newTxRef.id,
-        targetName: paymentName,
-        performedBy: userData?.email,
-        details: { amount: pAmt, method: paymentForm.method, description: paymentForm.description, externalRef: paymentForm.externalRef || null }
+        receivedOn: paymentForm.date || null,
+        externalRef: paymentForm.externalRef || '',
+        idempotencyKey: idemKey,
+        selectedKeys: selectedDues,
+        recordedVia: 'web',
       });
 
       setIsPaymentOpen(false);
       setPaymentForm({ amount: '', method: 'Cash', description: '', date: '', externalRef: '', idemKey: '' });
-
+      setSelectedDues([]);
     } catch (err) {
       console.error(err);
-      // The document id IS the idempotency key, so a retry of an already-recorded payment
-      // arrives as an update and the rules reject it for non-admins. That is the guard
-      // working: the payment exists exactly once. Confirm that is what happened before
-      // calling it a success, so genuine failures still surface.
-      try {
-        const existing = await getDoc(doc(firestore, 'students', studentId, 'transactions', paymentForm.idemKey || ''));
-        if (existing.exists() && existing.data()?.idempotencyKey === paymentForm.idemKey) {
-          setIsPaymentOpen(false);
-          setPaymentForm({ amount: '', method: 'Cash', description: '', date: '', externalRef: '', idemKey: '' });
-          return;
-        }
-      } catch { /* fall through to the error below */ }
-      alert("Failed to process payment.");
+      // The server's message says what to fix (closed period, missing reference, ...).
+      alert(err?.message ? `Failed to record the payment: ${err.message}` : 'Failed to record the payment.');
     } finally {
       setIsProcessingPayment(false);
     }

@@ -95,7 +95,7 @@ export default function Attendance() {
 
   // Report: the last REPORT_DAYS calendar days, read straight from the per-day records.
   //
-  // This used to read attendance_aggregates, which the nightly job only ever adds TODAY's
+  // This used to read attendance_aggregates, written by a nightly job (since removed) that only ever added TODAY's
   // marks to. So a correction to an earlier day never reached it, anything marked after
   // 23:59 was lost, and the counters were lifetime totals rather than the "30 days" this
   // screen claims. Reading the days directly is exact, and lets each student's days be

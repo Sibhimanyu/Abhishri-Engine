@@ -35,5 +35,21 @@ enum DebugLaunch {
     static var openStudent: String? { value("openStudent") }
     static var openLedger: String? { value("openLedger") }
     static var attendanceMode: String? { value("attendanceMode") }
+    /// With -openLedger: open the payment sheet, pre-filled, optionally submitting it
+    /// (-paymentAmount 1500 -paymentAutoSubmit YES).
+    static var paymentAmount: String? { value("paymentAmount") }
+    static var paymentAutoSubmit: Bool { value("paymentAutoSubmit") == "YES" }
+    /// With -openHome log-expense: pre-fill the amount, optionally saving it.
+    static var expenseAmount: String? { value("expenseAmount") }
+    static var expenseAutoSubmit: Bool { value("expenseAutoSubmit") == "YES" }
+    /// -openHome expenses | log-expense | staff
+    static var homeRoute: HomeView.HomeRoute? {
+        switch value("openHome") {
+        case "expenses": .expenses(logNow: false)
+        case "log-expense": .expenses(logNow: true)
+        case "staff": .staff
+        default: nil
+        }
+    }
 }
 #endif

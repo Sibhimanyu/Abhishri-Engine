@@ -11,6 +11,9 @@ struct HomeView: View {
     @State private var today = AttendanceDay()
     @State private var payments = RecentPaymentsStore()
     @State private var confirmSignOut = false
+    @State private var path: [HomeRoute] = DebugLaunch.homeRoute.map { [$0] } ?? []
+
+    enum HomeRoute: Hashable { case expenses(logNow: Bool), staff }
 
     private var perms: Permissions { profile.permissions }
     private var todayKey: String { DateKeys.key(Date()) }
@@ -27,7 +30,7 @@ struct HomeView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     Text(Date().formatted(.dateTime.weekday(.wide).day().month(.wide)))
@@ -58,7 +61,7 @@ struct HomeView: View {
                             StatTile(
                                 title: "Dues outstanding",
                                 value: students.loaded ? Money.inr(duesOutstanding) : "—",
-                                detail: students.loaded ? "\(studentsInArrears) students" : nil,
+                                detail: students.loaded ? (studentsInArrears == 1 ? "1 student" : "\(studentsInArrears) students") : nil,
                                 symbol: "exclamationmark.circle.fill",
                                 tint: Brand.absent
                             )
@@ -75,6 +78,8 @@ struct HomeView: View {
                     }
 
                     quickActions
+
+                    teamSection
 
                     if perms.canViewRevenue, !payments.recent.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -102,6 +107,12 @@ struct HomeView: View {
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
+            .navigationDestination(for: HomeRoute.self) { route in
+                switch route {
+                case .expenses(let logNow): MyExpensesView(profile: profile, openLogOnAppear: logNow)
+                case .staff: StaffDirectoryView(profile: profile, router: router)
+                }
+            }
             .navigationTitle("\(greeting), \(firstName)")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -148,8 +159,8 @@ struct HomeView: View {
         if perms.canManageStudents {
             out.append(QuickAction(title: "Add student", symbol: "person.badge.plus") { router.openWeb("/students") })
         }
-        if perms.canAny("fees_accounting", ["exp_own", "exp_all"]) {
-            out.append(QuickAction(title: "Log expense", symbol: "creditcard") { router.openWeb("/accounting") })
+        if canLogExpenses {
+            out.append(QuickAction(title: "Log expense", symbol: "creditcard") { path.append(.expenses(logNow: true)) })
         }
         if perms.can("whatsapp_sender", "access") {
             out.append(QuickAction(title: "WhatsApp", symbol: "message.fill") { router.openWeb("/whatsapp") })
@@ -176,6 +187,44 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    /// firestore.rules let any internal staff member (everyone who reaches these native
+    /// screens) log expenses attributed to themselves, so this is always on for staff.
+    private var canLogExpenses: Bool { true }
+
+    @ViewBuilder
+    private var teamSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("You & your team").font(.headline)
+            VStack(spacing: 0) {
+                if canLogExpenses {
+                    NavigationLink(value: HomeRoute.expenses(logNow: false)) {
+                        rowLabel("My wallet & expenses", symbol: "wallet.bifold.fill", tint: Brand.teal)
+                    }
+                }
+                if canLogExpenses && perms.canViewStaff { Divider().padding(.leading, 52) }
+                if perms.canViewStaff {
+                    NavigationLink(value: HomeRoute.staff) {
+                        rowLabel("Staff directory", symbol: "person.crop.rectangle.stack.fill", tint: Brand.coral)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    private func rowLabel(_ title: String, symbol: String, tint: Color) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol).foregroundStyle(tint).frame(width: 28)
+            Text(title).font(.subheadline.weight(.semibold))
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 50)
+        .contentShape(Rectangle())
     }
 
     private var firstName: String { String(profile.name.split(separator: " ").first ?? "") }
