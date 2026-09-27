@@ -6,6 +6,44 @@ import { useAuth } from '../context/AuthContext';
 import { Search, ArrowUpRight, ArrowDownRight, ExternalLink, X, RefreshCw, Briefcase } from 'lucide-react';
 import { classifyIncomeTx } from '../utils/reportUtils';
 
+// One transaction's icon, colours, title and amount sign, shared by the table (wide
+// screens) and the cards (phones).
+function describeTx(t) {
+  let Icon, iconColor, amountColor, title, subtitle, badgeText, amountPrefix;
+  
+  if (t.isWallet) {
+    const isFunding = t.type === 'funding';
+    Icon = isFunding ? RefreshCw : Briefcase;
+    iconColor = isFunding ? 'text-blue-500 bg-blue-100 dark:bg-blue-900/30' : 'text-orange-500 bg-orange-100 dark:bg-orange-900/30';
+    amountColor = isFunding ? 'text-blue-500 dark:text-blue-400' : 'text-orange-500 dark:text-orange-400';
+    title = `Wallet: ${t.staffName || 'Staff'}`;
+    subtitle = t.details || t.description || (isFunding ? 'Internal Transfer' : 'Wallet Expense');
+    badgeText = isFunding ? 'WALLET FUND' : 'WALLET SPEND';
+    amountPrefix = isFunding ? '+' : '-'; 
+  } else if (t.masterType === 'incoming') {
+    const isVoid = t.type === 'void' || t.amount < 0;
+    const isDiscount = t.type === 'discount';
+    Icon = isVoid ? ArrowUpRight : (isDiscount ? ArrowUpRight : ArrowDownRight);
+    iconColor = isVoid ? 'text-red-500 bg-red-100 dark:bg-red-900/30' : (isDiscount ? 'text-purple-500 bg-purple-100 dark:bg-purple-900/30' : 'text-green-600 bg-green-100 dark:bg-green-900/30');
+    amountColor = isVoid ? 'text-red-500' : (isDiscount ? 'text-purple-500' : 'text-green-600 dark:text-green-400');
+    title = t.studentName || 'Anonymous Payment';
+    subtitle = t.description || (isDiscount ? 'Fee Concession' : 'General Fees');
+    badgeText = isVoid ? 'VOIDED' : (isDiscount ? 'DISCOUNT' : (t.method || 'Cash'));
+    amountPrefix = isVoid ? '' : (isDiscount ? '-' : '+');
+  } else {
+    Icon = ArrowUpRight;
+    iconColor = 'text-red-600 bg-red-100 dark:bg-red-900/30';
+    amountColor = 'text-brand-text';
+    title = t.category || 'General Expense';
+    subtitle = t.description || t.details || t.createdBy || '-';
+    badgeText = 'SCHOOL EXP';
+    amountPrefix = '-';
+  }
+
+  const dateStr = t.timestamp?.toDate ? t.timestamp.toDate().toLocaleDateString() : new Date(t.timestamp || Date.now()).toLocaleDateString();
+  return { Icon, iconColor, amountColor, title, subtitle, badgeText, amountPrefix, dateStr };
+}
+
 export default function FeesTransactions() {
   const { currentUser, userData } = useAuth();
   const [transactions, setTransactions] = useState([]);
@@ -190,7 +228,7 @@ export default function FeesTransactions() {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm text-left text-brand-text-dim">
           <thead className="text-xs uppercase bg-brand-bg text-brand-text border-b border-brand-card-border">
             <tr>
@@ -210,38 +248,7 @@ export default function FeesTransactions() {
               </tr>
             ) : (
               filtered.map((t) => {
-                let Icon, iconColor, amountColor, title, subtitle, badgeText, amountPrefix;
-                
-                if (t.isWallet) {
-                  const isFunding = t.type === 'funding';
-                  Icon = isFunding ? RefreshCw : Briefcase;
-                  iconColor = isFunding ? 'text-blue-500 bg-blue-100 dark:bg-blue-900/30' : 'text-orange-500 bg-orange-100 dark:bg-orange-900/30';
-                  amountColor = isFunding ? 'text-blue-500 dark:text-blue-400' : 'text-orange-500 dark:text-orange-400';
-                  title = `Wallet: ${t.staffName || 'Staff'}`;
-                  subtitle = t.details || t.description || (isFunding ? 'Internal Transfer' : 'Wallet Expense');
-                  badgeText = isFunding ? 'WALLET FUND' : 'WALLET SPEND';
-                  amountPrefix = isFunding ? '+' : '-'; 
-                } else if (t.masterType === 'incoming') {
-                  const isVoid = t.type === 'void' || t.amount < 0;
-                  const isDiscount = t.type === 'discount';
-                  Icon = isVoid ? ArrowUpRight : (isDiscount ? ArrowUpRight : ArrowDownRight);
-                  iconColor = isVoid ? 'text-red-500 bg-red-100 dark:bg-red-900/30' : (isDiscount ? 'text-purple-500 bg-purple-100 dark:bg-purple-900/30' : 'text-green-600 bg-green-100 dark:bg-green-900/30');
-                  amountColor = isVoid ? 'text-red-500' : (isDiscount ? 'text-purple-500' : 'text-green-600 dark:text-green-400');
-                  title = t.studentName || 'Anonymous Payment';
-                  subtitle = t.description || (isDiscount ? 'Fee Concession' : 'General Fees');
-                  badgeText = isVoid ? 'VOIDED' : (isDiscount ? 'DISCOUNT' : (t.method || 'Cash'));
-                  amountPrefix = isVoid ? '' : (isDiscount ? '-' : '+');
-                } else {
-                  Icon = ArrowUpRight;
-                  iconColor = 'text-red-600 bg-red-100 dark:bg-red-900/30';
-                  amountColor = 'text-brand-text';
-                  title = t.category || 'General Expense';
-                  subtitle = t.description || t.details || t.createdBy || '-';
-                  badgeText = 'SCHOOL EXP';
-                  amountPrefix = '-';
-                }
-
-                const dateStr = t.timestamp?.toDate ? t.timestamp.toDate().toLocaleDateString() : new Date(t.timestamp || Date.now()).toLocaleDateString();
+                const { Icon, iconColor, amountColor, title, subtitle, badgeText, amountPrefix, dateStr } = describeTx(t);
 
                 return (
                   <tr key={t.id} className="border-b border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
@@ -286,6 +293,48 @@ export default function FeesTransactions() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Phones: one card per transaction. */}
+      <div className="md:hidden divide-y divide-brand-card-border">
+        {filtered.length === 0 ? (
+          <div className="px-4 py-12 text-center text-brand-text-dim text-sm">No transactions found.</div>
+        ) : filtered.map((t) => {
+          const { Icon, iconColor, amountColor, title, subtitle, badgeText, amountPrefix, dateStr } = describeTx(t);
+          return (
+            <div key={t.id} className="px-4 py-3 flex items-start gap-3">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${iconColor}`}>
+                <Icon size={16} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-medium text-brand-text capitalize text-sm leading-snug">{title}</div>
+                  <div className={`font-bold text-sm whitespace-nowrap ${amountColor}`}>{amountPrefix} ₹ {(Math.abs(t.amount || 0)).toLocaleString()}</div>
+                </div>
+                <div className="text-xs text-brand-text-dim mt-0.5 break-words">{subtitle}</div>
+                <div className="flex items-center gap-2 mt-2 text-xs text-brand-text-dim flex-wrap">
+                  <span className="bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-md border border-brand-card-border font-medium uppercase tracking-wider text-[10px]">{badgeText || '-'}</span>
+                  <span>{dateStr}</span>
+                  <span className="ml-auto flex items-center gap-4 text-sm">
+                  {t.masterType === 'incoming' && (
+                    <button onClick={() => setPreviewTx(t)} className="inline-flex items-center gap-1 py-2.5 -my-2.5 text-brand-primary hover:text-brand-primary-hover font-medium transition-colors">
+                      <ExternalLink size={14} /> View
+                    </button>
+                  )}
+                  {t.masterType === 'outgoing' && (t.attachmentUrl || t.fileUrl) && (
+                    <button 
+                      onClick={() => setPreviewImage({ url: t.attachmentUrl || t.fileUrl, title: t.category || 'Bill' })}
+                      className="inline-flex items-center gap-1 py-2.5 -my-2.5 text-blue-600 dark:text-blue-400 hover:text-blue-700 font-medium transition-colors"
+                    >
+                      <ExternalLink size={14} /> Bill
+                    </button>
+                  )}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Image Preview Modal */}

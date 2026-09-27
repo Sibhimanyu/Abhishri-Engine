@@ -10,6 +10,14 @@ import { Plus, X, Upload, Wallet, Receipt, ExternalLink, Building2, Trash2, Penc
 import { logAudit } from '../utils/auditLog';
 import imageCompression from 'browser-image-compression';
 
+// Credit/debit and display date for one expense row, shared by the table (wide
+// screens) and the cards (phones).
+function describeExpense(t) {
+  const isCredit = t.type === 'funding';
+  const dateStr = t.timestamp?.toDate ? t.timestamp.toDate().toLocaleDateString() : new Date(t.timestamp || Date.now()).toLocaleDateString();
+  return { isCredit, dateStr };
+}
+
 export default function FeesMyExpenses() {
   const { currentUser } = useAuth();
   const [expenses, setExpenses] = useState([]);
@@ -408,7 +416,7 @@ export default function FeesMyExpenses() {
           </button>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm text-left text-brand-text-dim">
             <thead className="text-xs uppercase bg-brand-bg text-brand-text border-b border-brand-card-border">
               <tr>
@@ -430,8 +438,7 @@ export default function FeesMyExpenses() {
                 </tr>
               ) : (
                 expenses.map((t) => {
-                  const isCredit = t.type === 'funding';
-                  const dateStr = t.timestamp?.toDate ? t.timestamp.toDate().toLocaleDateString() : new Date(t.timestamp || Date.now()).toLocaleDateString();
+                  const { isCredit, dateStr } = describeExpense(t);
                   
                   return (
                     <tr key={t.id} className="border-b border-brand-card-border hover:bg-black/5 dark:bg-white/5 transition-colors">
@@ -499,6 +506,76 @@ export default function FeesMyExpenses() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Phones: one card per expense. */}
+        <div className="md:hidden divide-y divide-brand-card-border">
+          {expenses.length === 0 ? (
+            <div className="px-4 py-8 text-center text-brand-text-dim text-sm">You haven't logged any expenses yet.</div>
+          ) : expenses.map((t) => {
+            const { isCredit, dateStr } = describeExpense(t);
+            return (
+              <div key={t.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-bold text-brand-text text-sm break-words">{t.details || t.category}</div>
+                    {t.source === 'office' && <div className="text-xs text-brand-text-dim opacity-70">Logged for School</div>}
+                  </div>
+                  <div className={`font-bold text-sm whitespace-nowrap ${isCredit ? 'text-green-500' : 'text-brand-text'}`}>
+                    {isCredit ? '+' : '-'} ₹{(t.amount || 0).toLocaleString()}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2 text-xs text-brand-text-dim flex-wrap">
+                  <span className="bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-md border border-brand-card-border font-medium uppercase tracking-wider text-[10px] break-words">
+                    {t.category || '-'}
+                  </span>
+                  {t.source === 'staff_wallet' ? (
+                    <span className="inline-flex items-center gap-1 text-brand-secondary font-medium"><Wallet size={12}/> Wallet</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-brand-primary font-medium"><Building2 size={12}/> School</span>
+                  )}
+                  <span>{dateStr}</span>
+                </div>
+                {(t.attachmentUrl || t.createdBy === email) && (
+                  <div className="flex items-center gap-2 mt-2">
+                    {t.attachmentUrl && (
+                      <button 
+                        onClick={() => setPreviewImage({ url: t.attachmentUrl, title: t.details || t.category || 'Receipt' })}
+                        className="min-h-10 px-3 inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 font-medium border border-brand-card-border rounded-md transition-colors"
+                      >
+                        <ExternalLink size={14} /> Receipt
+                      </button>
+                    )}
+                    {t.createdBy === email && (
+                      <>
+                        <button
+                          onClick={() => handleOpenEdit(t)}
+                          disabled={deletingId === t.id}
+                          title="Edit this expense"
+                          className="min-h-10 px-3 inline-flex items-center gap-1 text-sm text-brand-primary hover:text-brand-primary-hover font-medium border border-brand-card-border rounded-md transition-colors disabled:opacity-50"
+                        >
+                          <Pencil size={14} /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExpense(t)}
+                          disabled={deletingId === t.id}
+                          title="Delete this expense"
+                          className="min-h-10 px-3 inline-flex items-center gap-1 text-sm text-red-500 hover:text-red-600 font-medium border border-brand-card-border rounded-md transition-colors disabled:opacity-50"
+                        >
+                          {deletingId === t.id ? (
+                            <div className="w-3.5 h-3.5 border-2 border-red-300 border-t-red-500 rounded-full animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

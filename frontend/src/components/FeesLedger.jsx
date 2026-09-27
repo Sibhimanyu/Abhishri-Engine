@@ -14,6 +14,20 @@ const StudentLedgerViewWrapper = ({ wing }) => {
   return <StudentLedgerView studentId={studentId} wing={wing} onBack={() => navigate('..', { relative: 'path' })} />;
 };
 
+// The status label, shared by the table (wide screens) and the cards (phones).
+function StatusLabel({ student }) {
+  if (student.status === 'unconfigured') {
+    return <span className="inline-flex items-center gap-1 text-brand-text-dim font-medium"><AlertCircle size={16} /> Missing Setup</span>;
+  }
+  if (student.status === 'clear') {
+    return <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400 font-medium"><CheckCircle2 size={16} /> Clear</span>;
+  }
+  if (student.status === 'ahead') {
+    return <span className="inline-flex items-center gap-1 text-brand-secondary font-medium"><CheckCircle2 size={16} /> Ahead</span>;
+  }
+  return <span className="inline-flex items-center gap-1 text-red-500 font-medium"><AlertCircle size={16} /> Due</span>;
+}
+
 export default function FeesLedger({ wing }) {
   const { userData } = useAuth();
   const navigate = useNavigate();
@@ -108,7 +122,7 @@ export default function FeesLedger({ wing }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm text-left text-brand-text-dim">
           <thead className="text-xs uppercase bg-brand-bg text-brand-text border-b border-brand-card-border">
             <tr>
@@ -124,7 +138,7 @@ export default function FeesLedger({ wing }) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan="6" className="px-6 py-8 text-center text-brand-text-dim">
+                <td colSpan="7" className="px-6 py-8 text-center text-brand-text-dim">
                   No students found.
                 </td>
               </tr>
@@ -146,23 +160,7 @@ export default function FeesLedger({ wing }) {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    {student.status === 'unconfigured' ? (
-                      <span className="inline-flex items-center gap-1 text-brand-text-dim font-medium">
-                        <AlertCircle size={16} /> Missing Setup
-                      </span>
-                    ) : student.status === 'clear' ? (
-                      <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400 font-medium">
-                        <CheckCircle2 size={16} /> Clear
-                      </span>
-                    ) : student.status === 'ahead' ? (
-                      <span className="inline-flex items-center gap-1 text-brand-secondary font-medium">
-                        <CheckCircle2 size={16} /> Ahead
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-red-500 font-medium">
-                        <AlertCircle size={16} /> Due
-                      </span>
-                    )}
+                    <StatusLabel student={student} />
                   </td>
                   <td className="px-6 py-4 text-right font-bold text-red-500">{student.dueNow > 0 ? `₹ ${student.dueNow.toLocaleString()}` : '-'}</td>
                   <td className="px-6 py-4 text-right font-bold text-brand-secondary">{student.aheadBy > 0 ? `₹ ${student.aheadBy.toLocaleString()}` : '-'}</td>
@@ -181,6 +179,42 @@ export default function FeesLedger({ wing }) {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Phones: one card per student; tap it to open their ledger. */}
+      <div className="md:hidden divide-y divide-brand-card-border">
+        {filtered.length === 0 ? (
+          <div className="px-4 py-8 text-center text-brand-text-dim text-sm">No students found.</div>
+        ) : filtered.map(student => (
+          <button
+            key={student.id}
+            type="button"
+            onClick={() => navigate(student.id)}
+            className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-brand-text text-sm">{student.name}</span>
+                {student.discontinued && (
+                  <span title="Discontinued" className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-bold bg-amber-500/15 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                    <CircleSlash2 size={11} /> Left
+                  </span>
+                )}
+              </div>
+              <div className="text-sm mt-1"><StatusLabel student={student} /></div>
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-xs text-brand-text-dim">
+                {student.aheadBy > 0 && <span>Ahead <b className="text-brand-secondary">₹ {student.aheadBy.toLocaleString()}</b></span>}
+                {student.discount > 0 && <span>Discount ₹ {student.discount.toLocaleString()}</span>}
+                <span>Year left ₹ {student.annualRemaining.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              {student.dueNow > 0 && <div className="font-bold text-red-500 text-sm">₹ {student.dueNow.toLocaleString()}</div>}
+              {student.dueNow > 0 && <div className="text-[10px] uppercase tracking-wide text-brand-text-dim">due now</div>}
+            </div>
+            <ChevronRight size={18} className="text-brand-text-dim shrink-0" />
+          </button>
+        ))}
       </div>
     </div>
       } />

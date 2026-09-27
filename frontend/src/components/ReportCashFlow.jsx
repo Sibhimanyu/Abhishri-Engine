@@ -29,6 +29,22 @@ const SOURCE_OPTIONS = [
   { id: 'staff_wallet', label: 'Staff wallet' }
 ];
 
+// One period's display strings and colours, shared by the ledger table (wide screens)
+// and the per-period cards (phones). Idle periods show dashes instead of zeros.
+function formatPeriod(p) {
+  const idle = !p.income && !p.expense;
+  return {
+    idle,
+    inText: p.income ? INR(p.income) : '—',
+    outText: p.expense ? INR(p.expense) : '—',
+    netText: idle ? '—' : INR(p.net),
+    marginText: p.income ? fmtPct(p.margin) : '—',
+    runningText: INR(p.running),
+    netClass: p.net < 0 ? 'text-red-500' : 'text-brand-text',
+    runningClass: p.running < 0 ? 'text-red-500' : 'text-brand-text'
+  };
+}
+
 /**
  * Cash flow — collections against expenses over the same timeline, bucket by bucket.
  *
@@ -241,7 +257,8 @@ export default function ReportCashFlow({ data }) {
         {periods.length === 0 ? (
           <EmptyState title="No periods in range" />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-[10px] uppercase tracking-wider bg-brand-bg text-brand-text-dim border-b border-brand-card-border">
                 <tr>
@@ -254,16 +271,19 @@ export default function ReportCashFlow({ data }) {
                 </tr>
               </thead>
               <tbody>
-                {periods.map(p => (
-                  <tr key={p.key} className={`border-b border-brand-card-border transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03] ${!p.income && !p.expense ? 'opacity-50' : ''}`}>
-                    <td className="px-4 md:px-6 py-3 font-medium text-brand-text whitespace-nowrap">{p.label}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-green-600 dark:text-green-400 font-medium">{p.income ? INR(p.income) : '—'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-red-500 font-medium">{p.expense ? INR(p.expense) : '—'}</td>
-                    <td className={`px-4 py-3 text-right tabular-nums font-bold ${p.net < 0 ? 'text-red-500' : 'text-brand-text'}`}>{p.income || p.expense ? INR(p.net) : '—'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-brand-text-dim text-xs">{p.income ? fmtPct(p.margin) : '—'}</td>
-                    <td className={`px-4 md:px-6 py-3 text-right tabular-nums font-bold ${p.running < 0 ? 'text-red-500' : 'text-brand-text'}`}>{INR(p.running)}</td>
-                  </tr>
-                ))}
+                {periods.map(p => {
+                  const { idle, inText, outText, netText, marginText, runningText, netClass, runningClass } = formatPeriod(p);
+                  return (
+                    <tr key={p.key} className={`border-b border-brand-card-border transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03] ${idle ? 'opacity-50' : ''}`}>
+                      <td className="px-4 md:px-6 py-3 font-medium text-brand-text whitespace-nowrap">{p.label}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-green-600 dark:text-green-400 font-medium">{inText}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-red-500 font-medium">{outText}</td>
+                      <td className={`px-4 py-3 text-right tabular-nums font-bold ${netClass}`}>{netText}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-brand-text-dim text-xs">{marginText}</td>
+                      <td className={`px-4 md:px-6 py-3 text-right tabular-nums font-bold ${runningClass}`}>{runningText}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="bg-brand-bg border-t-2 border-brand-card-border font-black text-brand-text">
@@ -277,6 +297,46 @@ export default function ReportCashFlow({ data }) {
               </tfoot>
             </table>
           </div>
+
+          {/* Phones: one card per period, the figures as label/value rows, then the total. */}
+          <div className="md:hidden divide-y divide-brand-card-border">
+            {periods.map(p => {
+              const { idle, inText, outText, netText, marginText, runningText, netClass, runningClass } = formatPeriod(p);
+              return (
+                <div key={p.key} className={`px-4 py-3 ${idle ? 'opacity-50' : ''}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="font-medium text-brand-text text-sm min-w-0 break-words">{p.label}</div>
+                    <div className={`font-bold text-sm tabular-nums whitespace-nowrap ${netClass}`}>{netText}</div>
+                  </div>
+                  <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+                    <dt className="text-brand-text-dim">Money in</dt>
+                    <dd className="text-right tabular-nums text-green-600 dark:text-green-400 font-medium">{inText}</dd>
+                    <dt className="text-brand-text-dim">Money out</dt>
+                    <dd className="text-right tabular-nums text-red-500 font-medium">{outText}</dd>
+                    <dt className="text-brand-text-dim">Margin</dt>
+                    <dd className="text-right tabular-nums text-brand-text-dim">{marginText}</dd>
+                    <dt className="text-brand-text-dim">Running net</dt>
+                    <dd className={`text-right tabular-nums font-bold ${runningClass}`}>{runningText}</dd>
+                  </dl>
+                </div>
+              );
+            })}
+            <div className="px-4 py-3 bg-brand-bg border-t-2 border-brand-card-border">
+              <div className="flex items-start justify-between gap-3 font-black text-brand-text text-sm">
+                <div>Total</div>
+                <div className={`tabular-nums whitespace-nowrap ${now.net < 0 ? 'text-red-500' : ''}`}>{INR(now.net)}</div>
+              </div>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs font-bold">
+                <dt className="text-brand-text-dim">Money in</dt>
+                <dd className="text-right tabular-nums text-green-600 dark:text-green-400">{INR(now.inTotal)}</dd>
+                <dt className="text-brand-text-dim">Money out</dt>
+                <dd className="text-right tabular-nums text-red-500">{INR(now.outTotal)}</dd>
+                <dt className="text-brand-text-dim">Margin</dt>
+                <dd className="text-right tabular-nums text-brand-text">{now.inTotal ? fmtPct(now.margin) : '—'}</dd>
+              </dl>
+            </div>
+          </div>
+          </>
         )}
       </SectionCard>
     </div>

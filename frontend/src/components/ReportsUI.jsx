@@ -407,7 +407,8 @@ export function BreakdownTable({ groups, total, labelHeader = 'Group', onRowClic
   if (!groups.length) return <EmptyState title="No data to break down" />;
 
   return (
-    <div className="overflow-x-auto">
+    <>
+    <div className="hidden md:block print:block overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="text-[10px] uppercase tracking-wider bg-brand-bg text-brand-text-dim border-b border-brand-card-border">
           <tr>
@@ -457,11 +458,70 @@ export function BreakdownTable({ groups, total, labelHeader = 'Group', onRowClic
         </tbody>
       </table>
     </div>
+
+    {/* Phones: one card per group; tapping still drills down like the table row. */}
+    <div className="md:hidden print:hidden divide-y divide-brand-card-border border-b border-brand-card-border">
+      {shown.map((g, i) => {
+        const share = pct(Math.abs(g.total), Math.abs(total));
+        const active = activeKey === g.key;
+        const Row = onRowClick ? 'button' : 'div';
+        return (
+          <Row
+            key={g.key}
+            type={onRowClick ? 'button' : undefined}
+            onClick={onRowClick ? () => onRowClick(active ? null : g.key) : undefined}
+            className={`w-full text-left px-4 py-3 block transition-colors ${active ? 'bg-brand-primary/5' : onRowClick ? 'active:bg-black/[0.03] dark:active:bg-white/[0.03]' : ''}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: colorAt(i) }} />
+                <span className="font-medium text-brand-text text-sm break-words min-w-0">{g.label}</span>
+              </div>
+              <span className={`font-bold text-sm tabular-nums whitespace-nowrap ${g.total < 0 ? 'text-red-500' : 'text-brand-text'}`}>{INR(g.total)}</span>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs text-brand-text-dim tabular-nums whitespace-nowrap">{g.count} {g.count === 1 ? 'entry' : 'entries'}</span>
+              <div className="flex-1 h-1.5 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${Math.min(share, 100)}%`, backgroundColor: colorAt(i) }} />
+              </div>
+              <span className="text-xs font-bold text-brand-text-dim w-11 text-right tabular-nums">{share.toFixed(1)}%</span>
+            </div>
+          </Row>
+        );
+      })}
+      {rest.length > 0 && (
+        <div className="px-4 py-3 flex items-start justify-between gap-3 text-brand-text-dim text-sm">
+          <div className="min-w-0">
+            <div className="italic">+ {rest.length} more</div>
+            <div className="text-xs tabular-nums mt-0.5">{restCount} {restCount === 1 ? 'entry' : 'entries'} · {pct(Math.abs(restTotal), Math.abs(total)).toFixed(1)}%</div>
+          </div>
+          <span className="font-bold tabular-nums whitespace-nowrap">{INR(restTotal)}</span>
+        </div>
+      )}
+    </div>
+    </>
   );
+}
+
+// One cell's content, shared by the table (wide screens) and the cards (phones).
+const cellContent = (c, r) => (c.render ? c.render(r) : r[c.key]);
+
+// Which columns lead a phone card: the title is the column flagged `primary`, else the
+// one styled as primary text (`cellClass: 'text-brand-text'`), else the first; the
+// headline figure is `amount`, else the first right-aligned column. The rest become
+// small label/value pairs under them.
+function cardLayout(columns) {
+  const title = columns.find(c => c.primary)
+    || columns.find(c => /(^|\s)text-brand-text(\s|$)/.test(c.cellClass || ''))
+    || columns[0];
+  const figure = columns.find(c => c !== title && c.key === 'amount')
+    || columns.find(c => c !== title && c.align === 'right');
+  return { title, figure, details: columns.filter(c => c !== title && c !== figure) };
 }
 
 /**
  * Sortable, paginated detail grid. `columns` = [{ key, header, align, width, render, sortValue }].
+ * Phones get stacked cards (see cardLayout) with a sort picker standing in for the headers.
  */
 export function DataTable({ columns, rows, pageSize = 25, emptyTitle = 'No entries match these filters', emptyHint, rowKey = (r) => r.id }) {
   const [sort, setSort] = useState({ key: null, dir: 'desc' });
@@ -499,10 +559,12 @@ export function DataTable({ columns, rows, pageSize = 25, emptyTitle = 'No entri
   if (!rows.length) return <EmptyState title={emptyTitle} hint={emptyHint} />;
 
   const toggleSort = (key) => setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+  const sortableColumns = columns.filter(c => c.sortable !== false);
+  const card = cardLayout(columns);
 
   return (
     <>
-      <div className="overflow-x-auto">
+      <div className="hidden md:block print:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-[10px] uppercase tracking-wider bg-brand-bg text-brand-text-dim border-b border-brand-card-border">
             <tr>
@@ -530,7 +592,7 @@ export function DataTable({ columns, rows, pageSize = 25, emptyTitle = 'No entri
               <tr key={rowKey(r)} className="border-b border-brand-card-border hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors">
                 {columns.map(c => (
                   <td key={c.key} className={`px-4 py-3 ${c.align === 'right' ? 'text-right' : 'text-left'} ${c.cellClass || 'text-brand-text-dim'}`}>
-                    {c.render ? c.render(r) : r[c.key]}
+                    {cellContent(c, r)}
                   </td>
                 ))}
               </tr>
@@ -539,17 +601,65 @@ export function DataTable({ columns, rows, pageSize = 25, emptyTitle = 'No entri
         </table>
       </div>
 
+      {/* Phones: sort picker + one card per row. */}
+      <div className="md:hidden print:hidden">
+        {sortableColumns.length > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-brand-card-border bg-brand-bg">
+            <span className="text-[10px] uppercase tracking-wider font-bold text-brand-text-dim shrink-0">Sort</span>
+            <select
+              value={sort.key || ''}
+              onChange={e => setSort(s => ({ key: e.target.value || null, dir: s.dir }))}
+              className="flex-1 min-w-0 h-10 px-2 rounded-md border border-brand-card-border bg-brand-card text-sm text-brand-text"
+            >
+              <option value="">Default order</option>
+              {sortableColumns.map(c => <option key={c.key} value={c.key}>{c.header}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={() => setSort(s => ({ ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' }))}
+              disabled={!sort.key}
+              aria-label={sort.dir === 'asc' ? 'Sorted ascending' : 'Sorted descending'}
+              className="w-10 h-10 shrink-0 flex items-center justify-center rounded-md border border-brand-card-border text-brand-text-dim hover:text-brand-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              {sort.dir === 'asc' ? <ArrowUp size={15} /> : <ArrowDown size={15} />}
+            </button>
+          </div>
+        )}
+        <div className="divide-y divide-brand-card-border border-b border-brand-card-border">
+          {slice.map(r => (
+            <div key={rowKey(r)} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className={`min-w-0 break-words text-sm ${card.title.cellClass || 'text-brand-text'}`}>{cellContent(card.title, r)}</div>
+                {card.figure && (
+                  <div className={`text-sm text-right whitespace-nowrap shrink-0 ${card.figure.cellClass || 'text-brand-text-dim'}`}>{cellContent(card.figure, r)}</div>
+                )}
+              </div>
+              {card.details.length > 0 && (
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
+                  {card.details.map(c => (
+                    <div key={c.key} className="min-w-0">
+                      <dt className="text-[10px] uppercase tracking-wider font-bold text-brand-text-dim">{c.header}</dt>
+                      <dd className={`text-xs mt-0.5 break-words [&_*]:max-w-full [&_*]:text-left ${c.cellClass || 'text-brand-text-dim'}`}>{cellContent(c, r)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {sorted.length > pageSize && (
         <div className="flex items-center justify-between gap-4 px-4 md:px-6 py-3 border-t border-brand-card-border bg-black/[0.02] dark:bg-white/[0.02]">
           <p className="text-xs text-brand-text-dim">
             Showing <span className="font-bold text-brand-text">{safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, sorted.length)}</span> of {sorted.length}
           </p>
           <div className="flex items-center gap-1">
-            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0} className="p-1.5 rounded-md border border-brand-card-border text-brand-text-dim hover:text-brand-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0} className="p-2.5 md:p-1.5 rounded-md border border-brand-card-border text-brand-text-dim hover:text-brand-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
               <ChevronLeft size={15} />
             </button>
             <span className="text-xs font-bold text-brand-text px-2 tabular-nums">{safePage + 1} / {pageCount}</span>
-            <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} className="p-1.5 rounded-md border border-brand-card-border text-brand-text-dim hover:text-brand-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+            <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1} className="p-2.5 md:p-1.5 rounded-md border border-brand-card-border text-brand-text-dim hover:text-brand-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
               <ChevronRight size={15} />
             </button>
           </div>

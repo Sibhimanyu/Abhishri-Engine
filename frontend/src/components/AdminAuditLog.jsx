@@ -108,7 +108,7 @@ export default function AdminAuditLog() {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm text-left text-brand-text-dim">
             <thead className="text-xs uppercase bg-brand-bg text-brand-text border-b border-brand-card-border">
               <tr>
@@ -160,6 +160,35 @@ export default function AdminAuditLog() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Phones: one card per log entry. */}
+        <div className="md:hidden divide-y divide-brand-card-border">
+          {filteredLogs.length === 0 ? (
+            <div className="px-4 py-8 text-center text-brand-text-dim text-sm">No audit log entries match your filters.</div>
+          ) : filteredLogs.map((l) => (
+            <div key={l.id} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="font-medium text-brand-text text-sm leading-snug min-w-0 break-words">{l.targetName || l.targetId || '-'}</div>
+                <span className="shrink-0 max-w-[50%] break-words text-right bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-md border border-brand-card-border font-medium text-[10px] uppercase tracking-wider text-brand-text">
+                  {l.action || 'UNKNOWN'}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-brand-text-dim min-w-0">
+                {l.module && <span className="inline-flex items-center gap-1.5"><LayoutGrid size={12} /> {l.module}</span>}
+                <span className="inline-flex items-center gap-1.5 min-w-0 break-all"><User size={12} className="shrink-0" /> {l.performedBy || 'unknown'}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 mt-1 text-xs text-brand-text-dim">
+                <span className="inline-flex items-center gap-1.5"><Clock size={12} /> {formatTimestamp(l.timestamp)}</span>
+                <button
+                  onClick={() => setSelectedLog(l)}
+                  className="min-h-[40px] shrink-0 inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 font-medium transition-colors"
+                >
+                  <Tag size={14} /> View
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

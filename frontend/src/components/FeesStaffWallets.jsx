@@ -218,7 +218,7 @@ export default function FeesStaffWallets() {
       </div>
 
       <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm text-left text-brand-text-dim">
             <thead className="text-xs uppercase bg-black/5 dark:bg-white/5 text-brand-text">
               <tr>
@@ -273,6 +273,46 @@ export default function FeesStaffWallets() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Phones: one card per staff wallet. */}
+        <div className="md:hidden divide-y divide-brand-card-border">
+          {filteredStaff.length === 0 ? (
+            <div className="px-4 py-12 text-center text-brand-text-dim text-sm">No staff wallets found.</div>
+          ) : filteredStaff.map((s) => {
+            const totals = getStaffWalletTotals(s.id);
+            return (
+              <div key={s.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-bold text-brand-text text-sm break-words">{s.name}</div>
+                    <div className="text-xs text-brand-text-dim break-words">{s.designation || 'N/A'}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className={`font-black text-sm ${totals.balance >= 0 ? 'text-green-600 dark:text-green-500' : 'text-brand-primary'}`}>
+                      ₹{totals.balance.toLocaleString('en-IN')}
+                    </div>
+                    <div className="text-[10px] uppercase text-brand-text-dim">Balance</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-1 text-xs text-brand-text-dim flex-wrap">
+                  <span>Credits <span className="text-green-600 dark:text-green-500 font-medium">₹{totals.credits.toLocaleString('en-IN')}</span></span>
+                  <span>Expenses <span className="text-brand-primary font-medium">₹{totals.debits.toLocaleString('en-IN')}</span></span>
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => { setSelectedStaff(s.id); setShowModal('credit'); }} className="flex-1 min-h-10 inline-flex items-center justify-center gap-1.5 text-xs font-medium text-brand-secondary border border-brand-card-border hover:bg-brand-secondary/10 rounded-md transition-colors" title="Add Credit">
+                    <ArrowUpCircle size={16} /> Credit
+                  </button>
+                  <button onClick={() => { setSelectedStaff(s.id); setShowModal('debit'); }} className="flex-1 min-h-10 inline-flex items-center justify-center gap-1.5 text-xs font-medium text-brand-primary border border-brand-card-border hover:bg-brand-primary/10 rounded-md transition-colors" title="Log Expense">
+                    <ArrowDownCircle size={16} /> Expense
+                  </button>
+                  <button onClick={() => { setSelectedStaff(s.id); setShowModal('statement'); }} className="flex-1 min-h-10 inline-flex items-center justify-center gap-1.5 text-xs font-medium text-brand-text-dim border border-brand-card-border hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 rounded-md transition-colors" title="View Statement">
+                    <FileText size={16} /> Statement
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
