@@ -1,6 +1,7 @@
 import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { getDoc } from '../utils/firestoreRead';
 import { firestore } from '../firebase';
 import { ArrowLeft, Edit3, MapPin, Phone, Mail, User, Briefcase, HeartPulse, DollarSign, Wallet, Save, X, Calendar, Trash2, Loader, Star } from 'lucide-react';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';

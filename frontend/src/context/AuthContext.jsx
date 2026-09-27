@@ -3,6 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, firestore } from '../firebase';
 import { writeSessionHint } from '../utils/sessionHint';
+import { getDoc as readDoc } from '../utils/firestoreRead';
 
 const AuthContext = createContext();
 
@@ -46,8 +47,10 @@ export function AuthProvider({ children }) {
                 const role = data.role || 'staff';
                 
                 if (data.isAdmin || role === 'admin') {
-                  const rolesToSeed = ['teacher', 'pro', 'staff'];
-                  for (const r of rolesToSeed) {
+                  // Background, in parallel: awaiting three server reads here held every
+                  // admin on the splash screen for seconds on each load. Reads the server
+                  // (not readDoc's cache fallback) so a stale cache can't overwrite a group.
+                  Promise.all(['teacher', 'pro', 'staff'].map(async (r) => {
                     const rRef = doc(firestore, 'permission_groups', r);
                     const rSnap = await getDoc(rRef);
                     if (!rSnap.exists()) {
@@ -70,7 +73,7 @@ export function AuthProvider({ children }) {
                         }
                       });
                     }
-                  }
+                  })).catch(err => console.warn('Failed to seed permission groups', err));
                 }
 
                 // Fetch dynamic permissions
@@ -78,7 +81,7 @@ export function AuthProvider({ children }) {
                 if (data.isAdmin || role === 'admin') {
                   dynamicPerms = true;
                 } else {
-                  const roleDoc = await getDoc(doc(firestore, 'permission_groups', role));
+                  const roleDoc = await readDoc(doc(firestore, 'permission_groups', role));
                   if (roleDoc.exists()) {
                     dynamicPerms = roleDoc.data().permissions || {};
                   } else {
@@ -106,7 +109,7 @@ export function AuthProvider({ children }) {
                 // UID doc doesn't exist yet. Fallback to email or student check.
                 if (user.email) {
                   const emailRef = doc(firestore, 'allowed_users', user.email.toLowerCase());
-                  const emailSnap = await getDoc(emailRef);
+                  const emailSnap = await readDoc(emailRef);
                   
                   if (emailSnap.exists()) {
                     const data = emailSnap.data();
@@ -116,7 +119,7 @@ export function AuthProvider({ children }) {
                     if (data.isAdmin || role === 'admin') {
                       dynamicPerms = true;
                     } else {
-                      const roleDoc = await getDoc(doc(firestore, 'permission_groups', role));
+                      const roleDoc = await readDoc(doc(firestore, 'permission_groups', role));
                       if (roleDoc.exists()) {
                         dynamicPerms = roleDoc.data().permissions || {};
                       } else {

@@ -1,6 +1,7 @@
 import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { getDoc } from '../utils/firestoreRead';
 import { httpsCallable } from 'firebase/functions';
 import { firestore, functions } from '../firebase';
 import { useAuth } from '../context/AuthContext';

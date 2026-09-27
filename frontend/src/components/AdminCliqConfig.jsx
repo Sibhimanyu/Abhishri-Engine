@@ -1,6 +1,7 @@
 import { CenteredSpinner } from './Spinner';
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
+import { getDoc } from '../utils/firestoreRead';
 import { httpsCallable } from 'firebase/functions';
 import { firestore, functions } from '../firebase';
 import { CheckCircle, AlertCircle, Save, Send, Loader2, Copy, KeyRound } from 'lucide-react';
