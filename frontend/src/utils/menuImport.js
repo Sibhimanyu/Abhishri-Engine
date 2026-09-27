@@ -16,8 +16,8 @@ export const MENU_PROMPT = `Convert the weekly food menu I give you into JSON wi
       "holiday": "",
       "morningDrink": [{ "name": "Item", "description": "", "translation": "" }],
       "lunch": [
-        { "name": "Main item", "description": "", "translation": "" },
-        { "name": "Side item", "description": "", "translation": "" }
+        { "name": "Item", "description": "", "translation": "" },
+        { "name": "Item", "description": "", "translation": "" }
       ],
       "eveningSnack": [{ "name": "Item", "description": "", "translation": "" }]
     },
@@ -33,7 +33,7 @@ Format rules:
 - Every day has the keys "holiday", "morningDrink", "lunch" and "eveningSnack".
 - "holiday" is "" on a normal day. If the menu marks the day as a holiday, set it to the holiday's name (or "Holiday" if no name is given) and use [] for the three meals.
 - "morningDrink", "lunch" and "eveningSnack" are each a list of items. Each item has "name", "description" and "translation".
-- The first item in a list is the main item. Any further items are side items.
+- Put each item in its own entry, in the order the menu lists them. All items in a list are equal.
 - "name" is the item's English name.
 - "description" is the short English line shown under an item's name.
 - "translation" is the item's Tamil name. If the menu lists the Tamil names after the English ones, match them to the English items in the same order.

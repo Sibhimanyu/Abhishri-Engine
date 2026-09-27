@@ -139,31 +139,20 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
                     {d.holidayNote && <div style={{ fontWeight: 600, fontSize: 17, color: POSTER.inkDim, marginTop: 8 }}>{d.holidayNote}</div>}
                   </div>
                 ) : SLOTS.map(slot => {
-                  const [main, ...sides] = (d[slot.key] || []).filter(hasText);
+                  // Every item in a cell is equal: English names on one comma-separated line,
+                  // any descriptions under them, then the Tamil names in the same order.
+                  const items = (d[slot.key] || []).filter(hasText);
+                  const join = (field) => items.map(it => it[field]?.trim()).filter(Boolean).join(', ');
+                  const [names, descriptions, tamil] = [join('name'), join('description'), join('translation')];
                   return (
                     <div key={slot.key} style={{ background: '#ffffff', borderRadius: 16, minHeight: 128, padding: '18px 22px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                      {!main ? (
+                      {!items.length ? (
                         <span style={{ color: '#B8B0A5', fontSize: 20 }}>—</span>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 800, fontSize: 21, lineHeight: 1.2 }}>{main.name}</div>
-                          {main.description && <div style={{ fontWeight: 500, fontSize: 15.5, color: POSTER.inkDim, marginTop: 6 }}>{main.description}</div>}
-                          {sides.map((it, i) => (
-                            <div key={i} style={{ fontWeight: 500, fontSize: 15.5, color: POSTER.inkDim, marginTop: 6 }}>
-                              <span style={{ color: POSTER.coral, fontWeight: 800, marginRight: 6 }}>+</span>
-                              {it.name}{it.description ? ` · ${it.description}` : ''}
-                            </div>
-                          ))}
-                          {[main, ...sides].some(it => it.translation?.trim()) && (
-                            <div style={{ fontFamily: TAMIL_FONT, fontSize: 14.5, lineHeight: 1.45, color: POSTER.deepTeal, marginTop: 10 }}>
-                              {[main, ...sides].map((it, i) => it.translation?.trim() && (
-                                <div key={i} style={{ fontWeight: i === 0 ? 600 : 500 }}>
-                                  {i > 0 && <span style={{ color: POSTER.coral, fontWeight: 800, marginRight: 6 }}>+</span>}
-                                  {it.translation}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          {names && <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1.25 }}>{names}</div>}
+                          {descriptions && <div style={{ fontWeight: 500, fontSize: 15.5, color: POSTER.inkDim, marginTop: 6 }}>{descriptions}</div>}
+                          {tamil && <div style={{ fontFamily: TAMIL_FONT, fontWeight: 600, fontSize: 15, lineHeight: 1.45, color: POSTER.deepTeal, marginTop: names || descriptions ? 8 : 0 }}>{tamil}</div>}
                         </>
                       )}
                     </div>
@@ -625,7 +614,7 @@ export default function WeeklyMenu() {
                               <input
                                 value={item.name}
                                 onChange={(e) => updateItem(dayIdx, slot.key, itemIdx, 'name', e.target.value)}
-                                placeholder={itemIdx === 0 ? 'Main item' : 'Side item (shown as + …)'}
+                                placeholder="Item name"
                                 className="min-w-0 bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
                               />
                               <input
