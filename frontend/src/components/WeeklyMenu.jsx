@@ -5,7 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
 import { toPng } from 'html-to-image';
 import { saveFile } from '../utils/native';
-import { Coffee, UtensilsCrossed, Apple, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2 } from 'lucide-react';
+import { MENU_PROMPT, MENU_SLOTS, parseMenuText } from '../utils/menuImport';
+import { Coffee, UtensilsCrossed, Apple, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste, Copy, Check } from 'lucide-react';
 
 // Fixed brand palette for the exported image — literal hex, not the app's CSS variables,
 // so the PNG always renders the same regardless of the admin panel's light/dark mode.
@@ -22,12 +23,14 @@ const BRAND = {
   border: '#E7E2D8',
 };
 
+// `tint` is the pastel used in the exported image and the light-mode editor; the pastels
+// glare on the dark admin panel, so the dark-mode editor uses `darkTint` (same hue, low alpha).
 const DAY_THEMES = [
-  { key: 'monday', day: 'MONDAY', emoji: '⭐', tint: '#FDEEEC' },
-  { key: 'tuesday', day: 'TUESDAY', emoji: '🍉', tint: '#FDF3E3' },
-  { key: 'wednesday', day: 'WEDNESDAY', emoji: '🌸', tint: '#FCE9F3' },
-  { key: 'thursday', day: 'THURSDAY', emoji: '🌿', tint: '#EAF6EA' },
-  { key: 'friday', day: 'FRIDAY', emoji: '🌴', tint: '#E9F5F5' },
+  { key: 'monday', day: 'MONDAY', emoji: '⭐', tint: '#FDEEEC', darkTint: '#F1615B29' },
+  { key: 'tuesday', day: 'TUESDAY', emoji: '🍉', tint: '#FDF3E3', darkTint: '#F5A52429' },
+  { key: 'wednesday', day: 'WEDNESDAY', emoji: '🌸', tint: '#FCE9F3', darkTint: '#E879B929' },
+  { key: 'thursday', day: 'THURSDAY', emoji: '🌿', tint: '#EAF6EA', darkTint: '#4CAF5029' },
+  { key: 'friday', day: 'FRIDAY', emoji: '🌴', tint: '#E9F5F5', darkTint: '#3BB3B329' },
 ];
 
 const SLOTS = [
@@ -62,7 +65,13 @@ export default function WeeklyMenu() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showLoadPanel, setShowLoadPanel] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importError, setImportError] = useState('');
+  const [importWarnings, setImportWarnings] = useState([]);
+  const [promptCopied, setPromptCopied] = useState(false);
   const previewRef = useRef(null);
+  const promptRef = useRef(null);
 
   useEffect(() => {
     const q = query(collection(firestore, 'weekly_menus'), orderBy('updatedAt', 'desc'));
@@ -114,6 +123,7 @@ export default function WeeklyMenu() {
   const handleNew = () => {
     setActiveMenuId(null);
     setMenu(emptyMenu());
+    setImportWarnings([]);
     setShowLoadPanel(false);
   };
 
@@ -123,6 +133,58 @@ export default function WeeklyMenu() {
       weekLabel: saved.weekLabel || '',
       days: (saved.days && saved.days.length === DAY_THEMES.length) ? saved.days : emptyMenu().days
     });
+    setImportWarnings([]);
+    setShowLoadPanel(false);
+  };
+
+  const openImport = () => {
+    setImportText('');
+    setImportError('');
+    setPromptCopied(false);
+    setShowImport(true);
+  };
+
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(MENU_PROMPT);
+    } catch {
+      // Older WKWebViews lack the async clipboard API; fall back to selecting the text.
+      promptRef.current?.select();
+      if (!document.execCommand('copy')) {
+        alert('Could not copy automatically. Select the instructions and copy them manually.');
+        return;
+      }
+    }
+    setPromptCopied(true);
+    setTimeout(() => setPromptCopied(false), 2000);
+  };
+
+  const handleImport = () => {
+    let parsed;
+    try {
+      parsed = parseMenuText(importText);
+    } catch (err) {
+      setImportError(err.message);
+      return;
+    }
+    const hasContent = menu.days.some(d => MENU_SLOTS.some(s => d[s].some(it => it.name.trim() || it.translation.trim())));
+    if (hasContent && !window.confirm('Replace the menu currently in the editor with the pasted one?')) return;
+
+    // Imported menus always start as a new, unsaved menu so a loaded one is never overwritten by accident.
+    setActiveMenuId(null);
+    setMenu({
+      weekLabel: parsed.weekLabel || menu.weekLabel,
+      days: DAY_THEMES.map(theme => {
+        const day = parsed.days[theme.key];
+        return {
+          day: theme.day,
+          emoji: theme.emoji,
+          ...Object.fromEntries(MENU_SLOTS.map(s => [s, day[s].length ? day[s] : [emptyItem()]])),
+        };
+      }),
+    });
+    setImportWarnings(parsed.warnings);
+    setShowImport(false);
     setShowLoadPanel(false);
   };
 
@@ -215,6 +277,12 @@ export default function WeeklyMenu() {
             <FolderOpen size={16} /> Load
           </button>
           <button
+            onClick={openImport}
+            className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+          >
+            <ClipboardPaste size={16} /> Import from ChatGPT
+          </button>
+          <button
             onClick={handleNew}
             className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
           >
@@ -236,6 +304,79 @@ export default function WeeklyMenu() {
           </button>
         </div>
       </div>
+
+      {importWarnings.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start justify-between gap-4">
+          <div className="text-sm text-brand-text">
+            <div className="font-bold mb-1">Menu imported. Some parts were missing from the pasted text:</div>
+            <ul className="list-disc pl-5 text-brand-text-dim">
+              {importWarnings.map(w => <li key={w}>{w}</li>)}
+            </ul>
+          </div>
+          <button onClick={() => setImportWarnings([])} className="text-brand-text-dim hover:text-brand-text shrink-0"><X size={18} /></button>
+        </div>
+      )}
+
+      {/* Import from ChatGPT */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-brand-sidebar border border-brand-card-border rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
+            <button onClick={() => setShowImport(false)} className="absolute top-4 right-4 text-brand-text-dim hover:text-brand-text">
+              <X size={20} />
+            </button>
+            <h2 className="text-xl font-bold text-brand-text mb-4">Import from ChatGPT</h2>
+
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <label className="text-xs font-bold text-brand-text-dim uppercase tracking-wider">1. Give ChatGPT these instructions with your menu</label>
+                  <button
+                    onClick={copyPrompt}
+                    className="flex items-center gap-1.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-3 py-1.5 rounded-lg font-medium text-xs transition-colors shrink-0"
+                  >
+                    {promptCopied ? <Check size={14} /> : <Copy size={14} />} {promptCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <textarea
+                  ref={promptRef}
+                  readOnly
+                  value={MENU_PROMPT}
+                  rows={6}
+                  className="w-full bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-xs font-mono text-brand-text-dim focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-2">2. Paste ChatGPT's reply</label>
+                <textarea
+                  value={importText}
+                  onChange={(e) => { setImportText(e.target.value); setImportError(''); }}
+                  rows={8}
+                  placeholder="Paste the whole reply here"
+                  className="w-full bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm font-mono text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+                />
+                {importError && <p className="text-sm text-red-500 mt-2">{importError}</p>}
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowImport(false)}
+                  className="bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleImport}
+                  disabled={!importText.trim()}
+                  className="bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
+                >
+                  Fill Menu
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Load Panel */}
       {showLoadPanel && (
@@ -273,15 +414,18 @@ export default function WeeklyMenu() {
             const theme = DAY_THEMES[dayIdx];
             return (
               <div key={theme.key} className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm overflow-hidden">
-                <div className="p-4 flex items-center gap-3 border-b border-brand-card-border" style={{ background: theme.tint }}>
+                <div
+                  className="p-4 flex items-center gap-3 border-b border-brand-card-border bg-[var(--tint)] dark:bg-[var(--dark-tint)]"
+                  style={{ '--tint': theme.tint, '--dark-tint': theme.darkTint }}
+                >
                   <input
                     value={d.emoji}
                     onChange={(e) => updateEmoji(dayIdx, e.target.value)}
                     maxLength={2}
-                    className="w-10 h-10 text-center text-xl bg-white/70 border border-brand-card-border rounded-lg focus:outline-none focus:border-brand-primary"
+                    className="w-10 h-10 text-center text-xl bg-white/70 dark:bg-black/20 border border-brand-card-border rounded-lg focus:outline-none focus:border-brand-primary"
                     title="Day icon (emoji)"
                   />
-                  <h3 className="font-black tracking-wide" style={{ color: BRAND.ink }}>{d.day}</h3>
+                  <h3 className="font-black tracking-wide text-brand-text">{d.day}</h3>
                 </div>
                 <div className="p-4 space-y-4">
                   {SLOTS.map(slot => {
