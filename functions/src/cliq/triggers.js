@@ -4,12 +4,17 @@
 // - an admin approves it or sends it back, in the app or Cliq  -> DM to that teacher, and
 //   a note in the channel so the other admins see it's handled
 // - someone sends in-app feedback                              -> admins' channel
-// What counts as an event, and the wording, is in shared/cliqMessages.mjs.
+// - someone signs in who isn't set up yet (access request)     -> admins' channel
+// - Tamil birthdays today                                      -> one morning post
+// These match the web app's bell: both follow shared/notifications.mjs. What counts as an
+// event, and the Cliq wording, is in shared/cliqMessages.mjs.
 //
 // Notifications are best-effort: a Cliq failure is logged, never retried or thrown,
 // so it can't hold up or repeat the save that caused it.
 const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 const { resolveAccess } = require("../shared/access");
 const { loadCliqConfig, missingSetting, postToChannel, postToUsers, displayNameOf } = require("./client");
@@ -76,6 +81,61 @@ exports.cliqOnFeedback = onDocumentCreated("feedback/{feedbackId}", async (event
     logger.info(`Cliq: sent feedback/${event.params.feedbackId}`);
   } catch (err) {
     logger.error(`Cliq: failed to send feedback/${event.params.feedbackId}`, err.message);
+  }
+});
+
+// Created on someone's first sign-in attempt; later attempts only update it. If an admin
+// removes the request and they try again, it's created again and posted again.
+exports.cliqOnAccessRequest = onDocumentCreated("unauthorized_logins/{email}", async (event) => {
+  const data = event.data?.data();
+  if (!data) return;
+  const email = String(data.email || event.params.email).toLowerCase();
+  // Same filter as the bell: someone already given access isn't a request.
+  const allowed = await admin.firestore().collection("allowed_users").doc(email).get();
+  if (allowed.exists) return;
+  const cfg = await readyConfig(`access request ${email}`);
+  if (!cfg) return;
+  const { accessRequestMessage } = await messages();
+  try {
+    await postToChannel(cfg, accessRequestMessage({ data: { ...data, email }, appUrl: cfg.appUrl }));
+    logger.info(`Cliq: sent access request for ${email}`);
+  } catch (err) {
+    logger.error(`Cliq: failed to send access request for ${email}`, err.message);
+  }
+});
+
+/** Today's Tamil month and day in Chennai, the same way the web app works it out. */
+async function tamilDateToday() {
+  const { AstroTime, Observer, Body, Equator, Ecliptic } = await import("astronomy-engine");
+  const { tamilSolarDate } = await import("../shared/tamilSolarDate.mjs");
+  const now = new Date();
+  const sun = Equator(Body.Sun, new AstroTime(now), new Observer(13.0827, 80.2707, 0), true, true);
+  return tamilSolarDate(Ecliptic(sun.vec).elon, now);
+}
+
+// One post each morning with the day's Tamil birthdays, the digest of the bell's per-person
+// entries. Nothing is posted on a day without any.
+exports.cliqTamilBirthdays = onSchedule({ schedule: "30 7 * * *", timeZone: "Asia/Kolkata" }, async () => {
+  const cfg = await readyConfig("Tamil birthdays");
+  if (!cfg) return;
+  const today = await tamilDateToday();
+  const db = admin.firestore();
+  const find = async (coll, type) => {
+    const snap = await db.collection(coll).where("tamilMonth", "==", today.tamilMonth).where("tamilDay", "==", today.tamilDay).get();
+    return snap.docs.map((d) => ({ name: d.data().name, type, ...today })).filter((m) => m.name);
+  };
+  const members = [...await find("students", "student"), ...await find("staff", "staff")];
+  const { birthdayDigestMessage } = await messages();
+  const message = birthdayDigestMessage({ members, appUrl: cfg.appUrl });
+  if (!message) {
+    logger.info(`Cliq: no Tamil birthdays on ${today.tamilMonth} ${today.tamilDay}`);
+    return;
+  }
+  try {
+    await postToChannel(cfg, message);
+    logger.info(`Cliq: sent ${members.length} Tamil birthday(s) for ${today.tamilMonth} ${today.tamilDay}`);
+  } catch (err) {
+    logger.error("Cliq: failed to send Tamil birthdays", err.message);
   }
 });
 

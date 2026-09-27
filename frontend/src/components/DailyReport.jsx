@@ -346,7 +346,7 @@ export default function DailyReport() {
     }
     setReviewing(true);
     try {
-      await reviewDocument({ collectionName: 'daily_reports', id: savedReport.id, approve, note, email, auditPrefix: 'DAILY_REPORT', targetName: prettyDate(savedReport.date) });
+      await reviewDocument({ collectionName: 'daily_reports', id: savedReport.id, approve, note, email, reviewerName: userData?.displayName, auditPrefix: 'DAILY_REPORT', targetName: prettyDate(savedReport.date) });
     } catch (err) {
       console.error('Failed to review report:', err);
       alert('Could not save your review. Please try again.');

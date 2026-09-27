@@ -152,6 +152,8 @@ export default function AdminCliqConfig() {
           <li>A teacher sends a menu or daily report for approval: posted in the admins' channel.</li>
           <li>An admin approves it or sends it back: the teacher gets a direct message, with the note.</li>
           <li>Someone sends feedback from the app: posted in the admins' channel.</li>
+          <li>Someone who isn't set up yet signs in (an access request): posted in the admins' channel.</li>
+          <li>Tamil birthdays: one post in the admins' channel at 7:30 each morning.</li>
         </ul>
         <p className="text-xs text-brand-text-dim mt-3">Teachers get direct messages only after they open the bot in Cliq and subscribe to it.</p>
       </div>

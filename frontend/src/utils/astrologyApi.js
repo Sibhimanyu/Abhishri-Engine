@@ -9,10 +9,9 @@ export const TAMIL_NATCHATRAMS = [
   'Poorattadhi', 'Uthirattadhi', 'Revathi'
 ];
 
-export const TAMIL_MONTHS = [
-  'Chithirai', 'Vaikasi', 'Aani', 'Aadi', 'Aavani', 'Purattasi',
-  'Aippasi', 'Karthigai', 'Margazhi', 'Thai', 'Maasi', 'Panguni'
-];
+// The Tamil month/day maths is shared with the Cloud Functions (morning birthday digest).
+import { TAMIL_MONTHS, ayanamsaFor, tamilSolarDate } from '../../../functions/src/shared/tamilSolarDate.mjs';
+export { TAMIL_MONTHS };
 
 export async function calculateNakshatra(dob, time, city) {
   try {
@@ -54,10 +53,7 @@ export async function calculateNakshatra(dob, time, city) {
     const moonEcl = Ecliptic(moonEq.vec);
     const moonTropicalLon = moonEcl.elon;
 
-    // Calculate approximate Lahiri Ayanamsa
-    const yearDecimal = dateObj.getUTCFullYear() + dateObj.getUTCMonth() / 12.0;
-    const ayanamsa = 24.1 + (yearDecimal - 2000) * 0.0139694;
-    
+    const ayanamsa = ayanamsaFor(dateObj);
     const moonSiderealLon = (moonTropicalLon - ayanamsa + 360) % 360;
     const nakshatraIndex = Math.floor(moonSiderealLon / (360 / 27));
     const nakshatra = TAMIL_NATCHATRAMS[nakshatraIndex];
@@ -65,17 +61,7 @@ export async function calculateNakshatra(dob, time, city) {
     // --- Sun Calculation (for Tamil Solar Date) ---
     const sunEq = Equator(Body.Sun, astroTime, observer, true, true);
     const sunEcl = Ecliptic(sunEq.vec);
-    const sunTropicalLon = sunEcl.elon;
-    
-    const sunSiderealLon = (sunTropicalLon - ayanamsa + 360) % 360;
-    const monthIndex = Math.floor(sunSiderealLon / 30);
-    const degreesPassed = sunSiderealLon % 30;
-    
-    // Sun moves ~0.9856 degrees per day. Add 1 for the current day.
-    const approxDay = Math.floor(degreesPassed / 0.98564) + 1;
-    const tamilMonth = TAMIL_MONTHS[monthIndex];
-
-    return { nakshatra, tamilMonth, tamilDay: approxDay.toString() };
+    return { nakshatra, ...tamilSolarDate(sunEcl.elon, dateObj) };
   } catch (error) {
     console.error('Error calculating Nakshatra and Tamil Date:', error);
     return { nakshatra: null, tamilMonth: null, tamilDay: null };
@@ -89,25 +75,8 @@ export function getCurrentTamilDate() {
     // Use an approximate observer for India (Chennai) for current date calculation
     const observer = new Observer(13.0827, 80.2707, 0);
     
-    // Calculate approximate Lahiri Ayanamsa
-    const yearDecimal = dateObj.getUTCFullYear() + dateObj.getUTCMonth() / 12.0;
-    const ayanamsa = 24.1 + (yearDecimal - 2000) * 0.0139694;
-
     const sunEq = Equator(Body.Sun, astroTime, observer, true, true);
-    const sunEcl = Ecliptic(sunEq.vec);
-    const sunTropicalLon = sunEcl.elon;
-    
-    const sunSiderealLon = (sunTropicalLon - ayanamsa + 360) % 360;
-    const monthIndex = Math.floor(sunSiderealLon / 30);
-    const degreesPassed = sunSiderealLon % 30;
-    
-    // Sun moves ~0.9856 degrees per day. Add 1 for the current day.
-    const approxDay = Math.floor(degreesPassed / 0.98564) + 1;
-    
-    return {
-      tamilMonth: TAMIL_MONTHS[monthIndex],
-      tamilDay: approxDay.toString()
-    };
+    return tamilSolarDate(Ecliptic(sunEq.vec).elon, dateObj);
   } catch (error) {
     console.error('Error getting current Tamil date:', error);
     return null;

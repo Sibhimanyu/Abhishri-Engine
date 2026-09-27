@@ -1,9 +1,12 @@
 // Zoho Cliq notifications: which change to a menu, report or feedback entry is worth
 // a message, and what that message says. Pure, so the frontend test suite covers it;
-// functions/src/cliq/triggers.js does the sending.
+// functions/src/cliq/triggers.js does the sending. Titles, wording and links come from
+// ./notifications.mjs, which the web app's bell uses too.
 //
 // Admins get approval requests and feedback in a shared channel, so they can all see
 // what's waiting; the teacher who asked gets the outcome as a direct message.
+
+import { NOTIFICATIONS } from './notifications.mjs';
 
 const PENDING = 'pending';
 const APPROVED = 'approved';
@@ -45,12 +48,12 @@ export const KINDS = {
   weekly_menus: {
     noun: 'weekly menu',
     title: (id, data) => `Weekly menu: ${data?.weekLabel || 'untitled'}`,
-    path: '/menu-report',
+    path: NOTIFICATIONS.approvalPending.path('weekly_menus'),
   },
   daily_reports: {
     noun: 'daily report',
     title: (id) => `Daily report: ${prettyDate(id)}`,
-    path: '/menu-report?tab=report',
+    path: NOTIFICATIONS.approvalPending.path('daily_reports'),
   },
 };
 
@@ -143,9 +146,7 @@ export function decidedMessage({ collection, id, data, event, reviewerName, requ
 export function outcomeMessage({ collection, id, data, event, reviewerName, appUrl }) {
   const kind = KINDS[collection];
   const note = String(data?.approval?.note || '').trim();
-  const text = event === 'approved'
-    ? `${reviewerName} approved your ${kind.noun}. You can export it now.`
-    : `${reviewerName} sent your ${kind.noun} back for changes.${note ? `\n\n*Note:* ${note}` : ''}`;
+  const text = NOTIFICATIONS.approvalOutcome.summary({ event, noun: kind.noun, reviewerName, note });
   return card({
     title: kind.title(id, data),
     text,
@@ -165,6 +166,32 @@ export function feedbackMessage({ data, appUrl }) {
     title: `${type} from ${who}`,
     text: `${String(data?.message || '').trim()}${page ? `\n\n_Sent${page}_` : ''}`,
     buttonLabel: 'Open feedback',
-    url: `${trimUrl(appUrl)}/settings/feedback`,
+    url: `${trimUrl(appUrl)}${NOTIFICATIONS.feedback.path}`,
+  });
+}
+
+/** Channel message for a new access request (someone signed in who isn't set up yet). */
+export function accessRequestMessage({ data, appUrl }) {
+  const n = NOTIFICATIONS.accessRequest;
+  const email = String(data?.email || '').trim();
+  return card({
+    title: n.title,
+    text: n.item({ name: String(data?.displayName || '').trim(), email }),
+    buttonLabel: 'Review in app',
+    url: `${trimUrl(appUrl)}${n.path}`,
+  });
+}
+
+/** The morning channel post listing today's Tamil birthdays, or null when there are none. */
+export function birthdayDigestMessage({ members, appUrl }) {
+  if (!members?.length) return null;
+  const n = NOTIFICATIONS.tamilBirthday;
+  const { tamilMonth, tamilDay } = members[0];
+  const types = [...new Set(members.map(m => m.type))];
+  return card({
+    title: `🎂 ${n.title} (${tamilMonth} ${tamilDay})`,
+    text: members.map(m => `• ${n.item(m)}`).join('\n'),
+    buttonLabel: types.length === 1 && types[0] === 'staff' ? 'Open staff' : 'Open students',
+    url: `${trimUrl(appUrl)}${n.path(types.length === 1 ? types[0] : 'student')}`,
   });
 }

@@ -57,7 +57,7 @@ describe('messages', () => {
     expect(approved.buttons[0].label).toBe('Open and export');
 
     const returned = outcomeMessage({ collection: 'daily_reports', id: '2026-09-28', data: { approval: { note: ' Fix the Tamil date ' } }, event: 'returned', reviewerName: 'Sathya', appUrl });
-    expect(returned.text).toBe('Sathya sent your daily report back for changes.\n\n*Note:* Fix the Tamil date');
+    expect(returned.text).toBe('Sathya sent your daily report back for changes. Note: Fix the Tamil date');
     expect(outcomeMessage({ collection: 'daily_reports', id: 'd', data: {}, event: 'returned', reviewerName: 'S', appUrl }).text)
       .toBe('S sent your daily report back for changes.');
   });

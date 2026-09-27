@@ -1,12 +1,17 @@
 # Zoho Cliq bot
 
-The app posts to Zoho Cliq whenever something is waiting on someone:
+The app posts to Zoho Cliq whenever something is waiting on someone. Cliq and the web app's notification bell follow the same list, `functions/src/shared/notifications.mjs`, so they cover the same things with the same wording and links:
 
-| Event | Where it goes |
-| --- | --- |
-| A teacher sends a weekly menu or daily report for approval | The admins' channel |
-| An admin approves it, or sends it back with a note | A direct message to that teacher |
-| Someone sends feedback from the in-app widget | The admins' channel |
+| Notification | Web app bell | Cliq |
+| --- | --- | --- |
+| Access request (someone signed in who isn't set up yet) | Admins | The admins' channel, as each arrives |
+| A menu or daily report is waiting for approval | Admins | The admins' channel, with Approve / Send back |
+| Your request was approved or sent back | The teacher who asked (approvals for 3 days; send-backs until re-sent) | A DM to that teacher, and a note in the channel |
+| New in-app feedback | Admins | The admins' channel |
+| Tamil birthdays today | Anyone who can see the student or staff directory | One post in the channel at 7:30 am |
+| Unread WhatsApp live-chat messages | WhatsApp users | Not sent: the count changes with every message and would flood the channel |
+
+To add a notification, add it to `notifications.mjs` first, then show it in `frontend/src/utils/bellEntries.js` and send it from `functions/src/cliq/triggers.js`. `frontend/src/utils/notifications.test.js` checks that the two say the same thing.
 
 Each message has a button that opens the right screen in the app. Once the two Cliq functions below are set up, requests also get **Approve** and **Send back** buttons, so admins can decide without leaving Cliq. Send back asks for a note. Every decision, in the app or in Cliq, is noted in the channel and DMed to the teacher.
 
