@@ -109,7 +109,7 @@ service cloud.firestore {
     // That mattered beyond tidiness. Rules allow only 10 document accesses per
     // single-document request, and the read rules that call this also evaluate
     // isAdmin() + getPerm() (allowed_users lookup + permission_groups). At 5
-    // accesses this function could push a parent reading their own child's
+    // accesses this function could push a portal user reading their own
     // transaction over the limit, denying access outright. It is now 2.
     //
     // Verified against production before removing: Firestore has no "modules"
@@ -126,16 +126,26 @@ service cloud.firestore {
         || get(/databases/$(database)/documents/periods/$(periodKey)).data.get('status', 'open') != 'closed';
     }
 
-    function isParentOf(studentId) {
+    // A student signed in with the email on their own record (the student portal).
+    // Parents no longer read Firestore directly: they sign in by phone and the
+    // getParentPortal/getParentAttendance callables return only the fields the school
+    // chose to show them (functions/src/students/portal.js). Rules can only allow a
+    // whole student document, which would hand parents Aadhaar, address and medical
+    // notes along with the basics.
+    function isStudentSelf(studentId) {
       let email = request.auth.token.email;
       let path = /databases/$(database)/documents/students/$(studentId);
       let doc = exists(path) ? get(path) : null;
 
-      return doc != null && (
-        doc.data.get('studentEmail', '') == email ||
-        doc.data.get('motherEmail', '')  == email ||
-        doc.data.get('fatherEmail', '')  == email
-      );
+      return email != null && doc != null && doc.data.get('studentEmail', '') == email;
+    }
+
+    // Parent portal access is an admin decision (setParentPortalAccess), and
+    // portalPhones is derived from the record by syncStudentPortalPhones. A
+    // student_directory manager editing a profile must not be able to touch either,
+    // or they could restore a parent an admin removed.
+    function touchesPortalAccess(keys) {
+      return keys.hasAny(['portalAccess', 'portalPhones']);
     }
 
     // --- System Configurations & Aggregates ---
@@ -157,13 +167,14 @@ service cloud.firestore {
         getPerm('student_directory', 'view') ||
         getPerm('fees_accounting', 'ledger') || getPerm('fees_accounting', 'view') ||
         getPerm('attendance', 'view') || getPerm('attendance', 'mark') || getPerm('attendance', 'edit') ||
-        (resource != null && (
-          resource.data.studentEmail == request.auth.token.email ||
-          resource.data.motherEmail  == request.auth.token.email ||
-          resource.data.fatherEmail  == request.auth.token.email
-        ))
+        (resource != null && request.auth.token.email != null && resource.data.get('studentEmail', '') == request.auth.token.email)
       );
-      allow create, update: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'manage'));
+      allow create: if isAuthenticated() && (isAdmin() || (
+        getPerm('student_directory', 'manage') && !touchesPortalAccess(request.resource.data.keys())
+      ));
+      allow update: if isAuthenticated() && (isAdmin() || (
+        getPerm('student_directory', 'manage') && !touchesPortalAccess(request.resource.data.diff(resource.data).affectedKeys())
+      ));
       allow delete: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'delete'));
     }
 
@@ -184,7 +195,7 @@ service cloud.firestore {
     }
 
     match /students/{studentId}/transactions/{id} {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(studentId));
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isStudentSelf(studentId));
       allow create: if isAuthenticated()
         && (isAdmin() || getPerm('fees_accounting', 'trans_add'))
         && isPeriodOpen(request.resource.data.get('periodKey', null));
@@ -289,13 +300,13 @@ service cloud.firestore {
         getPerm('fees_accounting', 'view') ||
         getPerm('fees_accounting', 'ledger') ||
         getPerm('fees_accounting', 'config') ||
-        isParentOf(studentId)
+        isStudentSelf(studentId)
       );
       allow write: if false;
     }
 
     match /students/{studentId}/fee_ledger/{id} {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(studentId));
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isStudentSelf(studentId));
       allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
     }
 
@@ -357,12 +368,12 @@ service cloud.firestore {
     }
 
     match /student_fees/{id} {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isParentOf(id));
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || isStudentSelf(id));
       allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
     }
 
     match /collections/{id} {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || (resource != null && isParentOf(resource.data.get('studentId', ''))));
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || (resource != null && isStudentSelf(resource.data.get('studentId', ''))));
       allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
       // "trans_add" is meant to let a role record NEW collections, not edit/delete existing
       // receipts — that must go through "trans_delete" (matching students/{id}/transactions).

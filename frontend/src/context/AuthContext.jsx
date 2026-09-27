@@ -26,6 +26,16 @@ export function AuthProvider({ children }) {
 
       if (user) {
         setCurrentUser(user);
+
+        // Parents sign in with their phone number and have no staff record. Which
+        // children they may see is checked by the server on every request
+        // (functions/src/students/portal.js), so there is nothing to look up here.
+        if (!user.email && user.phoneNumber) {
+          setUserData({ role: 'parent', dashboardType: 'parent', phoneNumber: user.phoneNumber, permissions: {} });
+          setLoading(false);
+          return;
+        }
+
         try {
           const uidRef = doc(firestore, 'allowed_users', user.uid);
           
@@ -147,14 +157,12 @@ export function AuthProvider({ children }) {
                     let foundStudent = null;
                     let studentRole = null;
 
+                    // Only a student's own email opens a portal here. Parents sign in by
+                    // phone (handled above); their emails no longer grant access.
                     const checkRef = async (ref) => {
                       if (foundStudent || !email) return;
-                      let snap = await getDocs(query(ref, where('studentEmail', '==', email)));
-                      if (!snap.empty) { foundStudent = snap.docs[0]; studentRole = 'student'; return; }
-                      snap = await getDocs(query(ref, where('motherEmail', '==', email)));
-                      if (!snap.empty) { foundStudent = snap.docs[0]; studentRole = 'parent'; return; }
-                      snap = await getDocs(query(ref, where('fatherEmail', '==', email)));
-                      if (!snap.empty) { foundStudent = snap.docs[0]; studentRole = 'parent'; return; }
+                      const snap = await getDocs(query(ref, where('studentEmail', '==', email)));
+                      if (!snap.empty) { foundStudent = snap.docs[0]; studentRole = 'student'; }
                     };
 
                     await checkRef(studentsRef);
@@ -166,7 +174,7 @@ export function AuthProvider({ children }) {
                     if (foundStudent) {
                       setUserData({ 
                         role: studentRole, 
-                        dashboardType: studentRole === 'parent' ? 'parent' : 'student', 
+                        dashboardType: 'student', 
                         studentId: foundStudent.id, 
                         ...foundStudent.data() 
                       });

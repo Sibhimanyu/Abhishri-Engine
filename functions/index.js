@@ -78,4 +78,11 @@ exports.dailyPermissionsMirror = permissionsMirror.dailyPermissionsMirror;
 const studentTriggers = require("./src/students/triggers");
 exports.onStudentDeleted = studentTriggers.onStudentDeleted;
 
+// --- Parent Portal (phone sign-in) ---
+const parentPortal = require("./src/students/portal");
+exports.getParentPortal = parentPortal.getParentPortal;
+exports.getParentAttendance = parentPortal.getParentAttendance;
+exports.setParentPortalAccess = parentPortal.setParentPortalAccess;
+exports.syncStudentPortalPhones = parentPortal.syncStudentPortalPhones;
+
 // Migration functions removed

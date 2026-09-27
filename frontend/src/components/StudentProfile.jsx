@@ -1,15 +1,68 @@
 import { Spinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
-import { firestore } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { firestore, functions } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
-import { ArrowLeft, Edit3, MapPin, Phone, User, Users, HeartPulse, FileText, AlertTriangle, Save, X, UserCheck, Star, Loader, CircleSlash2, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Edit3, MapPin, Phone, User, Users, HeartPulse, FileText, AlertTriangle, Save, X, UserCheck, Star, Loader, CircleSlash2, RotateCcw, Smartphone } from 'lucide-react';
 import { isDiscontinued, getDiscontinuationDate } from '../utils/reportUtils';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
+import { phonesIn, hasPortalAccess } from '../../../functions/src/shared/phone.mjs';
+
+const setParentPortalAccess = httpsCallable(functions, 'setParentPortalAccess');
+
+/**
+ * Whether this parent can sign in to the parent portal, and (for admins) the switch
+ * to remove or restore that. Removing keeps the number on the record; only sign-in
+ * stops, from the parent's very next request (functions/src/students/portal.js).
+ */
+function ParentPortalAccess({ student, role, isAdmin, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const label = role === 'father' ? 'Father' : 'Mother';
+  const hasNumber = phonesIn(student[`${role}Phone`]).length > 0;
+  const allowed = hasPortalAccess(student, role);
+
+  const toggle = async () => {
+    if (allowed && !window.confirm(`Remove ${label.toLowerCase()}'s access to the parent portal? Their number stays on the record, but they won't be able to sign in until you allow it again.`)) return;
+    setBusy(true);
+    try {
+      const { data } = await setParentPortalAccess({ studentId: student.id, role, allowed: !allowed });
+      onChange(data);
+    } catch (err) {
+      console.error('Failed to change parent portal access:', err);
+      alert(`Couldn't change portal access: ${err.message || 'please try again.'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const status = !hasNumber
+    ? { text: 'No mobile number, so no portal sign-in', cls: 'text-brand-text-dim' }
+    : allowed
+      ? { text: 'Can sign in to the parent portal', cls: 'text-green-600 dark:text-green-400' }
+      : { text: 'Parent portal access removed', cls: 'text-red-600 dark:text-red-400' };
+
+  return (
+    <div className="flex items-center justify-between gap-3 mt-3 text-xs">
+      <span className={`flex items-center gap-1.5 font-semibold ${status.cls}`}><Smartphone size={12} /> {status.text}</span>
+      {isAdmin && (hasNumber || !allowed) && (
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={busy}
+          className={`shrink-0 px-2.5 py-1 rounded-md font-bold border transition-colors disabled:opacity-50 ${allowed ? 'border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10' : 'border-green-500/30 text-green-600 dark:text-green-400 hover:bg-green-500/10'}`}
+        >
+          {busy ? 'Saving...' : allowed ? 'Remove access' : 'Allow access'}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function StudentProfile({ studentId, studentType, onBack, canEdit }) {
-  const { currentUser } = useAuth();
+  const { currentUser, userData } = useAuth();
+  const isAdmin = !!(userData?.isAdmin || userData?.role === 'admin');
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -758,6 +811,7 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                     {student.motherEmail && <p className="text-brand-text-dim text-xs font-mono">{student.motherEmail}</p>}
                   </div>
                 </div>
+                <ParentPortalAccess student={student} role="mother" isAdmin={isAdmin} onChange={(update) => setStudent(prev => ({ ...prev, ...update }))} />
               </div>
               <div className="h-px bg-brand-card-border"></div>
               <div>
@@ -772,6 +826,7 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                     {student.fatherEmail && <p className="text-brand-text-dim text-xs font-mono">{student.fatherEmail}</p>}
                   </div>
                 </div>
+                <ParentPortalAccess student={student} role="father" isAdmin={isAdmin} onChange={(update) => setStudent(prev => ({ ...prev, ...update }))} />
               </div>
             </div>
           )}
