@@ -10,15 +10,15 @@ const SLOT_LABELS = { morningDrink: 'Morning Drink', lunch: 'Lunch', eveningSnac
 export const MENU_PROMPT = `Convert the weekly food menu I give you into JSON with exactly this structure:
 
 {
-  "weekLabel": "Week of 11 Aug 2026",
+  "weekLabel": "Week of 28 Sep – 02 Oct 2026",
   "days": {
     "monday": {
-      "morningDrink": [{ "name": "Item", "translation": "" }],
+      "morningDrink": [{ "name": "Item", "description": "" }],
       "lunch": [
-        { "name": "Item", "translation": "" },
-        { "name": "Item", "translation": "" }
+        { "name": "Main item", "description": "" },
+        { "name": "Side item", "description": "" }
       ],
-      "eveningSnack": [{ "name": "Item", "translation": "" }]
+      "eveningSnack": [{ "name": "Item", "description": "" }]
     },
     "tuesday": { "morningDrink": [], "lunch": [], "eveningSnack": [] },
     "wednesday": { "morningDrink": [], "lunch": [], "eveningSnack": [] },
@@ -30,9 +30,10 @@ export const MENU_PROMPT = `Convert the weekly food menu I give you into JSON wi
 Format rules:
 - Include all five days: "monday", "tuesday", "wednesday", "thursday", "friday".
 - Every day has the three keys "morningDrink", "lunch" and "eveningSnack".
-- Each of those is a list with one entry per item. Each entry has "name" and "translation".
-- If an item has no translation, set "translation" to "". If a meal has no items, use [].
-- "weekLabel" is the menu's title line; use "" if there isn't one.
+- Each of those is a list of items. Each item has "name" and "description".
+- The first item in a list is the main item. Any further items are side items.
+- "description" is the short line shown under an item's name. If there isn't one, set it to "". If a meal has no items, use [].
+- "weekLabel" is the menu's week or title line; use "" if there isn't one.
 - Reply with only the JSON, in a single code block.`;
 
 const squash = (s) => String(s ?? '').toLowerCase().replace(/[^a-z]/g, '');
@@ -51,17 +52,17 @@ const slotFromKey = (key) => {
 };
 
 const toItem = (raw) => {
-  if (typeof raw === 'string') return { name: raw.trim(), translation: '' };
+  if (typeof raw === 'string') return { name: raw.trim(), description: '' };
   if (!raw || typeof raw !== 'object') return null;
   return {
     name: String(raw.name ?? raw.item ?? '').trim(),
-    translation: String(raw.translation ?? '').trim(),
+    description: String(raw.description ?? raw.translation ?? raw.note ?? '').trim(),
   };
 };
 
 const toItems = (raw) => {
   const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-  return list.map(toItem).filter(it => it && (it.name || it.translation));
+  return list.map(toItem).filter(it => it && (it.name || it.description));
 };
 
 // Pull the JSON object out of a pasted chat reply.
@@ -90,7 +91,7 @@ const extractJson = (text) => {
 
 /**
  * Parse a pasted ChatGPT reply into
- * `{ weekLabel, days: { monday: { morningDrink: [{name, translation}], ... }, ... }, warnings }`.
+ * `{ weekLabel, days: { monday: { morningDrink: [{name, description}], ... }, ... }, warnings }`.
  * Always returns every day and slot (empty lists where missing); `warnings` names
  * what was missing so the admin can check the preview. Throws if nothing usable was found.
  */
