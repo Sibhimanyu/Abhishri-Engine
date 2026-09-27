@@ -64,6 +64,7 @@ exports.cliqAction = onRequest(async (req, res) => {
   const reviewer = { isAdmin: await isAdminEmail(email) };
   const ref = admin.firestore().collection(parsed.collection).doc(parsed.id);
   const approve = parsed.action === "approve";
+  const reviewerName = await displayNameOf(email);
 
   let problem = null;
   let data = null;
@@ -76,6 +77,7 @@ exports.cliqAction = onRequest(async (req, res) => {
       tx.update(ref, {
         "approval.status": approve ? "approved" : "changes_requested",
         "approval.reviewedBy": email,
+        "approval.reviewedByName": reviewerName,
         "approval.reviewedAt": FieldValue.serverTimestamp(),
         "approval.note": approve ? "" : note,
       });

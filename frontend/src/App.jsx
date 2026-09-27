@@ -1,5 +1,5 @@
 import React, { useState, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, CreditCard, Settings, LogOut, Search, Bell, ChevronDown, Moon, Sun, ClipboardCheck, Cpu, MessageSquare, Briefcase, Menu, X, AlertTriangle, Database, Landmark, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Settings, LogOut, Search, ChevronDown, Moon, Sun, ClipboardCheck, Cpu, MessageSquare, Briefcase, Menu, X, AlertTriangle, Database, Landmark, BarChart3 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth, firestore, rtdb } from './firebase';
 import Login from './components/Login';
@@ -11,8 +11,10 @@ import MainDashboard from './components/MainDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 import { CenteredSpinner } from './components/Spinner';
 import { getCurrentTamilDate } from './utils/astrologyApi';
-import { MessageCircle, Cake, CalendarDays, ChefHat } from 'lucide-react';
-import { isAdminUser, usePendingApprovals } from './components/poster/approval';
+import { CalendarDays, ChefHat } from 'lucide-react';
+import { isAdminUser, usePendingApprovals, useMyApprovalOutcomes } from './components/poster/approval';
+import NotificationBell from './components/NotificationBell';
+import { bellEntries } from './utils/bellEntries';
 import FeedbackWidget from './components/FeedbackWidget';
 
 // Route modules are lazy so the login screen and dashboard don't pay for the
@@ -53,7 +55,6 @@ function App() {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [pendingLoginsCount, setPendingLoginsCount] = useState(0);
   const [unreadWhatsAppCount, setUnreadWhatsAppCount] = useState(0);
   const [newFeedbackCount, setNewFeedbackCount] = useState(0);
@@ -64,6 +65,8 @@ function App() {
   const isMaster = userData?.isAdmin;
   // Menus and daily reports waiting for an admin, badged on their sidebar entry.
   const pendingApprovals = usePendingApprovals(isAdminUser(userData));
+  // The signed-in person's own requests that were decided, for the bell.
+  const myOutcomes = useMyApprovalOutcomes(currentUser?.email);
   
   // Permission Checkers
   const getPerm = (module, perm) => isMaster || userData?.permissions?.[module]?.[perm];
@@ -484,81 +487,14 @@ function App() {
 
             <FeedbackWidget isAdmin={isMaster} newCount={newFeedbackCount} />
 
-            <div className="relative">
-              <button 
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="relative text-brand-text-dim hover:text-brand-text transition-colors p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
-              >
-                <Bell size={20} className={(pendingLoginsCount > 0 || unreadWhatsAppCount > 0 || tamilBirthdayMembers.length > 0) ? 'text-brand-primary' : ''} />
-                {(pendingLoginsCount > 0 || unreadWhatsAppCount > 0 || tamilBirthdayMembers.length > 0) && (
-                  <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-primary border-2 border-brand-sidebar"></span>
-                  </span>
-                )}
-              </button>
-
-              {showNotifications && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)}></div>
-                  <div className="absolute right-0 mt-3 w-64 bg-brand-card border border-brand-card-border rounded-xl shadow-lg py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="px-4 py-2 border-b border-brand-card-border mb-1">
-                      <p className="text-xs font-bold text-brand-text-dim uppercase">Notifications</p>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto">
-                      {pendingLoginsCount > 0 && (
-                        <Link 
-                          onClick={() => setShowNotifications(false)}
-                          to="/settings/users"
-                          className="w-full text-left px-4 py-3 text-sm text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 border-b border-brand-card-border last:border-b-0"
-                        >
-                          <div className="mt-0.5 text-orange-500"><AlertTriangle size={16} /></div>
-                          <div>
-                            <p className="font-semibold text-orange-600 dark:text-orange-400">Access Requests</p>
-                            <p className="text-xs text-brand-text-dim mt-0.5">There are {pendingLoginsCount} pending requests awaiting review.</p>
-                          </div>
-                        </Link>
-                      )}
-
-                      {unreadWhatsAppCount > 0 && (
-                        <Link 
-                          onClick={() => setShowNotifications(false)}
-                          to="/whatsapp"
-                          className="w-full text-left px-4 py-3 text-sm text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 border-b border-brand-card-border last:border-b-0"
-                        >
-                          <div className="mt-0.5 text-green-500"><MessageCircle size={16} /></div>
-                          <div>
-                            <p className="font-semibold text-green-600 dark:text-green-400">WhatsApp Livechat</p>
-                            <p className="text-xs text-brand-text-dim mt-0.5">You have {unreadWhatsAppCount} unread message{unreadWhatsAppCount > 1 ? 's' : ''}.</p>
-                          </div>
-                        </Link>
-                      )}
-
-                      {tamilBirthdayMembers.map(member => (
-                        <Link 
-                          key={`bday-${member.type}-${member.id}`}
-                          onClick={() => setShowNotifications(false)}
-                          to={member.path}
-                          className="w-full text-left px-4 py-3 text-sm text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 border-b border-brand-card-border last:border-b-0"
-                        >
-                          <div className="mt-0.5 text-pink-500"><Cake size={16} /></div>
-                          <div>
-                            <p className="font-semibold text-pink-600 dark:text-pink-400">Tamil Birthday Today!</p>
-                            <p className="text-xs text-brand-text-dim mt-0.5">It is <b>{member.name}'s</b> ({member.type === 'staff' ? 'Staff' : 'Student'}) Tamil Birthday today ({member.tamilMonth} {member.tamilDay}).</p>
-                          </div>
-                        </Link>
-                      ))}
-
-                      {(pendingLoginsCount === 0 && unreadWhatsAppCount === 0 && tamilBirthdayMembers.length === 0) && (
-                        <div className="px-4 py-6 text-center text-brand-text-dim text-sm">
-                          No new notifications
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            <NotificationBell entries={bellEntries({
+              pendingLogins: pendingLoginsCount,
+              pendingApprovals,
+              myOutcomes,
+              newFeedback: isMaster ? newFeedbackCount : 0,
+              unreadWhatsApp: unreadWhatsAppCount,
+              birthdays: tamilBirthdayMembers,
+            })} />
             
             <div className="h-6 w-px bg-brand-card-border"></div>
 

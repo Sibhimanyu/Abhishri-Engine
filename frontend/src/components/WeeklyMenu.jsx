@@ -331,7 +331,7 @@ export default function WeeklyMenu() {
     }
     setReviewing(true);
     try {
-      await reviewDocument({ collectionName: 'weekly_menus', id: savedMenu.id, approve, note, email, auditPrefix: 'WEEKLY_MENU', targetName: savedMenu.weekLabel });
+      await reviewDocument({ collectionName: 'weekly_menus', id: savedMenu.id, approve, note, email, reviewerName: userData?.displayName, auditPrefix: 'WEEKLY_MENU', targetName: savedMenu.weekLabel });
     } catch (err) {
       console.error('Failed to review menu:', err);
       alert('Could not save your review. Please try again.');

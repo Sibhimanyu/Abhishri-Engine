@@ -90,6 +90,8 @@ const cliq = require("./src/cliq/triggers");
 exports.cliqOnMenuApproval = cliq.cliqOnMenuApproval;
 exports.cliqOnReportApproval = cliq.cliqOnReportApproval;
 exports.cliqOnFeedback = cliq.cliqOnFeedback;
+exports.cliqOnAccessRequest = cliq.cliqOnAccessRequest;
+exports.cliqTamilBirthdays = cliq.cliqTamilBirthdays;
 exports.sendCliqTest = cliq.sendCliqTest;
 exports.cliqAction = require("./src/cliq/actions").cliqAction;
 
