@@ -26,7 +26,6 @@ const SettingsAdmin = lazy(() => import('./components/SettingsAdmin'));
 const StudentDirectory = lazy(() => import('./components/StudentDirectory'));
 const SmartCampus = lazy(() => import('./components/SmartCampus'));
 const Attendance = lazy(() => import('./components/Attendance'));
-const StudentPortal = lazy(() => import('./components/StudentPortal'));
 const ParentPortal = lazy(() => import('./components/ParentPortal'));
 const WhatsAppManager = lazy(() => import('./components/WhatsAppManager'));
 const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
@@ -336,13 +335,6 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={<RouteLoader />}><ParentPortal /></Suspense>
-      </ErrorBoundary>
-    );
-  }
-  if (userData?.dashboardType === 'student' || userData?.role === 'student') {
-    return (
-      <ErrorBoundary>
-        <Suspense fallback={<RouteLoader />}><StudentPortal /></Suspense>
       </ErrorBoundary>
     );
   }

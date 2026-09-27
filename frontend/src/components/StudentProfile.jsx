@@ -90,7 +90,6 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
     caste: '',
     religion: '',
     nationality: '',
-    studentEmail: '',
     address: '',
     city: '',
     state: '',
@@ -155,7 +154,6 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
         caste: student.caste || '',
         religion: student.religion || '',
         nationality: student.nationality || '',
-        studentEmail: student.studentEmail || '',
         address: student.address || '',
         city: student.city || '',
         state: student.state || '',
@@ -695,10 +693,6 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                 <input type="text" value={editForm.appNumber} onChange={e => setEditForm({...editForm, appNumber: e.target.value})} className={inputClass} />
               </div>
               <div className="col-span-1 sm:col-span-2 mt-2">
-                <label className="text-brand-text-dim text-xs block mb-1">Student Login Email</label>
-                <input type="email" value={editForm.studentEmail} onChange={e => setEditForm({...editForm, studentEmail: e.target.value})} className={inputClass} placeholder="student@example.com (Optional)"/>
-              </div>
-              <div className="col-span-1 sm:col-span-2 mt-2">
                 <label className="text-brand-text-dim text-xs block mb-1">Street Address</label>
                 <input type="text" value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})} className={inputClass} placeholder="Address"/>
               </div>
@@ -730,7 +724,6 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
               <div><p className="text-brand-text-dim text-xs">Religion & Caste</p><p className="font-medium text-brand-text">{(student.religion || student.caste) ? `${student.religion || ''} ${student.caste ? `(${student.caste})` : ''}` : 'N/A'}</p></div>
               
               <div><p className="text-brand-text-dim text-xs">Enrollment Date</p><p className="font-medium text-brand-text">{student.enrollmentDate || 'N/A'}</p></div>
-              <div className="col-span-2"><p className="text-brand-text-dim text-xs">Student Login Email</p><p className="font-medium text-brand-text font-mono">{student.studentEmail || 'N/A'}</p></div>
               
               <div className="col-span-3 mt-2 border-t border-brand-card-border pt-4">
                 <p className="text-brand-text-dim text-xs flex items-center gap-1 mb-1"><MapPin size={12}/> Address</p>

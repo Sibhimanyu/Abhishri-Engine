@@ -31,8 +31,7 @@ portal call re-checks the record itself.
   `setParentPortalAccess`, takes effect on the parent's next request, and is logged
   in `audit_logs`. The number stays on the record. Editing the number later does not
   restore access.
-- Parent emails no longer grant any access. The student portal (student's own
-  `studentEmail`) is unchanged.
+- Emails grant no portal access, for parents or students. There is no student login.
 - The iOS app is staff-only and doesn't show the parent sign-in: phone auth needs
   reCAPTCHA, which its bundled web view can't load.
 
