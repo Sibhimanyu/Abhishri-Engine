@@ -182,7 +182,7 @@ const ReportPoster = forwardRef(function ReportPoster({ cal, highlights }, ref) 
 });
 
 const inputClass = 'w-full bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary';
-const buttonClass = 'flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors';
+const buttonClass = 'flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2.5 sm:py-2 rounded-lg font-medium text-sm transition-colors';
 
 // What approval covers: the report as it would print. Compared to tell unsaved edits apart.
 const reportSignature = (date, highlights, calendar) => JSON.stringify({ date, highlights: highlights.filter(hasText), calendar });
@@ -382,7 +382,7 @@ export default function DailyReport() {
 
       {/* Toolbar */}
       <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4 md:p-6 flex flex-wrap gap-4 items-center justify-between">
-        <div className="shrink-0 max-w-full">
+        <div className="w-full sm:w-auto sm:shrink-0 max-w-full">
           <label className="block text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-1.5">Date</label>
           <input
             type="date"
@@ -391,7 +391,7 @@ export default function DailyReport() {
             className="w-full md:w-56 bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
           />
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="grid grid-cols-2 w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
           <button onClick={() => setShowLoadPanel(v => !v)} className={buttonClass}><FolderOpen size={16} /> Load</button>
           <button onClick={() => setShowImport(true)} className={buttonClass}><ClipboardPaste size={16} /> Import from ChatGPT</button>
           <button onClick={handleNew} className={buttonClass}><FilePlus2 size={16} /> New</button>
@@ -497,9 +497,9 @@ export default function DailyReport() {
               <div className="flex items-center gap-2">
                 <span className="w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0" style={{ background: POSTER.teal }}><School size={16} /></span>
                 <input value={h.activity} onChange={(e) => updateHighlight(idx, 'activity', e.target.value)} placeholder="Activity, e.g. Circle Time" className={`${inputClass} font-bold`} />
-                <button onClick={() => moveHighlight(idx, -1)} disabled={idx === 0} className="text-brand-text-dim hover:text-brand-text p-1 disabled:opacity-30" title="Move up"><ChevronUp size={16} /></button>
-                <button onClick={() => moveHighlight(idx, 1)} disabled={idx === highlights.length - 1} className="text-brand-text-dim hover:text-brand-text p-1 disabled:opacity-30" title="Move down"><ChevronDown size={16} /></button>
-                <button onClick={() => removeHighlight(idx)} className="text-brand-text-dim hover:text-red-500 p-1" title="Remove highlight"><X size={16} /></button>
+                <button onClick={() => moveHighlight(idx, -1)} disabled={idx === 0} className="text-brand-text-dim hover:text-brand-text p-2 sm:p-1 disabled:opacity-30" title="Move up" aria-label="Move up"><ChevronUp size={16} /></button>
+                <button onClick={() => moveHighlight(idx, 1)} disabled={idx === highlights.length - 1} className="text-brand-text-dim hover:text-brand-text p-2 sm:p-1 disabled:opacity-30" title="Move down" aria-label="Move down"><ChevronDown size={16} /></button>
+                <button onClick={() => removeHighlight(idx)} className="text-brand-text-dim hover:text-red-500 p-2 sm:p-1" title="Remove highlight" aria-label="Remove highlight"><X size={16} /></button>
               </div>
               <textarea value={h.classroom} onChange={(e) => updateHighlight(idx, 'classroom', e.target.value)} rows={2} placeholder="In the classroom" className={inputClass} />
               <div className="flex items-start gap-2">
@@ -508,7 +508,7 @@ export default function DailyReport() {
               </div>
             </div>
           ))}
-          <button onClick={() => setHighlights(prev => [...prev, emptyHighlight()])} className="flex items-center gap-1 text-sm font-bold text-brand-primary hover:text-brand-primary-hover">
+          <button onClick={() => setHighlights(prev => [...prev, emptyHighlight()])} className="flex items-center gap-1 text-sm font-bold text-brand-primary hover:text-brand-primary-hover py-2.5 sm:py-0">
             <Plus size={14} /> Add highlight
           </button>
         </div>

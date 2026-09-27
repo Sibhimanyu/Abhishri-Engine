@@ -38,12 +38,12 @@ export default function WhatsAppManager() {
   return (
     <div className="h-full flex flex-col -mx-4 md:-mx-8 bg-brand-bg relative">
       {/* Module Navigation */}
-      <div className="flex border-b border-brand-card-border bg-brand-sidebar px-6 sticky top-0 z-10 shrink-0">
+      <div className="flex scroll-tabs edge-fade border-b border-brand-card-border bg-brand-sidebar px-2 sm:px-6 sticky top-0 z-10 shrink-0">
         {tabs.filter(t => t.show).map(tab => (
           <Link
             key={tab.id}
             to={`/whatsapp/${tab.id}`}
-            className={`flex items-center gap-2 px-4 py-4 font-medium text-sm transition-colors border-b-2 ${
+            className={`flex items-center gap-2 px-3 sm:px-4 py-3.5 sm:py-4 font-medium text-sm transition-colors border-b-2 ${
               activeView === tab.id 
                 ? 'border-brand-primary text-brand-primary' 
                 : 'border-transparent text-brand-text-dim hover:text-brand-text hover:border-brand-card-border'
@@ -63,7 +63,7 @@ export default function WhatsAppManager() {
           <Route path="broadcast" element={<WhatsAppBroadcast />} />
           <Route path="lists" element={<WhatsAppLists />} />
           <Route path="history" element={<WhatsAppHistory />} />
-          <Route path="*" element={<Navigate to="chats" replace />} />
+          <Route path="*" element={<Navigate to="/whatsapp/chats" replace />} />
         </Routes>
       </div>
     </div>

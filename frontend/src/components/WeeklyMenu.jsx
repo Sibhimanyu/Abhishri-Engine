@@ -375,9 +375,9 @@ export default function WeeklyMenu() {
 
       {/* Toolbar */}
       <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4 md:p-6 flex flex-wrap gap-4 items-center justify-between">
-        <div className="shrink-0 max-w-full">
+        <div className="w-full sm:w-auto sm:shrink-0 max-w-full">
           <label className="block text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-1.5">Menu Dates</label>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-[1fr_auto_1fr] sm:flex sm:flex-wrap items-center gap-2">
             <input
               type="date"
               aria-label="From"
@@ -387,7 +387,7 @@ export default function WeeklyMenu() {
                 // Picking a start fills in that week's Friday when no end is set yet.
                 setMenu(prev => ({ ...prev, startDate, endDate: prev.endDate || (isMenuDate(startDate) ? addDays(startDate, 4) : '') }));
               }}
-              className="bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+              className="min-w-0 w-full sm:w-auto bg-brand-bg border border-brand-card-border rounded-lg py-2 px-2 sm:px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
             />
             <span className="text-brand-text-dim text-sm">to</span>
             <input
@@ -396,34 +396,34 @@ export default function WeeklyMenu() {
               value={menu.endDate}
               min={menu.startDate || undefined}
               onChange={(e) => setMenu(prev => ({ ...prev, endDate: e.target.value }))}
-              className="bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+              className="min-w-0 w-full sm:w-auto bg-brand-bg border border-brand-card-border rounded-lg py-2 px-2 sm:px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
             />
           </div>
           <p className="text-xs text-brand-text-dim mt-1.5">Filled in by Import from ChatGPT. Parents see the menu on these dates.</p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="grid grid-cols-2 w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
           <button
             onClick={() => setShowLoadPanel(v => !v)}
-            className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+            className="flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2.5 sm:py-2 rounded-lg font-medium text-sm transition-colors"
           >
             <FolderOpen size={16} /> Load
           </button>
           <button
             onClick={() => setShowImport(true)}
-            className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+            className="flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2.5 sm:py-2 rounded-lg font-medium text-sm transition-colors"
           >
             <ClipboardPaste size={16} /> Import from ChatGPT
           </button>
           <button
             onClick={handleNew}
-            className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+            className="flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2.5 sm:py-2 rounded-lg font-medium text-sm transition-colors"
           >
             <FilePlus2 size={16} /> New
           </button>
           <button
             onClick={() => handleSave()}
             disabled={saving}
-            className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+            className="flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2.5 sm:py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {activeMenuId ? 'Save Changes' : 'Save'}
           </button>
@@ -559,8 +559,9 @@ export default function WeeklyMenu() {
                               </div>
                               <button
                                 onClick={() => removeItem(dayIdx, slot.key, itemIdx)}
-                                className="text-brand-text-dim hover:text-red-500 p-1 mt-1 shrink-0"
+                                className="text-brand-text-dim hover:text-red-500 p-2.5 -m-1.5 sm:p-1 sm:m-0 sm:mt-1 shrink-0"
                                 title="Remove item"
+                                aria-label="Remove item"
                               >
                                 <X size={14} />
                               </button>
@@ -568,7 +569,7 @@ export default function WeeklyMenu() {
                           ))}
                           <button
                             onClick={() => addItem(dayIdx, slot.key)}
-                            className="flex items-center gap-1 text-xs font-bold text-brand-primary hover:text-brand-primary-hover"
+                            className="flex items-center gap-1 text-xs font-bold text-brand-primary hover:text-brand-primary-hover py-2.5 -my-1.5 sm:py-0 sm:my-0"
                           >
                             <Plus size={12} /> Add item
                           </button>

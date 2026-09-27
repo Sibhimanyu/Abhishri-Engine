@@ -104,11 +104,11 @@ export default function GlobalSearch() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={16} />
         <input 
           type="text" 
-          placeholder="Search students, staff, or modules..." 
+          placeholder="Search…" 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           onFocus={() => { if (searchTerm) setIsOpen(true); }}
-          className="bg-brand-bg border border-brand-card-border rounded-md py-1.5 pl-9 pr-8 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all text-brand-text placeholder-brand-text-dim"
+          className="bg-brand-bg border border-brand-card-border rounded-md py-2 sm:py-1.5 pl-9 pr-8 text-sm w-full focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all text-brand-text placeholder-brand-text-dim"
         />
         {searchTerm && (
           <button 
@@ -121,7 +121,7 @@ export default function GlobalSearch() {
       </div>
 
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-brand-card border border-brand-card-border rounded-xl shadow-xl z-50 max-h-96 overflow-y-auto">
+        <div className="fixed left-2 right-2 top-16 sm:absolute sm:top-full sm:left-0 sm:right-0 mt-2 bg-brand-card border border-brand-card-border rounded-xl shadow-xl z-50 max-h-[70dvh] sm:max-h-96 overflow-y-auto">
           {loading && (
             <div className="p-4 text-center text-brand-text-dim text-sm">Searching...</div>
           )}

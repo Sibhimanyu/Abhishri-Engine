@@ -88,7 +88,7 @@ export default function ReportToolbar({
 
         <div className="flex-1 min-w-[1rem]" />
 
-        <div className="flex items-end gap-2 print:hidden">
+        <div className="flex flex-wrap items-end gap-2 print:hidden">
           {children && (
             <button
               type="button" onClick={() => setFiltersOpen(o => !o)}

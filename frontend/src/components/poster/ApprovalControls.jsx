@@ -14,7 +14,8 @@ export function ApprovalChip({ status }) {
   return <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap ${chip.cls}`}>{chip.label}</span>;
 }
 
-const primaryClass = 'flex items-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50';
+// In the toolbar's two-column phone grid the main action takes a whole row.
+const primaryClass = 'col-span-2 sm:col-auto flex items-center justify-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2.5 sm:py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50';
 
 /**
  * The toolbar's last buttons. Admins export directly and, on a pending document, can
@@ -32,10 +33,10 @@ export function ApprovalActions({ isAdmin, status, dirty, busy, exporting, onExp
       <>
         {status === PENDING && !dirty && (
           <>
-            <button onClick={onSendBack} disabled={busy} className="flex items-center gap-2 border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 px-4 py-2 rounded-lg font-bold text-sm transition-colors disabled:opacity-50">
+            <button onClick={onSendBack} disabled={busy} className="flex items-center justify-center gap-2 border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 px-4 py-2.5 sm:py-2 rounded-lg font-bold text-sm transition-colors disabled:opacity-50">
               <Undo2 size={16} /> Send back
             </button>
-            <button onClick={onApprove} disabled={busy} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50">
+            <button onClick={onApprove} disabled={busy} className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 sm:py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50">
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Approve
             </button>
           </>
@@ -48,7 +49,7 @@ export function ApprovalActions({ isAdmin, status, dirty, busy, exporting, onExp
   if (status === APPROVED && !dirty) return exportButton;
   if (status === PENDING && !dirty) {
     return (
-      <span className="flex items-center gap-2 bg-amber-500/10 text-amber-700 dark:text-amber-400 px-4 py-2 rounded-lg font-bold text-sm">
+      <span className="col-span-2 sm:col-auto flex items-center justify-center gap-2 bg-amber-500/10 text-amber-700 dark:text-amber-400 px-4 py-2.5 sm:py-2 rounded-lg font-bold text-sm">
         <Clock size={16} /> Waiting for approval
       </span>
     );

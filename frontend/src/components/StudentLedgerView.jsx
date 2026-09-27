@@ -945,32 +945,33 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
               : `${f.billingCycle || 12}-Month Cycle${schedule.paused.length ? ` · ${schedule.paused.length} month${schedule.paused.length === 1 ? '' : 's'} not billed (away)` : ''}`}
           </p>
         </div>
-        <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 md:gap-6 w-full md:w-auto">
           <div className="text-left md:text-right">
             <p className="text-[10px] font-bold text-brand-text-dim uppercase tracking-wider mb-1">Standing</p>
             <p className={`font-black text-lg ${standingColor}`}>{standingStatus}</p>
           </div>
-          <div className="flex items-center gap-3">
+          {/* Phones: Log Payment across the top, Config and Discount side by side below it. */}
+          <div className="flex flex-wrap-reverse md:flex-nowrap items-center gap-2 md:gap-3">
             {(isAdmin || feesPerms.config) && (
               <button 
                 onClick={openConfigModal}
-                className="bg-black/5 dark:bg-white/5 hover:bg-brand-primary/10 text-brand-text-dim hover:text-brand-primary px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors text-sm"
+                className="flex-1 md:flex-none justify-center bg-black/5 dark:bg-white/5 hover:bg-brand-primary/10 text-brand-text-dim hover:text-brand-primary px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors text-sm whitespace-nowrap"
                 title="Configure Fee Plan"
               >
                 <Settings2 size={18} /> Config
               </button>
             )}
             {canLogPayment && (
-              <div className="flex gap-2">
+              <div className="contents md:flex md:gap-2">
                 <button 
                   onClick={() => { setSelectedDues([]); setIsDiscountOpen(true); }}
-                  className="bg-brand-secondary/10 hover:bg-brand-secondary/20 text-brand-secondary px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors text-sm"
+                  className="flex-1 md:flex-none justify-center bg-brand-secondary/10 hover:bg-brand-secondary/20 text-brand-secondary px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors text-sm whitespace-nowrap"
                 >
                   <PlusCircle size={18} /> Discount
                 </button>
                 <button 
                   onClick={() => { setSelectedDues([]); setPaymentForm(prev => ({ ...prev, externalRef: '', idemKey: newIdempotencyKey() })); setIsPaymentOpen(true); }}
-                  className="bg-brand-primary hover:bg-brand-primary-hover text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors text-sm"
+                  className="basis-full md:basis-auto justify-center bg-brand-primary hover:bg-brand-primary-hover text-white px-5 py-3 md:py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors text-sm whitespace-nowrap"
                 >
                   <PlusCircle size={18} /> Log Payment
                 </button>
@@ -1433,7 +1434,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
 
             <div className="p-6 border-t border-brand-card-border bg-brand-sidebar flex justify-end gap-3 shrink-0">
               <button onClick={() => setIsConfigOpen(false)} className="px-4 py-2 rounded-lg font-medium text-brand-text hover:bg-black/5 transition-colors">Cancel</button>
-              <button onClick={handleSaveConfig} disabled={isSavingConfig} className="px-6 py-2 bg-brand-primary hover:bg-brand-primary-hover disabled:opacity-50 text-white rounded-lg font-bold transition-colors flex items-center gap-2">
+              <button onClick={handleSaveConfig} disabled={isSavingConfig} className="px-4 sm:px-6 py-2 bg-brand-primary hover:bg-brand-primary-hover disabled:opacity-50 text-white rounded-lg font-bold transition-colors flex items-center gap-2 whitespace-nowrap">
                 {isSavingConfig ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <Check size={18} />} 
                 {isSavingConfig ? 'Applying...' : 'Apply Configuration'}
               </button>

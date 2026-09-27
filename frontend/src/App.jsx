@@ -241,7 +241,7 @@ function App() {
 
   if (location.pathname.startsWith('/public-calendar')) {
     return (
-      <div className="min-h-screen w-full bg-[#fdf8ef] text-brand-text font-sans flex flex-col transition-colors duration-300">
+      <div className="min-h-dvh w-full bg-[#fdf8ef] text-brand-text font-sans flex flex-col transition-colors duration-300">
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&family=Playfair+Display:wght@600;700;900&display=swap');
 
@@ -314,7 +314,7 @@ function App() {
     // skeleton, so the handoff is seamless); everyone else gets the brand splash.
     if (readSessionHint() === 'shell') return <AppSkeleton />;
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-brand-bg transition-colors duration-300">
+      <div className="h-dvh w-full flex flex-col items-center justify-center bg-brand-bg transition-colors duration-300">
         <div className="relative flex flex-col items-center">
           <div className="absolute inset-0 bg-brand-primary/20 blur-3xl rounded-full w-48 h-48 animate-pulse"></div>
           <img src="/logo-coral.png" alt="Abhishri Engine" className="h-24 w-auto object-contain block dark:hidden relative z-10" />
@@ -355,7 +355,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden text-brand-text bg-brand-bg font-sans transition-colors duration-300">
+    <div className="flex h-dvh w-full overflow-hidden text-brand-text bg-brand-bg font-sans transition-colors duration-300">
       {/* Sidebar */}
       <aside className="w-[260px] bg-brand-sidebar border-r border-brand-card-border hidden md:flex flex-col z-50 transition-colors duration-300">
         <div className="flex items-center justify-center p-6 border-b border-brand-card-border h-24">
@@ -465,11 +465,11 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Top Navbar */}
-        <header className="bg-brand-sidebar border-b border-brand-card-border h-16 flex items-center justify-between px-4 md:px-8 shrink-0 transition-colors duration-300">
-          <div className="flex items-center gap-3">
+        <header className="bg-brand-sidebar border-b border-brand-card-border h-16 flex items-center justify-between gap-2 px-2 sm:px-4 md:px-8 shrink-0 transition-colors duration-300">
+          <div className="flex items-center gap-1 sm:gap-3 flex-1 min-w-0">
             <button 
               onClick={() => setShowMobileSidebar(true)}
-              className="text-brand-text-dim hover:text-brand-text p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 md:hidden transition-colors"
+              className="text-brand-text-dim hover:text-brand-text p-2.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 md:hidden transition-colors shrink-0"
               aria-label="Open Sidebar"
             >
               <Menu size={20} />
@@ -477,10 +477,11 @@ function App() {
             <GlobalSearch />
           </div>
           
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-0.5 sm:gap-3 md:gap-5 shrink-0">
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="text-brand-text-dim hover:text-brand-text transition-colors p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
+              aria-label={isDarkMode ? 'Light mode' : 'Dark mode'}
+              className="text-brand-text-dim hover:text-brand-text transition-colors p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
             >
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -496,17 +497,20 @@ function App() {
               birthdays: tamilBirthdayMembers,
             })} />
             
-            <div className="h-6 w-px bg-brand-card-border"></div>
+            <div className="h-6 w-px bg-brand-card-border hidden sm:block"></div>
 
             <div className="relative">
-              <div 
-                className="flex items-center gap-3 cursor-pointer group"
+              {/* On phones only the initials show; the menu has the full name and email. */}
+              <button
+                type="button"
+                aria-label="Account menu"
+                className="flex items-center gap-3 cursor-pointer group p-1 sm:p-0 rounded-full"
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
               >
                 <div className="w-8 h-8 rounded-full bg-brand-secondary/20 flex items-center justify-center text-brand-secondary font-bold text-sm uppercase">
                   {userData?.displayName ? userData.displayName.substring(0, 2) : (currentUser?.email ? currentUser.email.substring(0, 2) : 'U')}
                 </div>
-                <div className="flex flex-col">
+                <div className="hidden sm:flex flex-col text-left">
                   <span className="font-semibold text-sm leading-tight text-brand-text">
                     {userData?.displayName || currentUser?.email?.split('@')[0] || 'User'}
                   </span>
@@ -514,27 +518,28 @@ function App() {
                     {userData?.role === 'pro' ? 'PRO' : (userData?.role || 'User')}
                   </span>
                 </div>
-                <ChevronDown size={14} className={`text-brand-text-dim group-hover:text-brand-text ml-1 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
-              </div>
+                <ChevronDown size={14} className={`hidden sm:block text-brand-text-dim group-hover:text-brand-text ml-1 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
+              </button>
 
               {showProfileMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)}></div>
-                  <div className="absolute right-0 mt-3 w-48 bg-brand-card border border-brand-card-border rounded-xl shadow-lg py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute right-0 mt-3 w-56 bg-brand-card border border-brand-card-border rounded-xl shadow-lg py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="px-4 py-2 border-b border-brand-card-border mb-1">
-                      <p className="text-xs font-bold text-brand-text-dim uppercase">Signed in as</p>
+                      <p className="text-sm font-semibold text-brand-text sm:hidden truncate">{userData?.displayName || currentUser?.email?.split('@')[0] || 'User'}</p>
+                      <p className="text-xs font-bold text-brand-text-dim uppercase hidden sm:block">Signed in as</p>
                       <p className="text-sm font-semibold text-brand-text truncate">{currentUser?.email}</p>
                     </div>
                     <Link 
                       onClick={() => { setShowProfileMenu(false); }}
                       to="/settings"
-                      className="w-full text-left px-4 py-2 text-sm text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2"
+                      className="w-full text-left px-4 py-2.5 text-sm text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2"
                     >
                       <Settings size={16} /> Account Settings
                     </Link>
                     <button 
                       onClick={() => signOut(auth)}
-                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2"
+                      className="w-full text-left px-4 py-2.5 text-sm text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2"
                     >
                       <LogOut size={16} className="rotate-180" /> Sign Out
                     </button>
@@ -609,7 +614,7 @@ function UnauthorizedScreen({ user }) {
   }, [user]);
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-brand-bg text-brand-text p-6">
+    <div className="min-h-dvh w-full flex items-center justify-center bg-brand-bg text-brand-text p-6">
       <div className="max-w-md w-full p-8 bg-brand-card border border-brand-card-border rounded-2xl shadow-lg text-center space-y-6">
         <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto">
           <AlertTriangle size={32} />

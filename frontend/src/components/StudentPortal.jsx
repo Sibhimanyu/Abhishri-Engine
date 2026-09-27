@@ -121,12 +121,12 @@ export default function StudentPortal() {
   }, [userData]);
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center bg-brand-bg"><Spinner /></div>;
+    return <div className="h-dvh flex items-center justify-center bg-brand-bg"><Spinner /></div>;
   }
 
   if (error) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-brand-bg text-brand-text p-6 text-center">
+      <div className="h-dvh flex flex-col items-center justify-center bg-brand-bg text-brand-text p-6 text-center">
         <XCircle className="text-red-500 mb-4" size={64} />
         <h2 className="text-2xl font-bold mb-2">Access Issue</h2>
         <p className="text-brand-text-dim max-w-md mb-8">
@@ -208,7 +208,7 @@ export default function StudentPortal() {
   };
 
   return (
-    <div className="min-h-screen bg-brand-bg font-sans transition-colors duration-300 pb-20">
+    <div className="min-h-dvh bg-brand-bg font-sans transition-colors duration-300 pb-20">
       
       {/* Top Navbar */}
       <header className="bg-brand-sidebar border-b border-brand-card-border h-16 flex items-center justify-between px-6 shrink-0 sticky top-0 z-50 shadow-sm">

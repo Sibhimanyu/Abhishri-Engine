@@ -225,38 +225,38 @@ export default function Attendance() {
     <div className="space-y-6 animate-in fade-in duration-300">
       
       {/* Header & Controls */}
-      <div className="bg-brand-card border border-brand-card-border p-6 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+      <div className="bg-brand-card border border-brand-card-border p-4 sm:p-6 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
         
         <div className="flex bg-black/5 dark:bg-white/5 rounded-lg p-1 w-full md:w-auto">
           {canViewStudents && (
             <>
-              <button onClick={() => setActiveTab('preschool')} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'preschool' ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}>Preschool</button>
-              <button onClick={() => setActiveTab('tuition')} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'tuition' ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}>Tuition</button>
+              <button onClick={() => setActiveTab('preschool')} className={`flex-1 md:flex-none px-4 py-2 md:py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'preschool' ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}>Preschool</button>
+              <button onClick={() => setActiveTab('tuition')} className={`flex-1 md:flex-none px-4 py-2 md:py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'tuition' ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}>Tuition</button>
             </>
           )}
           {canViewStaff && (
-            <button onClick={() => setActiveTab('staff')} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'staff' ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}>Staff</button>
+            <button onClick={() => setActiveTab('staff')} className={`flex-1 md:flex-none px-4 py-2 md:py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'staff' ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}>Staff</button>
           )}
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          <div className="flex bg-brand-primary/10 rounded-lg p-1">
-            <button onClick={() => setMode('mark')} className={`px-3 py-1.5 rounded-md text-sm font-bold flex items-center gap-2 ${mode === 'mark' ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-primary hover:bg-brand-primary/20'}`}>
+        <div className="flex items-center gap-3 w-full md:w-auto md:justify-end">
+          <div className="flex bg-brand-primary/10 rounded-lg p-1 shrink-0">
+            <button onClick={() => setMode('mark')} className={`px-3 py-2 md:py-1.5 rounded-md text-sm font-bold flex items-center gap-2 ${mode === 'mark' ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-primary hover:bg-brand-primary/20'}`}>
               <CheckSquare size={16} /> Mark
             </button>
-            <button onClick={() => setMode('report')} className={`px-3 py-1.5 rounded-md text-sm font-bold flex items-center gap-2 ${mode === 'report' ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-primary hover:bg-brand-primary/20'}`}>
+            <button onClick={() => setMode('report')} className={`px-3 py-2 md:py-1.5 rounded-md text-sm font-bold flex items-center gap-2 ${mode === 'report' ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-primary hover:bg-brand-primary/20'}`}>
               <BarChart2 size={16} /> Report
             </button>
           </div>
           {mode === 'mark' && (
-            <div className="relative w-full md:w-auto">
+            <div className="relative flex-1 min-w-0 md:flex-none md:w-auto">
               <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={16} />
               <input 
                 type="date" 
                 value={selectedDate}
                 max={todayKey}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-brand-bg border border-brand-card-border rounded-md py-1.5 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary w-full md:w-40 text-brand-text font-medium"
+                className="bg-brand-bg border border-brand-card-border rounded-md py-2 md:py-1.5 pl-9 pr-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary w-full min-w-0 md:w-40 text-brand-text font-medium"
               />
             </div>
           )}

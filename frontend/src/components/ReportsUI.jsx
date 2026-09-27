@@ -606,7 +606,7 @@ export function SavedViews({ storageKey, current, onApply }) {
     <div className="relative" ref={ref}>
       <button
         type="button" onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-brand-card-border text-xs font-bold text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-brand-card-border text-xs font-bold text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
       >
         <Bookmark size={13} /> Saved views {views.length > 0 && <span className="text-brand-primary">({views.length})</span>}
       </button>
