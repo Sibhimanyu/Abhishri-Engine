@@ -457,16 +457,29 @@ service cloud.firestore {
       allow write: if isAuthenticated() && (isAdmin() || isInternalStaff());
     }
 
+    // Weekly menus and daily reports need an admin's approval before a non-admin may
+    // export them (frontend/src/components/poster/approval.js). A non-admin can save a
+    // draft or send it for approval, attributed to themselves, but never write any
+    // other status: approving, and sending back with a note, are admin-only.
+    function isNonAdminPosterWrite() {
+      let approval = request.resource.data.get('approval', {});
+      let status = approval.get('status', 'draft');
+      return status in ['draft', 'pending'] &&
+        (status != 'pending' || isOwnEmail(approval.get('requestedBy', '')));
+    }
+
     // --- Weekly Menus ---
     match /weekly_menus/{menuId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isAdmin() || isInternalStaff());
+      allow create, update: if isAuthenticated() && (isAdmin() || (isInternalStaff() && isNonAdminPosterWrite()));
+      allow delete: if isAuthenticated() && (isAdmin() || isInternalStaff());
     }
 
     // --- Daily Reports ("Connecting the Dots"), one per date: doc id is YYYY-MM-DD ---
     match /daily_reports/{date} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (isAdmin() || isInternalStaff());
+      allow create, update: if isAuthenticated() && (isAdmin() || (isInternalStaff() && isNonAdminPosterWrite()));
+      allow delete: if isAuthenticated() && (isAdmin() || isInternalStaff());
     }
 
     // --- App Feedback (complaints / suggestions / modification requests) ---

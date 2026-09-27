@@ -7,7 +7,9 @@ import { MENU_PROMPT, MENU_SLOTS, parseMenuText, isMenuDate, addDays, weekRangeL
 import ChatGPTImportDialog from './ChatGPTImportDialog';
 import { POSTER, POSTER_WIDTH, DISPLAY_FONT, BODY_FONT, TAMIL_FONT, SCRIPT_FONT, exportPosterPng, fileSlug } from './poster/posterTheme';
 import { Flake, ScaledPreview } from './poster/PosterParts';
-import { Coffee, Utensils, Popcorn, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste } from 'lucide-react';
+import { isAdminUser, statusOf, approvalForSave, reviewDocument, APPROVED, PENDING } from './poster/approval';
+import { ApprovalActions, ApprovalStatus, ApprovalChip, PendingList } from './poster/ApprovalControls';
+import { Coffee, Utensils, Popcorn, Plus, Trash2, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste } from 'lucide-react';
 
 const DAY_THEMES = [
   { key: 'monday', day: 'MONDAY', short: 'MON', color: POSTER.coral },
@@ -136,9 +138,13 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
   );
 });
 
+// What approval covers: the menu as it would print. Compared to tell unsaved edits apart.
+const menuSignature = (m) => JSON.stringify({ startDate: m.startDate, endDate: m.endDate, days: m.days });
+
 export default function WeeklyMenu() {
-  const { currentUser } = useAuth();
+  const { currentUser, userData } = useAuth();
   const email = currentUser?.email;
+  const isAdmin = isAdminUser(userData);
 
   const [savedMenus, setSavedMenus] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -149,6 +155,8 @@ export default function WeeklyMenu() {
   const [showLoadPanel, setShowLoadPanel] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importWarnings, setImportWarnings] = useState([]);
+  const [savedSignature, setSavedSignature] = useState(null);
+  const [reviewing, setReviewing] = useState(false);
   const previewRef = useRef(null);
 
   useEffect(() => {
@@ -198,16 +206,21 @@ export default function WeeklyMenu() {
     });
   };
 
+  const savedMenu = activeMenuId ? savedMenus.find(m => m.id === activeMenuId) : null;
+  const status = statusOf(savedMenu);
+  const dirty = !savedMenu || menuSignature(menu) !== savedSignature;
+  const canExport = isAdmin || (status === APPROVED && !dirty);
+
   const handleNew = () => {
     setActiveMenuId(null);
+    setSavedSignature(null);
     setMenu(emptyMenu());
     setImportWarnings([]);
     setShowLoadPanel(false);
   };
 
   const handleLoad = (saved) => {
-    setActiveMenuId(saved.id);
-    setMenu({
+    const loaded = {
       // Menus saved before dates existed load without them; they must be set before saving again.
       startDate: isMenuDate(saved.startDate) ? saved.startDate : '',
       endDate: isMenuDate(saved.endDate) ? saved.endDate : '',
@@ -219,7 +232,10 @@ export default function WeeklyMenu() {
             ...Object.fromEntries(MENU_SLOTS.map(s => [s, d[s]?.length ? d[s].map(normalizeItem) : [emptyItem()]])),
           }))
         : emptyMenu().days
-    });
+    };
+    setActiveMenuId(saved.id);
+    setMenu(loaded);
+    setSavedSignature(menuSignature(loaded));
     setImportWarnings([]);
     setShowLoadPanel(false);
   };
@@ -249,7 +265,11 @@ export default function WeeklyMenu() {
     setShowLoadPanel(false);
   };
 
-  const handleSave = async () => {
+  // `submit` also sends it for approval. A non-admin's plain save leaves it a draft,
+  // so saving an approved menu with changes puts it back through approval.
+  const handleSave = async ({ submit = false } = {}) => {
+    // Re-saving an unchanged approved menu as a draft would only undo its approval.
+    if (!isAdmin && !submit && !dirty) return;
     if (!isMenuDate(menu.startDate) || !isMenuDate(menu.endDate)) {
       alert('Please set the dates this menu is for before saving.');
       return;
@@ -266,17 +286,22 @@ export default function WeeklyMenu() {
         // Kept for the saved-menus list and audit names; always built from the dates.
         weekLabel: weekRangeLabel(menu.startDate, menu.endDate),
         days: menu.days,
+        approval: approvalForSave({ isAdmin, email, submit }),
         updatedAt: serverTimestamp(),
         updatedBy: email || 'unknown',
       };
+      let id = activeMenuId;
       if (activeMenuId) {
         await setDoc(doc(firestore, 'weekly_menus', activeMenuId), payload, { merge: true });
         logAudit({ action: 'WEEKLY_MENU_UPDATED', module: 'school_calendar', targetId: activeMenuId, targetName: payload.weekLabel, performedBy: email, details: {} });
       } else {
         const ref = await addDoc(collection(firestore, 'weekly_menus'), { ...payload, createdAt: serverTimestamp(), createdBy: email || 'unknown' });
+        id = ref.id;
         setActiveMenuId(ref.id);
         logAudit({ action: 'WEEKLY_MENU_CREATED', module: 'school_calendar', targetId: ref.id, targetName: payload.weekLabel, performedBy: email, details: {} });
       }
+      setSavedSignature(menuSignature(menu));
+      if (submit) logAudit({ action: 'WEEKLY_MENU_SENT_FOR_APPROVAL', module: 'school_calendar', targetId: id, targetName: payload.weekLabel, performedBy: email, details: {} });
     } catch (err) {
       console.error('Failed to save menu:', err);
       alert('Failed to save menu.');
@@ -297,8 +322,26 @@ export default function WeeklyMenu() {
     }
   };
 
+  const handleReview = async (approve) => {
+    if (!savedMenu) return;
+    let note = '';
+    if (!approve) {
+      note = (window.prompt('What should be changed? This note is shown to whoever sent it.') || '').trim();
+      if (!note) return;
+    }
+    setReviewing(true);
+    try {
+      await reviewDocument({ collectionName: 'weekly_menus', id: savedMenu.id, approve, note, email, auditPrefix: 'WEEKLY_MENU', targetName: savedMenu.weekLabel });
+    } catch (err) {
+      console.error('Failed to review menu:', err);
+      alert('Could not save your review. Please try again.');
+    } finally {
+      setReviewing(false);
+    }
+  };
+
   const handleExport = async () => {
-    if (!previewRef.current) return;
+    if (!previewRef.current || !canExport) return;
     setExporting(true);
     try {
       await exportPosterPng(previewRef.current, `${fileSlug(weekRangeLabel(menu.startDate, menu.endDate), 'weekly-menu')}.png`);
@@ -321,9 +364,18 @@ export default function WeeklyMenu() {
 
   return (
     <div className="space-y-6">
+      {isAdmin && (
+        <PendingList
+          items={savedMenus.filter(m => statusOf(m) === PENDING && m.id !== activeMenuId)}
+          labelOf={m => m.weekLabel || 'Untitled menu'}
+          onReview={handleLoad}
+          what="menu"
+        />
+      )}
+
       {/* Toolbar */}
-      <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4 md:p-6 flex flex-col md:flex-row gap-4 md:items-center justify-between">
-        <div className="flex-1 min-w-0">
+      <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4 md:p-6 flex flex-wrap gap-4 items-center justify-between">
+        <div className="shrink-0 max-w-full">
           <label className="block text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-1.5">Menu Dates</label>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -349,7 +401,7 @@ export default function WeeklyMenu() {
           </div>
           <p className="text-xs text-brand-text-dim mt-1.5">Filled in by Import from ChatGPT. Parents see the menu on these dates.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             onClick={() => setShowLoadPanel(v => !v)}
             className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
@@ -369,21 +421,27 @@ export default function WeeklyMenu() {
             <FilePlus2 size={16} /> New
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => handleSave()}
             disabled={saving}
             className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {activeMenuId ? 'Save Changes' : 'Save'}
           </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="flex items-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
-          >
-            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export as PNG
-          </button>
+          <ApprovalActions
+            isAdmin={isAdmin}
+            status={status}
+            dirty={dirty}
+            busy={saving || reviewing}
+            exporting={exporting}
+            onExport={handleExport}
+            onSubmit={() => handleSave({ submit: true })}
+            onApprove={() => handleReview(true)}
+            onSendBack={() => handleReview(false)}
+          />
         </div>
       </div>
+
+      <ApprovalStatus isAdmin={isAdmin} saved={savedMenu} dirty={dirty} what="menu" />
 
       {importWarnings.length > 0 && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start justify-between gap-4">
@@ -417,7 +475,10 @@ export default function WeeklyMenu() {
               savedMenus.map(m => (
                 <div key={m.id} className="p-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                   <button onClick={() => handleLoad(m)} className="text-left flex-1 min-w-0">
-                    <div className="font-bold text-brand-text truncate">{m.weekLabel || 'Untitled menu'}</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-bold text-brand-text truncate">{m.weekLabel || 'Untitled menu'}</span>
+                      <ApprovalChip status={statusOf(m)} />
+                    </div>
                     <div className="text-xs text-brand-text-dim">Last updated by {m.updatedBy || 'unknown'}</div>
                   </button>
                   <button onClick={() => handleDelete(m)} className="text-red-500 hover:text-red-600 p-2 shrink-0" title="Delete menu">

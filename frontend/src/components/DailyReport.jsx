@@ -8,7 +8,9 @@ import { tamilCalendarFor } from '../utils/tamilCalendar';
 import ChatGPTImportDialog from './ChatGPTImportDialog';
 import { POSTER, POSTER_WIDTH, DISPLAY_FONT, BODY_FONT, TAMIL_FONT, SCRIPT_FONT, CONTACT, exportPosterPng } from './poster/posterTheme';
 import { Flake, ScaledPreview } from './poster/PosterParts';
-import { School, HouseHeart, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react';
+import { isAdminUser, statusOf, approvalForSave, reviewDocument, APPROVED, PENDING } from './poster/approval';
+import { ApprovalActions, ApprovalStatus, ApprovalChip, PendingList } from './poster/ApprovalControls';
+import { School, HouseHeart, Plus, Trash2, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react';
 
 // "Connecting the Dots": the day's classroom highlights for parents, each optionally
 // paired with something to try at home. One report per date (the Firestore doc id).
@@ -40,11 +42,24 @@ const safeCalendar = (iso) => {
   }
 };
 
-const IconCircle = ({ color, size, border, children }) => (
-  <div style={{ width: size, height: size, borderRadius: 999, background: color, color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: border ? `${border}px solid #ffffff` : undefined, boxShadow: border ? '0 3px 10px rgba(120,90,60,0.15)' : undefined }}>
-    {children}
-  </div>
-);
+// A ringed circle gets a soft shadow. It's a radial gradient behind the circle rather than a
+// box-shadow, which the PNG export smeared into a square block beside the circle.
+const IconCircle = ({ color, size, border, children }) => {
+  const circle = (
+    <div style={{ position: 'relative', width: size, height: size, borderRadius: 999, background: color, color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: border ? `${border}px solid #ffffff` : undefined }}>
+      {children}
+    </div>
+  );
+  if (!border) return circle;
+  const halo = 10;
+  const edge = Math.round((size / 2 / (size / 2 + halo)) * 100);
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <div style={{ position: 'absolute', left: -halo, right: -halo, top: -halo + 3, bottom: -halo - 3, background: `radial-gradient(closest-side, rgba(120,90,60,0.16) ${edge - 8}%, rgba(120,90,60,0) 100%)` }} />
+      {circle}
+    </div>
+  );
+};
 
 // Dotted rule drawn with a repeating radial gradient (renders the same in the PNG as on screen).
 const dots = (color, horizontal) => ({
@@ -169,9 +184,13 @@ const ReportPoster = forwardRef(function ReportPoster({ cal, highlights }, ref) 
 const inputClass = 'w-full bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary';
 const buttonClass = 'flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors';
 
+// What approval covers: the report as it would print. Compared to tell unsaved edits apart.
+const reportSignature = (date, highlights, calendar) => JSON.stringify({ date, highlights: highlights.filter(hasText), calendar });
+
 export default function DailyReport() {
-  const { currentUser } = useAuth();
+  const { currentUser, userData } = useAuth();
   const email = currentUser?.email;
+  const isAdmin = isAdminUser(userData);
 
   const [date, setDate] = useState(todayIST());
   const [highlights, setHighlights] = useState([emptyHighlight()]);
@@ -184,6 +203,8 @@ export default function DailyReport() {
   const [showLoadPanel, setShowLoadPanel] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [savedSignature, setSavedSignature] = useState(null);
+  const [reviewing, setReviewing] = useState(false);
   const previewRef = useRef(null);
 
   useEffect(() => {
@@ -236,6 +257,13 @@ export default function DailyReport() {
     });
   };
 
+  // The saved report this editor is showing: reports are keyed by date, and only one
+  // that was loaded (or saved) here counts, never another report that shares the date.
+  const savedReport = loadedDate === date ? savedReports.find(r => r.id === date) : null;
+  const status = statusOf(savedReport);
+  const dirty = !savedReport || reportSignature(date, highlights, calOverrides) !== savedSignature;
+  const canExport = isAdmin || (status === APPROVED && !dirty);
+
   const handleNew = () => {
     setDate(todayIST());
     setHighlights([emptyHighlight()]);
@@ -245,10 +273,12 @@ export default function DailyReport() {
   };
 
   const handleLoad = (saved) => {
+    const loadedHighlights = saved.highlights?.length ? saved.highlights.map(h => ({ activity: h.activity || '', classroom: h.classroom || '', home: h.home || '' })) : [emptyHighlight()];
     setDate(saved.date);
-    setHighlights(saved.highlights?.length ? saved.highlights.map(h => ({ activity: h.activity || '', classroom: h.classroom || '', home: h.home || '' })) : [emptyHighlight()]);
+    setHighlights(loadedHighlights);
     setCalOverrides(saved.calendar || {});
     setLoadedDate(saved.date);
+    setSavedSignature(reportSignature(saved.date, loadedHighlights, saved.calendar || {}));
     setShowLoadPanel(false);
   };
 
@@ -261,7 +291,11 @@ export default function DailyReport() {
     setShowLoadPanel(false);
   };
 
-  const handleSave = async () => {
+  // `submit` also sends it for approval. A non-admin's plain save leaves it a draft,
+  // so saving an approved report with changes puts it back through approval.
+  const handleSave = async ({ submit = false } = {}) => {
+    // Re-saving an unchanged approved report as a draft would only undo its approval.
+    if (!isAdmin && !submit && !dirty) return;
     if (!highlights.some(hasText)) {
       alert('Add at least one highlight before saving.');
       return;
@@ -274,12 +308,15 @@ export default function DailyReport() {
         date,
         highlights: highlights.filter(hasText),
         calendar: calOverrides,
+        approval: approvalForSave({ isAdmin, email, submit }),
         updatedAt: serverTimestamp(),
         updatedBy: email || 'unknown',
         ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: email || 'unknown' }),
       }, { merge: true });
       setLoadedDate(date);
+      setSavedSignature(reportSignature(date, highlights, calOverrides));
       logAudit({ action: existing ? 'DAILY_REPORT_UPDATED' : 'DAILY_REPORT_CREATED', module: 'school_calendar', targetId: date, targetName: prettyDate(date), performedBy: email, details: {} });
+      if (submit) logAudit({ action: 'DAILY_REPORT_SENT_FOR_APPROVAL', module: 'school_calendar', targetId: date, targetName: prettyDate(date), performedBy: email, details: {} });
     } catch (err) {
       console.error('Failed to save report:', err);
       alert('Failed to save report.');
@@ -300,8 +337,26 @@ export default function DailyReport() {
     }
   };
 
+  const handleReview = async (approve) => {
+    if (!savedReport) return;
+    let note = '';
+    if (!approve) {
+      note = (window.prompt('What should be changed? This note is shown to whoever sent it.') || '').trim();
+      if (!note) return;
+    }
+    setReviewing(true);
+    try {
+      await reviewDocument({ collectionName: 'daily_reports', id: savedReport.id, approve, note, email, auditPrefix: 'DAILY_REPORT', targetName: prettyDate(savedReport.date) });
+    } catch (err) {
+      console.error('Failed to review report:', err);
+      alert('Could not save your review. Please try again.');
+    } finally {
+      setReviewing(false);
+    }
+  };
+
   const handleExport = async () => {
-    if (!previewRef.current) return;
+    if (!previewRef.current || !canExport) return;
     setExporting(true);
     try {
       await exportPosterPng(previewRef.current, `daily-report-${date}.png`);
@@ -316,9 +371,18 @@ export default function DailyReport() {
 
   return (
     <div className="space-y-6">
+      {isAdmin && (
+        <PendingList
+          items={savedReports.filter(r => statusOf(r) === PENDING && r.id !== savedReport?.id)}
+          labelOf={r => prettyDate(r.date)}
+          onReview={handleLoad}
+          what="report"
+        />
+      )}
+
       {/* Toolbar */}
-      <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4 md:p-6 flex flex-col md:flex-row gap-4 md:items-center justify-between">
-        <div className="flex-1 min-w-0">
+      <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4 md:p-6 flex flex-wrap gap-4 items-center justify-between">
+        <div className="shrink-0 max-w-full">
           <label className="block text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-1.5">Date</label>
           <input
             type="date"
@@ -327,22 +391,28 @@ export default function DailyReport() {
             className="w-full md:w-56 bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button onClick={() => setShowLoadPanel(v => !v)} className={buttonClass}><FolderOpen size={16} /> Load</button>
           <button onClick={() => setShowImport(true)} className={buttonClass}><ClipboardPaste size={16} /> Import from ChatGPT</button>
           <button onClick={handleNew} className={buttonClass}><FilePlus2 size={16} /> New</button>
-          <button onClick={handleSave} disabled={saving} className={`${buttonClass} disabled:opacity-50`}>
+          <button onClick={() => handleSave()} disabled={saving} className={`${buttonClass} disabled:opacity-50`}>
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {loadedDate === date ? 'Save Changes' : 'Save'}
           </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="flex items-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
-          >
-            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export as PNG
-          </button>
+          <ApprovalActions
+            isAdmin={isAdmin}
+            status={status}
+            dirty={dirty}
+            busy={saving || reviewing}
+            exporting={exporting}
+            onExport={handleExport}
+            onSubmit={() => handleSave({ submit: true })}
+            onApprove={() => handleReview(true)}
+            onSendBack={() => handleReview(false)}
+          />
         </div>
       </div>
+
+      <ApprovalStatus isAdmin={isAdmin} saved={savedReport} dirty={dirty} what="report" />
 
       {showImport && (
         <ChatGPTImportDialog prompt={REPORT_PROMPT} what="report" fillLabel="Fill Report" onImport={handleImport} onClose={() => setShowImport(false)} />
@@ -364,7 +434,10 @@ export default function DailyReport() {
               savedReports.map(r => (
                 <div key={r.id} className="p-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                   <button onClick={() => handleLoad(r)} className="text-left flex-1 min-w-0">
-                    <div className="font-bold text-brand-text truncate">{prettyDate(r.date)}</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-bold text-brand-text truncate">{prettyDate(r.date)}</span>
+                      <ApprovalChip status={statusOf(r)} />
+                    </div>
                     <div className="text-xs text-brand-text-dim">{r.highlights?.length || 0} highlights · last updated by {r.updatedBy || 'unknown'}</div>
                   </button>
                   <button onClick={() => handleDelete(r)} className="text-red-500 hover:text-red-600 p-2 shrink-0" title="Delete report">

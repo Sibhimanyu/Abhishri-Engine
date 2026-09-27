@@ -11,7 +11,7 @@ calendar and the latest weekly menu.
 - **Attendance** month by month (status only, not which staff member marked it).
 - **Fees**: this year's plan, paid so far, balance (the dues engine's figure).
 - **Payments** that still stand (no voids or concessions), each with its receipt.
-- **School calendar** and **weekly menu** (the most recently saved one).
+- **School calendar** and **weekly menu** (only menus an admin has approved; ones saved before approval existed still show).
 
 Firestore rules can only allow or deny a whole document, so parents never read student
 data directly. `getParentPortal` and `getParentAttendance`

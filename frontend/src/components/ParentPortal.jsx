@@ -232,7 +232,8 @@ function MenuView() {
   useEffect(() => {
     const today = todayIST();
     getDocs(query(collection(firestore, 'weekly_menus'), where('endDate', '>=', today), orderBy('endDate'), limit(10)))
-      .then(snap => setMenu(pickMenuFor(snap.docs.map(d => d.data()), today)))
+      // Only what an admin approved; menus saved before approval existed have no status and count as published.
+      .then(snap => setMenu(pickMenuFor(snap.docs.map(d => d.data()).filter(m => !m.approval || m.approval.status === 'approved'), today)))
       .catch(err => { console.error('Failed to load the weekly menu:', err); setMenu(null); });
   }, []);
 
