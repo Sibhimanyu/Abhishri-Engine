@@ -10,6 +10,7 @@ import { MENU_PROMPT, MENU_SLOTS, parseMenuText } from '../utils/menuImport';
 import '@fontsource-variable/fredoka';
 import '@fontsource-variable/nunito';
 import '@fontsource/caveat/700.css';
+import '@fontsource-variable/noto-sans-tamil';
 import { Coffee, Utensils, Popcorn, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste, Copy, Check } from 'lucide-react';
 
 // Fixed palette for the exported poster: literal hex, not the app's CSS variables,
@@ -29,6 +30,7 @@ const POSTER = {
 const POSTER_WIDTH = 1000;
 const DISPLAY_FONT = "'Fredoka Variable', 'Nunito Variable', system-ui, sans-serif";
 const BODY_FONT = "'Nunito Variable', system-ui, sans-serif";
+const TAMIL_FONT = "'Noto Sans Tamil Variable', 'Nunito Variable', system-ui, sans-serif";
 
 const DAY_THEMES = [
   { key: 'monday', day: 'MONDAY', short: 'MON', color: POSTER.coral },
@@ -44,14 +46,23 @@ const SLOTS = [
   { key: 'eveningSnack', label: 'Evening Snack', icon: Popcorn, color: POSTER.orange },
 ];
 
-// Items are { name, description }. Menus saved before the poster redesign called the
-// second field `translation`; it rendered in the same place, so it carries over.
-const emptyItem = () => ({ name: '', description: '' });
-const normalizeItem = (it) => ({ name: it?.name || '', description: it?.description ?? it?.translation ?? '' });
-const hasText = (it) => it.name?.trim() || it.description?.trim();
+// Items are { name, description, translation }: the English name, a short line under it,
+// and the Tamil name. The poster lists the English items, then their translations in the same order.
+const emptyItem = () => ({ name: '', description: '', translation: '' });
+// Briefly (the first poster release) saved menus loaded their Tamil into `description`;
+// Tamil found there with no translation set is moved back.
+const TAMIL = /[\u0B80-\u0BFF]/;
+const normalizeItem = (it) => {
+  const item = { name: it?.name || '', description: it?.description || '', translation: it?.translation || '' };
+  if (!item.translation && TAMIL.test(item.description)) return { ...item, description: '', translation: item.description };
+  return item;
+};
+const hasText = (it) => it.name?.trim() || it.description?.trim() || it.translation?.trim();
 
 const emptyDay = (theme) => ({
   day: theme.day,
+  holiday: false,
+  holidayNote: '',
   morningDrink: [emptyItem()],
   lunch: [emptyItem()],
   eveningSnack: [emptyItem()],
@@ -122,7 +133,12 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
                   <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 500, fontSize: 46, letterSpacing: 2, lineHeight: 1 }}>{theme.short}</div>
                   <div style={{ fontWeight: 700, fontSize: 12.5, letterSpacing: 3, marginTop: 8 }}>{theme.day}</div>
                 </div>
-                {SLOTS.map(slot => {
+                {d.holiday ? (
+                  <div style={{ gridColumn: 'span 3', background: '#ffffff', border: `2px dashed ${theme.color}`, borderRadius: 16, minHeight: 128, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '18px 22px' }}>
+                    <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 500, fontSize: 34, lineHeight: 1, color: theme.color }}>Holiday</div>
+                    {d.holidayNote && <div style={{ fontWeight: 600, fontSize: 17, color: POSTER.inkDim, marginTop: 8 }}>{d.holidayNote}</div>}
+                  </div>
+                ) : SLOTS.map(slot => {
                   const [main, ...sides] = (d[slot.key] || []).filter(hasText);
                   return (
                     <div key={slot.key} style={{ background: '#ffffff', borderRadius: 16, minHeight: 128, padding: '18px 22px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -138,6 +154,16 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
                               {it.name}{it.description ? ` · ${it.description}` : ''}
                             </div>
                           ))}
+                          {[main, ...sides].some(it => it.translation?.trim()) && (
+                            <div style={{ fontFamily: TAMIL_FONT, fontSize: 14.5, lineHeight: 1.45, color: POSTER.deepTeal, marginTop: 10 }}>
+                              {[main, ...sides].map((it, i) => it.translation?.trim() && (
+                                <div key={i} style={{ fontWeight: i === 0 ? 600 : 500 }}>
+                                  {i > 0 && <span style={{ color: POSTER.coral, fontWeight: 800, marginRight: 6 }}>+</span>}
+                                  {it.translation}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -228,6 +254,14 @@ export default function WeeklyMenu() {
     });
   };
 
+  const updateDay = (dayIdx, patch) => {
+    setMenu(prev => {
+      const days = [...prev.days];
+      days[dayIdx] = { ...days[dayIdx], ...patch };
+      return { ...prev, days };
+    });
+  };
+
   const addItem = (dayIdx, slot) => {
     setMenu(prev => {
       const days = [...prev.days];
@@ -259,6 +293,8 @@ export default function WeeklyMenu() {
       days: (saved.days && saved.days.length === DAY_THEMES.length)
         ? saved.days.map((d, i) => ({
             day: DAY_THEMES[i].day,
+            holiday: !!d.holiday,
+            holidayNote: d.holidayNote || '',
             ...Object.fromEntries(MENU_SLOTS.map(s => [s, d[s]?.length ? d[s].map(normalizeItem) : [emptyItem()]])),
           }))
         : emptyMenu().days
@@ -297,7 +333,7 @@ export default function WeeklyMenu() {
       setImportError(err.message);
       return;
     }
-    const hasContent = menu.days.some(d => MENU_SLOTS.some(s => d[s].some(hasText)));
+    const hasContent = menu.days.some(d => d.holiday || MENU_SLOTS.some(s => d[s].some(hasText)));
     if (hasContent && !window.confirm('Replace the menu currently in the editor with the pasted one?')) return;
 
     // Imported menus always start as a new, unsaved menu so a loaded one is never overwritten by accident.
@@ -308,6 +344,8 @@ export default function WeeklyMenu() {
         const day = parsed.days[theme.key];
         return {
           day: theme.day,
+          holiday: day.holiday,
+          holidayNote: day.holidayNote,
           ...Object.fromEntries(MENU_SLOTS.map(s => [s, day[s].length ? day[s] : [emptyItem()]])),
         };
       }),
@@ -550,10 +588,29 @@ export default function WeeklyMenu() {
                   <div className="w-11 h-11 rounded-lg flex items-center justify-center text-white text-sm font-black tracking-wide" style={{ background: theme.color }}>
                     {theme.short}
                   </div>
-                  <h3 className="font-black tracking-wide text-brand-text">{theme.day}</h3>
+                  <h3 className="font-black tracking-wide text-brand-text flex-1">{theme.day}</h3>
+                  <label className="flex items-center gap-2 text-xs font-bold text-brand-text-dim cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!d.holiday}
+                      onChange={(e) => updateDay(dayIdx, { holiday: e.target.checked })}
+                      className="accent-brand-primary"
+                    />
+                    Holiday
+                  </label>
                 </div>
                 <div className="p-4 space-y-4">
-                  {SLOTS.map(slot => {
+                  {d.holiday ? (
+                    <div>
+                      <input
+                        value={d.holidayNote || ''}
+                        onChange={(e) => updateDay(dayIdx, { holidayNote: e.target.value })}
+                        placeholder="Holiday name (optional), e.g. Gandhi Jayanti"
+                        className="w-full bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
+                      />
+                      <p className="text-xs text-brand-text-dim mt-2">The whole day shows as a holiday on the menu. Untick to bring its meals back.</p>
+                    </div>
+                  ) : SLOTS.map(slot => {
                     const Icon = slot.icon;
                     return (
                       <div key={slot.key}>
@@ -563,22 +620,31 @@ export default function WeeklyMenu() {
                         </div>
                         <div className="space-y-2">
                           {d[slot.key].map((item, itemIdx) => (
-                            <div key={itemIdx} className="flex items-center gap-2">
+                            <div key={itemIdx} className="flex items-start gap-2">
+                              <div className="flex-1 min-w-0 grid grid-cols-2 gap-2">
                               <input
                                 value={item.name}
                                 onChange={(e) => updateItem(dayIdx, slot.key, itemIdx, 'name', e.target.value)}
                                 placeholder={itemIdx === 0 ? 'Main item' : 'Side item (shown as + …)'}
-                                className="flex-1 min-w-0 bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
+                                className="min-w-0 bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
                               />
                               <input
                                 value={item.description}
                                 onChange={(e) => updateItem(dayIdx, slot.key, itemIdx, 'description', e.target.value)}
                                 placeholder="Description (optional)"
-                                className="flex-1 min-w-0 bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
+                                className="min-w-0 bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
                               />
+                              <input
+                                value={item.translation}
+                                onChange={(e) => updateItem(dayIdx, slot.key, itemIdx, 'translation', e.target.value)}
+                                placeholder="Tamil (optional)"
+                                lang="ta"
+                                className="col-span-2 min-w-0 bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary"
+                              />
+                              </div>
                               <button
                                 onClick={() => removeItem(dayIdx, slot.key, itemIdx)}
-                                className="text-brand-text-dim hover:text-red-500 p-1 shrink-0"
+                                className="text-brand-text-dim hover:text-red-500 p-1 mt-1 shrink-0"
                                 title="Remove item"
                               >
                                 <X size={14} />

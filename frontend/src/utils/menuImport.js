@@ -13,26 +13,31 @@ export const MENU_PROMPT = `Convert the weekly food menu I give you into JSON wi
   "weekLabel": "Week of 28 Sep – 02 Oct 2026",
   "days": {
     "monday": {
-      "morningDrink": [{ "name": "Item", "description": "" }],
+      "holiday": "",
+      "morningDrink": [{ "name": "Item", "description": "", "translation": "" }],
       "lunch": [
-        { "name": "Main item", "description": "" },
-        { "name": "Side item", "description": "" }
+        { "name": "Main item", "description": "", "translation": "" },
+        { "name": "Side item", "description": "", "translation": "" }
       ],
-      "eveningSnack": [{ "name": "Item", "description": "" }]
+      "eveningSnack": [{ "name": "Item", "description": "", "translation": "" }]
     },
-    "tuesday": { "morningDrink": [], "lunch": [], "eveningSnack": [] },
-    "wednesday": { "morningDrink": [], "lunch": [], "eveningSnack": [] },
-    "thursday": { "morningDrink": [], "lunch": [], "eveningSnack": [] },
-    "friday": { "morningDrink": [], "lunch": [], "eveningSnack": [] }
+    "tuesday": { "holiday": "", "morningDrink": [], "lunch": [], "eveningSnack": [] },
+    "wednesday": { "holiday": "", "morningDrink": [], "lunch": [], "eveningSnack": [] },
+    "thursday": { "holiday": "", "morningDrink": [], "lunch": [], "eveningSnack": [] },
+    "friday": { "holiday": "", "morningDrink": [], "lunch": [], "eveningSnack": [] }
   }
 }
 
 Format rules:
 - Include all five days: "monday", "tuesday", "wednesday", "thursday", "friday".
-- Every day has the three keys "morningDrink", "lunch" and "eveningSnack".
-- Each of those is a list of items. Each item has "name" and "description".
+- Every day has the keys "holiday", "morningDrink", "lunch" and "eveningSnack".
+- "holiday" is "" on a normal day. If the menu marks the day as a holiday, set it to the holiday's name (or "Holiday" if no name is given) and use [] for the three meals.
+- "morningDrink", "lunch" and "eveningSnack" are each a list of items. Each item has "name", "description" and "translation".
 - The first item in a list is the main item. Any further items are side items.
-- "description" is the short line shown under an item's name. If there isn't one, set it to "". If a meal has no items, use [].
+- "name" is the item's English name.
+- "description" is the short English line shown under an item's name.
+- "translation" is the item's Tamil name. If the menu lists the Tamil names after the English ones, match them to the English items in the same order.
+- Use "" for any of these that the menu doesn't have. If a meal has no items, use [].
 - "weekLabel" is the menu's week or title line; use "" if there isn't one.
 - Reply with only the JSON, in a single code block.`;
 
@@ -51,18 +56,33 @@ const slotFromKey = (key) => {
   return undefined;
 };
 
+// A day's holiday marker: a name string, `true`, or the whole day given as a string ("Holiday").
+const HOLIDAY_WORD = /^\s*(school\s+)?holiday\s*$/i;
+const readHoliday = (rawDay) => {
+  if (typeof rawDay === 'string') {
+    return rawDay.trim() ? { holiday: true, holidayNote: HOLIDAY_WORD.test(rawDay) ? '' : rawDay.trim() } : null;
+  }
+  const raw = rawDay?.holiday;
+  if (raw === true) return { holiday: true, holidayNote: String(rawDay.holidayNote ?? '').trim() };
+  if (typeof raw === 'string' && raw.trim() && !/^(false|no|none)$/i.test(raw.trim())) {
+    return { holiday: true, holidayNote: HOLIDAY_WORD.test(raw) ? '' : raw.trim() };
+  }
+  return null;
+};
+
 const toItem = (raw) => {
-  if (typeof raw === 'string') return { name: raw.trim(), description: '' };
+  if (typeof raw === 'string') return { name: raw.trim(), description: '', translation: '' };
   if (!raw || typeof raw !== 'object') return null;
   return {
     name: String(raw.name ?? raw.item ?? '').trim(),
-    description: String(raw.description ?? raw.translation ?? raw.note ?? '').trim(),
+    description: String(raw.description ?? raw.note ?? '').trim(),
+    translation: String(raw.translation ?? raw.tamil ?? '').trim(),
   };
 };
 
 const toItems = (raw) => {
   const list = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
-  return list.map(toItem).filter(it => it && (it.name || it.description));
+  return list.map(toItem).filter(it => it && (it.name || it.description || it.translation));
 };
 
 // Pull the JSON object out of a pasted chat reply.
@@ -91,7 +111,7 @@ const extractJson = (text) => {
 
 /**
  * Parse a pasted ChatGPT reply into
- * `{ weekLabel, days: { monday: { morningDrink: [{name, description}], ... }, ... }, warnings }`.
+ * `{ weekLabel, days: { monday: { morningDrink: [{name, description, translation}], ..., holiday, holidayNote }, ... }, warnings }`.
  * Always returns every day and slot (empty lists where missing); `warnings` names
  * what was missing so the admin can check the preview. Throws if nothing usable was found.
  */
@@ -119,7 +139,13 @@ export function parseMenuText(text) {
   for (const day of MENU_DAYS) {
     const dayLabel = day[0].toUpperCase() + day.slice(1);
     const rawDay = byDay[day];
-    days[day] = Object.fromEntries(MENU_SLOTS.map(s => [s, []]));
+    days[day] = { holiday: false, holidayNote: '', ...Object.fromEntries(MENU_SLOTS.map(s => [s, []])) };
+    const holiday = readHoliday(rawDay);
+    if (holiday) {
+      Object.assign(days[day], holiday);
+      itemCount++;
+      continue;
+    }
     if (!rawDay || typeof rawDay !== 'object') {
       warnings.push(`${dayLabel} is missing.`);
       continue;
