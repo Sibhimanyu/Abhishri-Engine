@@ -1,36 +1,13 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, forwardRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
-import { toPng } from 'html-to-image';
-import { saveFile } from '../utils/native';
 import { MENU_PROMPT, MENU_SLOTS, parseMenuText } from '../utils/menuImport';
-// Self-hosted so html-to-image can embed them in the exported PNG.
-import '@fontsource-variable/fredoka';
-import '@fontsource-variable/nunito';
-import '@fontsource/caveat/700.css';
-import '@fontsource-variable/noto-sans-tamil';
-import { Coffee, Utensils, Popcorn, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste, Copy, Check } from 'lucide-react';
-
-// Fixed palette for the exported poster: literal hex, not the app's CSS variables,
-// so the PNG renders the same regardless of the admin panel's light/dark mode.
-const POSTER = {
-  cream: '#FBF3E6',
-  coral: '#E2665E',
-  teal: '#7EC8C6',
-  orange: '#E99A3E',
-  deepTeal: '#4E7C7A',
-  brown: '#AE7F5F',
-  ink: '#2E2A26',
-  inkDim: '#6F6A64',
-  flake: '#F2E4CB',
-  star: '#F6E27F',
-};
-const POSTER_WIDTH = 1000;
-const DISPLAY_FONT = "'Fredoka Variable', 'Nunito Variable', system-ui, sans-serif";
-const BODY_FONT = "'Nunito Variable', system-ui, sans-serif";
-const TAMIL_FONT = "'Noto Sans Tamil Variable', 'Nunito Variable', system-ui, sans-serif";
+import ChatGPTImportDialog from './ChatGPTImportDialog';
+import { POSTER, POSTER_WIDTH, DISPLAY_FONT, BODY_FONT, TAMIL_FONT, SCRIPT_FONT, CONTACT, exportPosterPng, fileSlug } from './poster/posterTheme';
+import { Flake, ScaledPreview } from './poster/PosterParts';
+import { Coffee, Utensils, Popcorn, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste } from 'lucide-react';
 
 const DAY_THEMES = [
   { key: 'monday', day: 'MONDAY', short: 'MON', color: POSTER.coral },
@@ -73,18 +50,6 @@ const emptyMenu = () => ({
   days: DAY_THEMES.map(emptyDay),
 });
 
-// Six-armed flake: `dots` puts a ball on each arm (the big background shapes); without, it's the small asterisk.
-const Flake = ({ size, color, dots, style }) => (
-  <svg width={size} height={size} viewBox="-50 -50 100 100" style={style} aria-hidden="true">
-    {[0, 60, 120].map(a => (
-      <line key={a} x1="-36" y1="0" x2="36" y2="0" stroke={color} strokeWidth={dots ? 10 : 9} strokeLinecap="round" transform={`rotate(${a + 90})`} />
-    ))}
-    {dots && [0, 60, 120, 180, 240, 300].map(a => (
-      <circle key={a} cx="38" cy="0" r="10" fill={color} transform={`rotate(${a + 90})`} />
-    ))}
-  </svg>
-);
-
 // The exported poster. Fixed width; the editor scales it down to fit on screen.
 const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
   return (
@@ -106,7 +71,7 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
             {menu.weekLabel ? (
               <div style={{ background: POSTER.teal, color: '#ffffff', fontWeight: 800, fontSize: 18, padding: '12px 28px', borderRadius: 999, whiteSpace: 'nowrap' }}>{menu.weekLabel}</div>
             ) : <div />}
-            <div style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, fontSize: 38, lineHeight: 1.05, transform: 'rotate(-7deg)', marginBottom: 14 }}>
+            <div style={{ fontFamily: SCRIPT_FONT, fontWeight: 700, fontSize: 38, lineHeight: 1.05, transform: 'rotate(-7deg)', marginBottom: 14 }}>
               <div style={{ color: POSTER.deepTeal }}>Healthy tummies,</div>
               <div style={{ color: POSTER.orange, paddingLeft: 40 }}>happy minds!</div>
             </div>
@@ -177,8 +142,8 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
       <div style={{ position: 'relative', marginTop: 26, background: POSTER.coral, color: '#ffffff', padding: '26px 44px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <img src="/logo-white.png" alt="Abhishri Academy" style={{ height: 60, width: 'auto', display: 'block' }} />
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontWeight: 800, fontSize: 21 }}>+91 95 004 004 59</div>
-          <div style={{ fontWeight: 600, fontSize: 15.5, marginTop: 4 }}>abhishriacademy@zohomail.in · www.abhishriacademy.in</div>
+          <div style={{ fontWeight: 800, fontSize: 21 }}>{CONTACT.phone}</div>
+          <div style={{ fontWeight: 600, fontSize: 15.5, marginTop: 4 }}>{CONTACT.email} · {CONTACT.web}</div>
         </div>
       </div>
     </div>
@@ -197,14 +162,8 @@ export default function WeeklyMenu() {
   const [exporting, setExporting] = useState(false);
   const [showLoadPanel, setShowLoadPanel] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [importText, setImportText] = useState('');
-  const [importError, setImportError] = useState('');
   const [importWarnings, setImportWarnings] = useState([]);
-  const [promptCopied, setPromptCopied] = useState(false);
   const previewRef = useRef(null);
-  const previewBoxRef = useRef(null);
-  const [previewFit, setPreviewFit] = useState({ scale: 1, height: 0 });
-  const promptRef = useRef(null);
 
   useEffect(() => {
     const q = query(collection(firestore, 'weekly_menus'), orderBy('updatedAt', 'desc'));
@@ -216,21 +175,6 @@ export default function WeeklyMenu() {
       setLoadingList(false);
     });
     return () => unsub();
-  }, []);
-
-  useLayoutEffect(() => {
-    const box = previewBoxRef.current;
-    const poster = previewRef.current;
-    if (!box || !poster) return;
-    const fit = () => {
-      const scale = Math.min(1, box.clientWidth / POSTER_WIDTH);
-      setPreviewFit({ scale, height: poster.offsetHeight * scale });
-    };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(box);
-    ro.observe(poster);
-    return () => ro.disconnect();
   }, []);
 
   const updateItem = (dayIdx, slot, itemIdx, field, value) => {
@@ -292,36 +236,8 @@ export default function WeeklyMenu() {
     setShowLoadPanel(false);
   };
 
-  const openImport = () => {
-    setImportText('');
-    setImportError('');
-    setPromptCopied(false);
-    setShowImport(true);
-  };
-
-  const copyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(MENU_PROMPT);
-    } catch {
-      // Older WKWebViews lack the async clipboard API; fall back to selecting the text.
-      promptRef.current?.select();
-      if (!document.execCommand('copy')) {
-        alert('Could not copy automatically. Select the instructions and copy them manually.');
-        return;
-      }
-    }
-    setPromptCopied(true);
-    setTimeout(() => setPromptCopied(false), 2000);
-  };
-
-  const handleImport = () => {
-    let parsed;
-    try {
-      parsed = parseMenuText(importText);
-    } catch (err) {
-      setImportError(err.message);
-      return;
-    }
+  const handleImport = (text) => {
+    const parsed = parseMenuText(text);
     const hasContent = menu.days.some(d => d.holiday || MENU_SLOTS.some(s => d[s].some(hasText)));
     if (hasContent && !window.confirm('Replace the menu currently in the editor with the pasted one?')) return;
 
@@ -389,13 +305,7 @@ export default function WeeklyMenu() {
     if (!previewRef.current) return;
     setExporting(true);
     try {
-      await document.fonts.ready;
-      // Two passes: html-to-image sometimes misses fonts/images on the very first render.
-      const opts = { pixelRatio: 2, cacheBust: true, backgroundColor: POSTER.cream };
-      await toPng(previewRef.current, opts);
-      const dataUrl = await toPng(previewRef.current, opts);
-      const safeName = (menu.weekLabel || 'weekly-menu').replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/(^-|-$)/g, '');
-      await saveFile(`${safeName || 'weekly-menu'}.png`, dataUrl);
+      await exportPosterPng(previewRef.current, `${fileSlug(menu.weekLabel, 'weekly-menu')}.png`);
 
       logAudit({
         action: 'WEEKLY_MENU_EXPORTED',
@@ -435,7 +345,7 @@ export default function WeeklyMenu() {
             <FolderOpen size={16} /> Load
           </button>
           <button
-            onClick={openImport}
+            onClick={() => setShowImport(true)}
             className="flex items-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
           >
             <ClipboardPaste size={16} /> Import from ChatGPT
@@ -475,65 +385,8 @@ export default function WeeklyMenu() {
         </div>
       )}
 
-      {/* Import from ChatGPT */}
       {showImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-brand-sidebar border border-brand-card-border rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
-            <button onClick={() => setShowImport(false)} className="absolute top-4 right-4 text-brand-text-dim hover:text-brand-text">
-              <X size={20} />
-            </button>
-            <h2 className="text-xl font-bold text-brand-text mb-4">Import from ChatGPT</h2>
-
-            <div className="space-y-5">
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <label className="text-xs font-bold text-brand-text-dim uppercase tracking-wider">1. Give ChatGPT these instructions with your menu</label>
-                  <button
-                    onClick={copyPrompt}
-                    className="flex items-center gap-1.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-3 py-1.5 rounded-lg font-medium text-xs transition-colors shrink-0"
-                  >
-                    {promptCopied ? <Check size={14} /> : <Copy size={14} />} {promptCopied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <textarea
-                  ref={promptRef}
-                  readOnly
-                  value={MENU_PROMPT}
-                  rows={6}
-                  className="w-full bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-xs font-mono text-brand-text-dim focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-2">2. Paste ChatGPT's reply</label>
-                <textarea
-                  value={importText}
-                  onChange={(e) => { setImportText(e.target.value); setImportError(''); }}
-                  rows={8}
-                  placeholder="Paste the whole reply here"
-                  className="w-full bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm font-mono text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-                />
-                {importError && <p className="text-sm text-red-500 mt-2">{importError}</p>}
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowImport(false)}
-                  className="bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2 rounded-lg font-medium text-sm transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleImport}
-                  disabled={!importText.trim()}
-                  className="bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
-                >
-                  Fill Menu
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ChatGPTImportDialog prompt={MENU_PROMPT} what="menu" fillLabel="Fill Menu" onImport={handleImport} onClose={() => setShowImport(false)} />
       )}
 
       {/* Load Panel */}
@@ -659,11 +512,9 @@ export default function WeeklyMenu() {
         {/* Live Preview (the poster node is exported to PNG at full size; only its wrapper is scaled) */}
         <div className="xl:sticky xl:top-6">
           <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4">
-            <div ref={previewBoxRef} className="rounded-lg overflow-hidden" style={{ height: previewFit.height || undefined }}>
-              <div style={{ width: POSTER_WIDTH, transform: `scale(${previewFit.scale})`, transformOrigin: 'top left' }}>
-                <MenuPoster ref={previewRef} menu={menu} />
-              </div>
-            </div>
+            <ScaledPreview posterRef={previewRef}>
+              <MenuPoster ref={previewRef} menu={menu} />
+            </ScaledPreview>
           </div>
         </div>
       </div>

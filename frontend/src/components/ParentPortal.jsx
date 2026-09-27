@@ -237,9 +237,9 @@ function MenuView() {
   if (menu === undefined) return <div className="py-10 flex justify-center"><Spinner /></div>;
   if (!menu) return <Card title="Weekly menu"><p className="text-sm text-brand-text-dim">The school hasn't posted a menu yet.</p></Card>;
 
-  const itemsOf = (day, slot) => (day[slot] || [])
-    .map(it => ({ name: it?.name || '', description: it?.description ?? it?.translation ?? '' }))
-    .filter(it => it.name.trim() || it.description.trim());
+  // Same reading as the menu poster: a meal's English names joined by commas, then any
+  // descriptions, then the Tamil names in the same order.
+  const lineOf = (day, slot, field) => (day[slot] || []).map(it => String(it?.[field] || '').trim()).filter(Boolean).join(', ');
 
   return (
     <Card title="Weekly menu" right={menu.weekLabel && <span className="text-xs font-bold text-brand-primary bg-brand-primary/10 px-3 py-1 rounded-full">{menu.weekLabel}</span>}>
@@ -247,24 +247,29 @@ function MenuView() {
         {(menu.days || []).map((day, i) => (
           <div key={i} className="border border-brand-card-border rounded-2xl p-4">
             <p className="font-black text-brand-text text-sm tracking-wide mb-3">{String(day.day || '').charAt(0) + String(day.day || '').slice(1).toLowerCase()}</p>
-            <dl className="space-y-2">
-              {MENU_SLOTS.map(([slot, label]) => {
-                const items = itemsOf(day, slot);
-                return (
-                  <div key={slot} className="grid grid-cols-[7.5rem_1fr] gap-2 text-sm">
-                    <dt className="text-brand-text-dim font-semibold">{label}</dt>
-                    <dd className="text-brand-text">
-                      {items.length === 0 ? '—' : items.map((it, j) => (
-                        <span key={j} className="block">
-                          <span className="font-semibold">{it.name}</span>
-                          {it.description && <span className="text-brand-text-dim"> · {it.description}</span>}
-                        </span>
-                      ))}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
+            {day.holiday ? (
+              <p className="text-sm text-brand-text"><span className="font-semibold">Holiday</span>{day.holidayNote && <span className="text-brand-text-dim"> · {day.holidayNote}</span>}</p>
+            ) : (
+              <dl className="space-y-2">
+                {MENU_SLOTS.map(([slot, label]) => {
+                  const [names, descriptions, tamil] = ['name', 'description', 'translation'].map(f => lineOf(day, slot, f));
+                  return (
+                    <div key={slot} className="grid grid-cols-[7.5rem_1fr] gap-2 text-sm">
+                      <dt className="text-brand-text-dim font-semibold">{label}</dt>
+                      <dd className="text-brand-text">
+                        {!names && !descriptions && !tamil ? '—' : (
+                          <>
+                            {names && <span className="block font-semibold">{names}</span>}
+                            {descriptions && <span className="block text-brand-text-dim">{descriptions}</span>}
+                            {tamil && <span className="block text-brand-text-dim" lang="ta">{tamil}</span>}
+                          </>
+                        )}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            )}
           </div>
         ))}
       </div>
