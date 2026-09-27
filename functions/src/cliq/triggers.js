@@ -1,6 +1,8 @@
 // Zoho Cliq notifications for things waiting on someone's consent:
-// - a teacher sends a weekly menu or daily report for approval -> admins' channel
-// - an admin approves it or sends it back                      -> DM to that teacher
+// - a teacher sends a weekly menu or daily report for approval -> admins' channel, with
+//   Approve / Send back buttons when the Cliq functions are set up (see ./actions.js)
+// - an admin approves it or sends it back, in the app or Cliq  -> DM to that teacher, and
+//   a note in the channel so the other admins see it's handled
 // - someone sends in-app feedback                              -> admins' channel
 // What counts as an event, and the wording, is in shared/cliqMessages.mjs.
 //
@@ -30,7 +32,7 @@ function approvalTrigger(collection) {
   return onDocumentWritten(`${collection}/{docId}`, async (event) => {
     const before = event.data?.before?.exists ? event.data.before.data() : null;
     const after = event.data?.after?.exists ? event.data.after.data() : null;
-    const { approvalEvent, requestMessage, outcomeMessage } = await messages();
+    const { approvalEvent, requestMessage, outcomeMessage, decidedMessage } = await messages();
     const kind = approvalEvent(before, after);
     if (!kind) return;
 
@@ -42,11 +44,16 @@ function approvalTrigger(collection) {
     try {
       if (kind === "requested") {
         const requesterName = await displayNameOf(approval.requestedBy);
-        await postToChannel(cfg, requestMessage({ collection, id, data: after, requesterName, appUrl: cfg.appUrl }));
+        await postToChannel(cfg, requestMessage({ collection, id, data: after, requesterName, appUrl: cfg.appUrl, cliq: cfg }));
       } else {
-        if (approval.requestedBy === approval.reviewedBy) return;
-        const reviewerName = await displayNameOf(approval.reviewedBy);
-        await postToUsers(cfg, [approval.requestedBy], outcomeMessage({ collection, id, data: after, event: kind, reviewerName, appUrl: cfg.appUrl }));
+        const [reviewerName, requesterName] = await Promise.all([displayNameOf(approval.reviewedBy), displayNameOf(approval.requestedBy)]);
+        const sends = [postToChannel(cfg, decidedMessage({ collection, id, data: after, event: kind, reviewerName, requesterName }))];
+        if (approval.requestedBy !== approval.reviewedBy) {
+          sends.push(postToUsers(cfg, [approval.requestedBy], outcomeMessage({ collection, id, data: after, event: kind, reviewerName, appUrl: cfg.appUrl })));
+        }
+        // One failing (e.g. the teacher isn't subscribed to the bot) mustn't stop the other.
+        const failed = (await Promise.allSettled(sends)).filter((r) => r.status === "rejected");
+        if (failed.length) throw new Error(failed.map((r) => r.reason?.message).join("; "));
       }
       logger.info(`Cliq: sent ${kind} for ${collection}/${id}`);
     } catch (err) {

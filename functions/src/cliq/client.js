@@ -7,12 +7,40 @@
 //   channel       unique name of the admins' channel, e.g. "approvals"
 //   webhookToken  a webhook token (Cliq > Bots & Tools > Webhook Tokens) of a member of that channel
 //   appUrl        where message buttons point, e.g. "https://abhishri-academy.web.app"
+//   functionOwner    Cliq email of whoever created the Cliq functions below (buttons need it)
+//   approveFunction  name of the Cliq Button function behind Approve / Send back
+//   actionSecret     shared secret the Cliq functions send to the cliqAction endpoint
+//   userMap          { cliqEmail: appEmail } for people whose Cliq and app emails differ
 //
 // Direct messages go through the bot, so they only reach people subscribed to it.
 const admin = require("firebase-admin");
 const axios = require("axios");
 
 const DEFAULT_APP_URL = "https://abhishri-academy.web.app";
+
+/** { cliqEmail: appEmail }, lower-cased, from the stored map. */
+function normalizeUserMap(map) {
+  const out = {};
+  Object.entries(map && typeof map === "object" ? map : {}).forEach(([cliqEmail, appEmail]) => {
+    const c = String(cliqEmail || "").trim().toLowerCase();
+    const a = String(appEmail || "").trim().toLowerCase();
+    if (c && a) out[c] = a;
+  });
+  return out;
+}
+
+/** The app email for someone's Cliq email. */
+function appEmailFor(cfg, cliqEmail) {
+  const e = String(cliqEmail || "").trim().toLowerCase();
+  return cfg.userMap[e] || e;
+}
+
+/** The Cliq email for someone's app email. */
+function cliqEmailFor(cfg, appEmail) {
+  const e = String(appEmail || "").trim().toLowerCase();
+  const hit = Object.entries(cfg.userMap).find(([, a]) => a === e);
+  return hit ? hit[0] : e;
+}
 
 async function loadCliqConfig() {
   const snap = await admin.firestore().collection("configs").doc("cliq").get();
@@ -24,6 +52,10 @@ async function loadCliqConfig() {
     channel: String(cfg.channel || "").trim(),
     webhookToken: String(cfg.webhookToken || "").trim(),
     appUrl: String(cfg.appUrl || DEFAULT_APP_URL).trim(),
+    functionOwner: String(cfg.functionOwner || "").trim().toLowerCase(),
+    approveFunction: String(cfg.approveFunction || "").trim(),
+    actionSecret: String(cfg.actionSecret || "").trim(),
+    userMap: normalizeUserMap(cfg.userMap),
   };
 }
 
@@ -53,9 +85,9 @@ function postToChannel(cfg, message) {
   return post(cfg, `channelsbyname/${encodeURIComponent(cfg.channel)}/message`, { bot_unique_name: cfg.botName }, message);
 }
 
-/** Direct message from the bot to the given people (emails), if they're subscribed to it. */
+/** Direct message from the bot to the given people (app emails), if they're subscribed to it. */
 function postToUsers(cfg, emails, message) {
-  const userids = [...new Set(emails.map((e) => String(e || "").trim().toLowerCase()).filter(Boolean))];
+  const userids = [...new Set(emails.map((e) => cliqEmailFor(cfg, e)).filter(Boolean))];
   if (!userids.length) return Promise.resolve();
   return post(cfg, `bots/${encodeURIComponent(cfg.botName)}/message`, {}, { ...message, userids: userids.join(",") });
 }
@@ -71,4 +103,4 @@ async function displayNameOf(email) {
   }
 }
 
-module.exports = { loadCliqConfig, missingSetting, postToChannel, postToUsers, displayNameOf };
+module.exports = { loadCliqConfig, missingSetting, postToChannel, postToUsers, displayNameOf, appEmailFor, cliqEmailFor };

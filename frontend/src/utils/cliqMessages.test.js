@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { approvalEvent, prettyDate, requestMessage, outcomeMessage, feedbackMessage } from '../../../functions/src/shared/cliqMessages.mjs';
+import { approvalEvent, prettyDate, requestMessage, outcomeMessage, feedbackMessage, decidedMessage, actionKey, parseActionKey, decisionProblem } from '../../../functions/src/shared/cliqMessages.mjs';
 
 const ts = (ms) => ({ toMillis: () => ms });
 const doc = (approval) => (approval ? { weekLabel: '28 Sep – 02 Oct 2026', approval } : { weekLabel: 'x' });
@@ -68,5 +68,57 @@ describe('messages', () => {
     expect(m.text).toBe('Poster footer not needed\n\n_Sent (from /weekly-menu)_');
     expect(m.buttons[0].action.data.web).toBe('https://abhishri-academy.web.app/settings/feedback');
     expect(feedbackMessage({ data: { message: 'hi', submittedBy: 'a@b.in' }, appUrl }).card.title).toBe('Feedback from a@b.in');
+  });
+});
+
+describe('deciding from Cliq', () => {
+  const cliq = { functionOwner: 'owner@abhishriacademy.in', approveFunction: 'abhishriapproval' };
+
+  it('round-trips button keys and rejects anything else', () => {
+    const key = actionKey('approve', 'weekly_menus', 'abc123', 1790486455887);
+    expect(key).toBe('a|weekly_menus|abc123|1790486455887');
+    expect(parseActionKey(key)).toEqual({ action: 'approve', collection: 'weekly_menus', id: 'abc123', requestedAtMs: 1790486455887 });
+    expect(parseActionKey('s|daily_reports|2026-09-28|5')).toEqual({ action: 'sendback', collection: 'daily_reports', id: '2026-09-28', requestedAtMs: 5 });
+    for (const bad of ['', 'x|weekly_menus|a|1', 'a|students|a|1', 'a|weekly_menus||1', 'a|weekly_menus|a|soon', 'a|weekly_menus|a|1|extra', null]) {
+      expect(parseActionKey(bad)).toBe(null);
+    }
+  });
+
+  it('adds Approve and Send back to a request only when the Cliq functions are set up', () => {
+    const data = doc(pending(42));
+    const withButtons = requestMessage({ collection: 'weekly_menus', id: 'm1', data, requesterName: 'V', appUrl: 'https://x', cliq });
+    expect(withButtons.buttons.map(b => b.label)).toEqual(['Approve', 'Send back', 'Review in app']);
+    expect(withButtons.buttons[0]).toMatchObject({
+      key: 'a|weekly_menus|m1|42',
+      arguments: { key: 'a|weekly_menus|m1|42' },
+      action: { type: 'invoke.function', data: { name: 'abhishriapproval', owner: 'owner@abhishriacademy.in' } },
+    });
+    expect(withButtons.buttons[1].arguments.key).toBe('s|weekly_menus|m1|42');
+    expect(requestMessage({ collection: 'weekly_menus', id: 'm1', data, requesterName: 'V', appUrl: 'https://x', cliq: {} }).buttons.map(b => b.label))
+      .toEqual(['Review in app']);
+  });
+
+  it('applies a decision only by an admin, to the same pending request', () => {
+    const parsed = parseActionKey('a|weekly_menus|m1|1');
+    const admin = { isAdmin: true };
+    expect(decisionProblem({ exists: true, approval: pending(1), parsed, reviewer: admin })).toBe(null);
+    expect(decisionProblem({ exists: true, approval: pending(1), parsed, reviewer: { isAdmin: false } })).toMatch(/Only admins/);
+    expect(decisionProblem({ exists: false, approval: null, parsed, reviewer: admin })).toMatch(/deleted/);
+    expect(decisionProblem({ exists: true, approval: { ...pending(1), status: 'approved' }, parsed, reviewer: admin })).toMatch(/already approved/);
+    expect(decisionProblem({ exists: true, approval: { ...pending(1), status: 'changes_requested' }, parsed, reviewer: admin })).toMatch(/already sent back/);
+    expect(decisionProblem({ exists: true, approval: pending(2), parsed, reviewer: admin })).toMatch(/sent again/);
+  });
+
+  it('needs a note to send back', () => {
+    const parsed = parseActionKey('s|weekly_menus|m1|1');
+    expect(decisionProblem({ exists: true, approval: pending(1), parsed, reviewer: { isAdmin: true }, note: '  ' })).toMatch(/Add a note/);
+    expect(decisionProblem({ exists: true, approval: pending(1), parsed, reviewer: { isAdmin: true }, note: 'Fix it' })).toBe(null);
+  });
+
+  it('notes the decision in the channel', () => {
+    const args = { collection: 'daily_reports', id: '2026-09-28', reviewerName: 'Sathya', requesterName: 'Vineetha' };
+    expect(decidedMessage({ ...args, data: {}, event: 'approved' }).text).toBe("*Daily report: Mon, 28 Sep 2026*\n✅ Sathya approved Vineetha's daily report.");
+    expect(decidedMessage({ ...args, data: { approval: { note: 'Fix the date' } }, event: 'returned' }).text)
+      .toBe("*Daily report: Mon, 28 Sep 2026*\n↩️ Sathya sent Vineetha's daily report back. Note: Fix the date");
   });
 });

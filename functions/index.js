@@ -91,5 +91,6 @@ exports.cliqOnMenuApproval = cliq.cliqOnMenuApproval;
 exports.cliqOnReportApproval = cliq.cliqOnReportApproval;
 exports.cliqOnFeedback = cliq.cliqOnFeedback;
 exports.sendCliqTest = cliq.sendCliqTest;
+exports.cliqAction = require("./src/cliq/actions").cliqAction;
 
 // Migration functions removed

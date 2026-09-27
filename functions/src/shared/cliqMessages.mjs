@@ -56,21 +56,84 @@ export const KINDS = {
 
 const trimUrl = (url) => String(url || '').replace(/\/+$/, '');
 
-const card = ({ text, title, buttonLabel, url }) => ({
+const openButton = (label, url) => ({ label, type: '+', action: { type: 'open.url', data: { web: url } } });
+
+const card = ({ text, title, buttonLabel, url, buttons = [] }) => ({
   text,
   card: { title, theme: 'modern-inline' },
-  buttons: [{ label: buttonLabel, type: '+', action: { type: 'open.url', data: { web: url } } }],
+  buttons: [...buttons, openButton(buttonLabel, url)],
 });
 
+// Deciding from Cliq. A request's Approve / Send back buttons call the Cliq functions set
+// up in docs/cliq-bot.md, which pass the button's key to the app's cliqAction endpoint:
+// "<a|s>|<collection>|<docId>|<requestedAt ms>". The timestamp ties the key to that one
+// request, so a button on an old message can't decide a later re-submission.
+const ACTIONS = { a: 'approve', s: 'sendback' };
+
+export function actionKey(action, collection, id, requestedAtMs) {
+  return [action === 'approve' ? 'a' : 's', collection, id, requestedAtMs].join('|');
+}
+
+/** { action, collection, id, requestedAtMs } from a button key, or null if it isn't one of ours. */
+export function parseActionKey(key) {
+  const parts = String(key || '').split('|');
+  if (parts.length !== 4) return null;
+  const [a, collection, id, ms] = parts;
+  if (!ACTIONS[a] || !KINDS[collection] || !id || !/^\d+$/.test(ms)) return null;
+  return { action: ACTIONS[a], collection, id, requestedAtMs: Number(ms) };
+}
+
+/**
+ * Why a decision from Cliq can't be applied to this document, or null if it can.
+ * `approval` is the document's current approval map; `reviewer` is { isAdmin }.
+ */
+export function decisionProblem({ exists, approval, parsed, reviewer, note }) {
+  if (!reviewer?.isAdmin) return 'Only admins can approve or send back. Your Cliq email is not an admin in the app.';
+  if (!exists) return 'This was deleted in the app.';
+  if (approval?.status !== PENDING) {
+    if (approval?.status === APPROVED) return 'This was already approved.';
+    if (approval?.status === RETURNED) return 'This was already sent back.';
+    return 'This is no longer waiting for approval.';
+  }
+  if (millis(approval.requestedAt) !== parsed.requestedAtMs) return 'This request was changed and sent again. Use the newest message.';
+  if (parsed.action === 'sendback' && !String(note || '').trim()) return 'Add a note saying what needs changing.';
+  return null;
+}
+
+/** Approve / Send back buttons for a request, when the Cliq functions are configured. */
+function decisionButtons({ collection, id, data, cliq }) {
+  const ms = millis(data?.approval?.requestedAt);
+  if (!cliq?.functionOwner || !cliq?.approveFunction || ms == null) return [];
+  const invoke = (label, action) => ({
+    label,
+    type: action === 'approve' ? '+' : '-',
+    key: actionKey(action, collection, id, ms),
+    action: { type: 'invoke.function', data: { name: cliq.approveFunction, owner: cliq.functionOwner } },
+    arguments: { key: actionKey(action, collection, id, ms) },
+  });
+  return [invoke('Approve', 'approve'), invoke('Send back', 'sendback')];
+}
+
 /** Channel message asking admins to review a menu or report. */
-export function requestMessage({ collection, id, data, requesterName, appUrl }) {
+export function requestMessage({ collection, id, data, requesterName, appUrl, cliq }) {
   const kind = KINDS[collection];
   return card({
     title: kind.title(id, data),
     text: `${requesterName} sent the ${kind.noun} for approval. Teachers can export it for parents only after an admin approves it.`,
+    buttons: decisionButtons({ collection, id, data, cliq }),
     buttonLabel: 'Review in app',
     url: `${trimUrl(appUrl)}${kind.path}`,
   });
+}
+
+/** Channel note once a request is decided (in the app or from Cliq), so admins see it's done. */
+export function decidedMessage({ collection, id, data, event, reviewerName, requesterName }) {
+  const kind = KINDS[collection];
+  const note = String(data?.approval?.note || '').trim();
+  const text = event === 'approved'
+    ? `✅ ${reviewerName} approved ${requesterName}'s ${kind.noun}.`
+    : `↩️ ${reviewerName} sent ${requesterName}'s ${kind.noun} back.${note ? ` Note: ${note}` : ''}`;
+  return { text: `*${kind.title(id, data)}*\n${text}` };
 }
 
 /** Direct message to the teacher who asked, with the admin's note when it was sent back. */
