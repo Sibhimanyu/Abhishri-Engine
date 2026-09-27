@@ -3,9 +3,9 @@ import { collection, query, orderBy, onSnapshot, doc, setDoc, deleteDoc, addDoc,
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
-import { MENU_PROMPT, MENU_SLOTS, parseMenuText } from '../utils/menuImport';
+import { MENU_PROMPT, MENU_SLOTS, parseMenuText, isMenuDate, addDays, weekRangeLabel } from '../utils/menuImport';
 import ChatGPTImportDialog from './ChatGPTImportDialog';
-import { POSTER, POSTER_WIDTH, DISPLAY_FONT, BODY_FONT, TAMIL_FONT, SCRIPT_FONT, CONTACT, exportPosterPng, fileSlug } from './poster/posterTheme';
+import { POSTER, POSTER_WIDTH, DISPLAY_FONT, BODY_FONT, TAMIL_FONT, SCRIPT_FONT, exportPosterPng, fileSlug } from './poster/posterTheme';
 import { Flake, ScaledPreview } from './poster/PosterParts';
 import { Coffee, Utensils, Popcorn, Plus, Trash2, Download, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste } from 'lucide-react';
 
@@ -45,20 +45,24 @@ const emptyDay = (theme) => ({
   eveningSnack: [emptyItem()],
 });
 
+// startDate/endDate (YYYY-MM-DD) say which days the menu is for: the parent portal
+// shows the menu covering today, and the poster's date pill is built from them.
 const emptyMenu = () => ({
-  weekLabel: '',
+  startDate: '',
+  endDate: '',
   days: DAY_THEMES.map(emptyDay),
 });
 
 // The exported poster. Fixed width; the editor scales it down to fit on screen.
 const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
+  const dates = weekRangeLabel(menu.startDate, menu.endDate);
   return (
     <div ref={ref} style={{ width: POSTER_WIDTH, background: POSTER.cream, position: 'relative', overflow: 'hidden', fontFamily: BODY_FONT, color: POSTER.ink }}>
       <Flake size={240} color={POSTER.flake} dots style={{ position: 'absolute', right: -80, top: 100 }} />
       <Flake size={210} color={POSTER.flake} dots style={{ position: 'absolute', left: -95, bottom: 130 }} />
       <Flake size={60} color={POSTER.star} style={{ position: 'absolute', left: 470, top: 100 }} />
 
-      <div style={{ position: 'relative', padding: '44px 44px 0' }}>
+      <div style={{ position: 'relative', padding: 44 }}>
         {/* Header */}
         {/* The right column is absolutely placed so "FOOD MENU" keeps the full width on one line. */}
         <div style={{ position: 'relative' }}>
@@ -68,8 +72,8 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
             <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 400, fontSize: 100, letterSpacing: 3, lineHeight: 1, color: POSTER.coral, marginTop: 8, whiteSpace: 'nowrap' }}>FOOD MENU</div>
           </div>
           <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-            {menu.weekLabel ? (
-              <div style={{ background: POSTER.teal, color: '#ffffff', fontWeight: 800, fontSize: 18, padding: '12px 28px', borderRadius: 999, whiteSpace: 'nowrap' }}>{menu.weekLabel}</div>
+            {dates ? (
+              <div style={{ background: POSTER.teal, color: '#ffffff', fontWeight: 800, fontSize: 18, padding: '12px 28px', borderRadius: 999, whiteSpace: 'nowrap' }}>{dates}</div>
             ) : <div />}
             <div style={{ fontFamily: SCRIPT_FONT, fontWeight: 700, fontSize: 38, lineHeight: 1.05, transform: 'rotate(-7deg)', marginBottom: 14 }}>
               <div style={{ color: POSTER.deepTeal }}>Healthy tummies,</div>
@@ -115,9 +119,9 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
                         <span style={{ color: '#B8B0A5', fontSize: 20 }}>—</span>
                       ) : (
                         <>
-                          {names && <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1.25 }}>{names}</div>}
-                          {descriptions && <div style={{ fontWeight: 500, fontSize: 15.5, color: POSTER.inkDim, marginTop: 6 }}>{descriptions}</div>}
-                          {tamil && <div style={{ fontFamily: TAMIL_FONT, fontWeight: 600, fontSize: 15, lineHeight: 1.45, color: POSTER.deepTeal, marginTop: names || descriptions ? 8 : 0 }}>{tamil}</div>}
+                          {names && <div style={{ fontWeight: 800, fontSize: 23, lineHeight: 1.25 }}>{names}</div>}
+                          {descriptions && <div style={{ fontWeight: 500, fontSize: 17.5, color: POSTER.inkDim, marginTop: 6 }}>{descriptions}</div>}
+                          {tamil && <div style={{ fontFamily: TAMIL_FONT, fontWeight: 600, fontSize: 17, lineHeight: 1.45, color: POSTER.deepTeal, marginTop: names || descriptions ? 8 : 0 }}>{tamil}</div>}
                         </>
                       )}
                     </div>
@@ -126,24 +130,6 @@ const MenuPoster = forwardRef(function MenuPoster({ menu }, ref) {
               </React.Fragment>
             );
           })}
-        </div>
-
-        {/* Notes */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 22, marginTop: 24, fontWeight: 600, fontSize: 16, color: '#5F5A55' }}>
-          {[['Freshly prepared in our kitchen every day', POSTER.teal], ['Please tell us about any food allergies', POSTER.coral]].map(([text, dot]) => (
-            <span key={text} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 9, height: 9, borderRadius: 999, background: dot }} /> {text}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ position: 'relative', marginTop: 26, background: POSTER.coral, color: '#ffffff', padding: '26px 44px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <img src="/logo-white.png" alt="Abhishri Academy" style={{ height: 60, width: 'auto', display: 'block' }} />
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontWeight: 800, fontSize: 21 }}>{CONTACT.phone}</div>
-          <div style={{ fontWeight: 600, fontSize: 15.5, marginTop: 4 }}>{CONTACT.email} · {CONTACT.web}</div>
         </div>
       </div>
     </div>
@@ -222,7 +208,9 @@ export default function WeeklyMenu() {
   const handleLoad = (saved) => {
     setActiveMenuId(saved.id);
     setMenu({
-      weekLabel: saved.weekLabel || '',
+      // Menus saved before dates existed load without them; they must be set before saving again.
+      startDate: isMenuDate(saved.startDate) ? saved.startDate : '',
+      endDate: isMenuDate(saved.endDate) ? saved.endDate : '',
       days: (saved.days && saved.days.length === DAY_THEMES.length)
         ? saved.days.map((d, i) => ({
             day: DAY_THEMES[i].day,
@@ -244,7 +232,8 @@ export default function WeeklyMenu() {
     // Imported menus always start as a new, unsaved menu so a loaded one is never overwritten by accident.
     setActiveMenuId(null);
     setMenu({
-      weekLabel: parsed.weekLabel || menu.weekLabel,
+      startDate: parsed.startDate,
+      endDate: parsed.endDate,
       days: DAY_THEMES.map(theme => {
         const day = parsed.days[theme.key];
         return {
@@ -261,14 +250,21 @@ export default function WeeklyMenu() {
   };
 
   const handleSave = async () => {
-    if (!menu.weekLabel.trim()) {
-      alert('Please give this menu a week label (e.g. "Week of 11 Aug 2026") before saving.');
+    if (!isMenuDate(menu.startDate) || !isMenuDate(menu.endDate)) {
+      alert('Please set the dates this menu is for before saving.');
+      return;
+    }
+    if (menu.endDate < menu.startDate) {
+      alert('The "To" date is before the "From" date.');
       return;
     }
     setSaving(true);
     try {
       const payload = {
-        weekLabel: menu.weekLabel.trim(),
+        startDate: menu.startDate,
+        endDate: menu.endDate,
+        // Kept for the saved-menus list and audit names; always built from the dates.
+        weekLabel: weekRangeLabel(menu.startDate, menu.endDate),
         days: menu.days,
         updatedAt: serverTimestamp(),
         updatedBy: email || 'unknown',
@@ -305,13 +301,13 @@ export default function WeeklyMenu() {
     if (!previewRef.current) return;
     setExporting(true);
     try {
-      await exportPosterPng(previewRef.current, `${fileSlug(menu.weekLabel, 'weekly-menu')}.png`);
+      await exportPosterPng(previewRef.current, `${fileSlug(weekRangeLabel(menu.startDate, menu.endDate), 'weekly-menu')}.png`);
 
       logAudit({
         action: 'WEEKLY_MENU_EXPORTED',
         module: 'school_calendar',
         targetId: activeMenuId,
-        targetName: menu.weekLabel || 'Untitled menu',
+        targetName: weekRangeLabel(menu.startDate, menu.endDate) || 'Untitled menu',
         performedBy: email,
         details: {}
       });
@@ -328,14 +324,30 @@ export default function WeeklyMenu() {
       {/* Toolbar */}
       <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4 md:p-6 flex flex-col md:flex-row gap-4 md:items-center justify-between">
         <div className="flex-1 min-w-0">
-          <label className="block text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-1.5">Week Label</label>
-          <input
-            type="text"
-            value={menu.weekLabel}
-            onChange={(e) => setMenu(prev => ({ ...prev, weekLabel: e.target.value }))}
-            placeholder='e.g. "Week of 11 Aug 2026"'
-            className="w-full md:w-80 bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
-          />
+          <label className="block text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-1.5">Menu Dates</label>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              aria-label="From"
+              value={menu.startDate}
+              onChange={(e) => {
+                const startDate = e.target.value;
+                // Picking a start fills in that week's Friday when no end is set yet.
+                setMenu(prev => ({ ...prev, startDate, endDate: prev.endDate || (isMenuDate(startDate) ? addDays(startDate, 4) : '') }));
+              }}
+              className="bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+            />
+            <span className="text-brand-text-dim text-sm">to</span>
+            <input
+              type="date"
+              aria-label="To"
+              value={menu.endDate}
+              min={menu.startDate || undefined}
+              onChange={(e) => setMenu(prev => ({ ...prev, endDate: e.target.value }))}
+              className="bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+            />
+          </div>
+          <p className="text-xs text-brand-text-dim mt-1.5">Filled in by Import from ChatGPT. Parents see the menu on these dates.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button

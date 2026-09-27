@@ -11,7 +11,8 @@ const SLOT_LABELS = { morningDrink: 'Morning Drink', lunch: 'Lunch', eveningSnac
 export const MENU_PROMPT = `Convert the weekly food menu I give you into JSON with exactly this structure:
 
 {
-  "weekLabel": "Week of 28 Sep – 02 Oct 2026",
+  "startDate": "2026-09-28",
+  "endDate": "2026-10-02",
   "days": {
     "monday": {
       "holiday": "",
@@ -39,7 +40,7 @@ Format rules:
 - "description" is the short English line shown under an item's name.
 - "translation" is the item's Tamil name. If the menu lists the Tamil names after the English ones, match them to the English items in the same order.
 - Use "" for any of these that the menu doesn't have. If a meal has no items, use [].
-- "weekLabel" is the menu's week or title line; use "" if there isn't one.
+- "startDate" and "endDate" are the first and last dates the menu is for, as YYYY-MM-DD (usually that week's Monday and Friday). Use "" if the menu gives no dates.
 - Reply with only the JSON, in a single code block.`;
 
 const dayFromKey = (key) => {
@@ -69,6 +70,49 @@ const readHoliday = (rawDay) => {
   return null;
 };
 
+// Menu dates are YYYY-MM-DD strings (IST calendar days), so they compare as text.
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export const isMenuDate = (v) => {
+  const m = ISO_DATE.exec(String(v ?? '').trim());
+  if (!m) return false;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
+};
+
+export const addDays = (iso, n) => {
+  const [y, mo, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, mo - 1, d + n)).toISOString().slice(0, 10);
+};
+
+export const todayIST = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+
+// "28 Sep – 02 Oct 2026"; the year is repeated only when the range crosses one.
+export function weekRangeLabel(startDate, endDate) {
+  if (!isMenuDate(startDate) || !isMenuDate(endDate)) return '';
+  const part = (iso) => { const [y, m, d] = iso.split('-'); return [`${d} ${MONTHS[+m - 1]}`, y]; };
+  const [[s, sy], [e, ey]] = [part(startDate), part(endDate)];
+  return sy === ey ? `${s} – ${e} ${ey}` : `${s} ${sy} – ${e} ${ey}`;
+}
+
+// The menu to show on `today`: the one whose dates cover it, else the next one to start.
+// Menus saved before dates existed have none and are never picked.
+export function pickMenuFor(menus, today) {
+  const dated = menus.filter(m => isMenuDate(m.startDate) && isMenuDate(m.endDate) && m.endDate >= today);
+  const current = dated.filter(m => m.startDate <= today).sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  return current || dated.sort((a, b) => a.startDate.localeCompare(b.startDate))[0] || null;
+}
+
+// Missing or impossible dates come back as ''; an end date alone is ignored,
+// and a start date alone runs to that week's Friday (start + 4 days).
+const readDates = (data) => {
+  const start = isMenuDate(data?.startDate) ? data.startDate.trim() : '';
+  if (!start) return { startDate: '', endDate: '' };
+  const end = isMenuDate(data?.endDate) ? data.endDate.trim() : '';
+  return { startDate: start, endDate: end && end >= start ? end : addDays(start, 4) };
+};
+
 const toItem = (raw) => {
   if (typeof raw === 'string') return { name: raw.trim(), description: '', translation: '' };
   if (!raw || typeof raw !== 'object') return null;
@@ -86,7 +130,7 @@ const toItems = (raw) => {
 
 /**
  * Parse a pasted ChatGPT reply into
- * `{ weekLabel, days: { monday: { morningDrink: [{name, description, translation}], ..., holiday, holidayNote }, ... }, warnings }`.
+ * `{ startDate, endDate, days: { monday: { morningDrink: [{name, description, translation}], ..., holiday, holidayNote }, ... }, warnings }`.
  * Always returns every day and slot (empty lists where missing); `warnings` names
  * what was missing so the admin can check the preview. Throws if nothing usable was found.
  */
@@ -138,5 +182,7 @@ export function parseMenuText(text) {
 
   if (itemCount === 0) throw new Error('No menu items found in the pasted text.');
 
-  return { weekLabel: String(data?.weekLabel ?? '').trim(), days, warnings };
+  const dates = readDates(data);
+  if (!dates.startDate) warnings.push("The menu's dates are missing. Set them before saving.");
+  return { ...dates, days, warnings };
 }

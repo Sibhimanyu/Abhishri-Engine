@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { signOut } from 'firebase/auth';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { functions, auth, firestore } from '../firebase';
 import { Spinner } from './Spinner';
 import SchoolCalendar from './SchoolCalendar';
 import PaymentReceipt from './PaymentReceipt';
 import { INR } from '../utils/reportUtils';
+import { pickMenuFor, todayIST, weekRangeLabel } from '../utils/menuImport';
 import { LogOut, Moon, Sun, CheckCircle, XCircle, Clock, MinusCircle, Wallet, ChevronLeft, ChevronRight, Receipt, CalendarDays, Utensils, CalendarCheck, AlertCircle, RefreshCw } from 'lucide-react';
 
 /**
@@ -223,26 +224,28 @@ function FeesView({ child, onReceipt }) {
   );
 }
 
-// The school-wide menu, most recently saved first: menus carry a free-text week
-// label rather than a date, so the latest one the school saved is this week's.
+// The school-wide menu for today: the one whose dates cover today, else the next one
+// posted (e.g. at the weekend). Menus that haven't ended yet are few, so pick among them here.
 function MenuView() {
   const [menu, setMenu] = useState(undefined);
 
   useEffect(() => {
-    getDocs(query(collection(firestore, 'weekly_menus'), orderBy('updatedAt', 'desc'), limit(1)))
-      .then(snap => setMenu(snap.empty ? null : snap.docs[0].data()))
+    const today = todayIST();
+    getDocs(query(collection(firestore, 'weekly_menus'), where('endDate', '>=', today), orderBy('endDate'), limit(10)))
+      .then(snap => setMenu(pickMenuFor(snap.docs.map(d => d.data()), today)))
       .catch(err => { console.error('Failed to load the weekly menu:', err); setMenu(null); });
   }, []);
 
   if (menu === undefined) return <div className="py-10 flex justify-center"><Spinner /></div>;
-  if (!menu) return <Card title="Weekly menu"><p className="text-sm text-brand-text-dim">The school hasn't posted a menu yet.</p></Card>;
+  if (!menu) return <Card title="Weekly menu"><p className="text-sm text-brand-text-dim">The school hasn't posted this week's menu yet.</p></Card>;
 
   // Same reading as the menu poster: a meal's English names joined by commas, then any
   // descriptions, then the Tamil names in the same order.
   const lineOf = (day, slot, field) => (day[slot] || []).map(it => String(it?.[field] || '').trim()).filter(Boolean).join(', ');
 
+  const dates = weekRangeLabel(menu.startDate, menu.endDate);
   return (
-    <Card title="Weekly menu" right={menu.weekLabel && <span className="text-xs font-bold text-brand-primary bg-brand-primary/10 px-3 py-1 rounded-full">{menu.weekLabel}</span>}>
+    <Card title="Weekly menu" right={<span className="text-xs font-bold text-brand-primary bg-brand-primary/10 px-3 py-1 rounded-full">{dates}</span>}>
       <div className="space-y-4">
         {(menu.days || []).map((day, i) => (
           <div key={i} className="border border-brand-card-border rounded-2xl p-4">
