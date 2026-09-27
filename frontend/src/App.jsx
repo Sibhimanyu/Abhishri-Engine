@@ -11,7 +11,8 @@ import MainDashboard from './components/MainDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 import { CenteredSpinner } from './components/Spinner';
 import { getCurrentTamilDate } from './utils/astrologyApi';
-import { MessageCircle, Cake, CalendarDays, ChefHat, NotebookPen } from 'lucide-react';
+import { MessageCircle, Cake, CalendarDays, ChefHat } from 'lucide-react';
+import { isAdminUser, usePendingApprovals } from './components/poster/approval';
 import FeedbackWidget from './components/FeedbackWidget';
 
 // Route modules are lazy so the login screen and dashboard don't pay for the
@@ -28,8 +29,7 @@ const ParentPortal = lazy(() => import('./components/ParentPortal'));
 const WhatsAppManager = lazy(() => import('./components/WhatsAppManager'));
 const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
 const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
-const WeeklyMenu = lazy(() => import('./components/WeeklyMenu'));
-const DailyReport = lazy(() => import('./components/DailyReport'));
+const MenuAndReport = lazy(() => import('./components/MenuAndReport'));
 
 const RouteLoader = CenteredSpinner;
 
@@ -62,6 +62,8 @@ function App() {
   const { currentUser, userData, loading } = useAuth();
 
   const isMaster = userData?.isAdmin;
+  // Menus and daily reports waiting for an admin, badged on their sidebar entry.
+  const pendingApprovals = usePendingApprovals(isAdminUser(userData));
   
   // Permission Checkers
   const getPerm = (module, perm) => isMaster || userData?.permissions?.[module]?.[perm];
@@ -230,8 +232,7 @@ function App() {
     ...(hasAccountingAccess ? [{ id: 'accounting', label: 'Accounting', icon: Landmark }] : []),
     ...(hasReportsAccess ? [{ id: 'reports', label: 'Reports', icon: BarChart3 }] : []),
     { id: 'calendar', label: 'School Calendar', icon: CalendarDays },
-    { id: 'weekly-menu', label: 'Weekly Menu', icon: ChefHat },
-    { id: 'daily-report', label: 'Daily Report', icon: NotebookPen },
+    { id: 'menu-report', label: 'Menu & Report', icon: ChefHat, badge: pendingApprovals.total },
     ...(isMaster ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];
 
@@ -376,6 +377,9 @@ function App() {
               >
                 <item.icon size={18} className={isActive ? 'text-brand-primary' : 'opacity-70'} />
                 {item.label}
+                {item.badge > 0 && (
+                  <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-black flex items-center justify-center" title={`${item.badge} waiting for approval`}>{item.badge}</span>
+                )}
               </Link>
             );
           })}
@@ -434,6 +438,9 @@ function App() {
                   >
                     <item.icon size={18} className={isActive ? 'text-brand-primary' : 'opacity-70'} />
                     {item.label}
+                    {item.badge > 0 && (
+                      <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-black flex items-center justify-center" title={`${item.badge} waiting for approval`}>{item.badge}</span>
+                    )}
                   </Link>
                 );
               })}
@@ -628,8 +635,9 @@ function App() {
             <Route path="/accounting/*" element={<Accounting />} />
             <Route path="/reports/*" element={<Reports />} />
             <Route path="/calendar" element={<SchoolCalendar />} />
-            <Route path="/weekly-menu" element={<WeeklyMenu />} />
-            <Route path="/daily-report" element={<DailyReport />} />
+            <Route path="/menu-report" element={<MenuAndReport />} />
+            <Route path="/weekly-menu" element={<Navigate to="/menu-report" replace />} />
+            <Route path="/daily-report" element={<Navigate to="/menu-report?tab=report" replace />} />
 
             <Route path="/settings/*" element={<SettingsAdmin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
