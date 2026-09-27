@@ -180,8 +180,8 @@ export default function StaffDirectory() {
           {staffList.length} Staff Profiles
         </div>
         
-        <div className="flex flex-1 md:justify-end items-center gap-3">
-          <div className="relative">
+        <div className="flex flex-1 md:justify-end items-center gap-3 min-w-0">
+          <div className="relative flex-1 min-w-0 md:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={16} />
             <input 
               type="text" 
@@ -191,11 +191,11 @@ export default function StaffDirectory() {
               className="bg-brand-bg border border-brand-card-border rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-brand-primary text-brand-text w-full md:w-64 transition-colors"
             />
           </div>
-          <button className="bg-brand-bg border border-brand-card-border p-2 rounded-lg text-brand-text-dim hover:text-brand-text hover:border-brand-primary transition-colors">
+          <button aria-label="Filter" className="bg-brand-bg border border-brand-card-border p-2.5 md:p-2 rounded-lg text-brand-text-dim hover:text-brand-text hover:border-brand-primary transition-colors shrink-0">
             <Filter size={18} />
           </button>
           {(userData?.isAdmin || userData?.permissions?.staff_directory?.manage || userData?.permissions?.staff_directory === true) && (
-            <button onClick={() => setIsAddingStaff(true)} className="bg-brand-primary text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-brand-primary-hover transition-colors shadow-sm">
+            <button onClick={() => setIsAddingStaff(true)} className="bg-brand-primary text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 whitespace-nowrap shrink-0 hover:bg-brand-primary-hover transition-colors shadow-sm">
               <UserPlus size={16} /> New Staff
             </button>
           )}

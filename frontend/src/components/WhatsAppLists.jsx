@@ -96,14 +96,14 @@ export default function WhatsAppLists() {
         </div>
         <button 
           onClick={openCreateModal}
-          className="bg-brand-primary text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-brand-primary-hover transition-colors"
+          className="bg-brand-primary text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 whitespace-nowrap shrink-0 hover:bg-brand-primary-hover transition-colors"
         >
           <Plus size={16} /> New List
         </button>
       </div>
 
-      <div className="p-6 shrink-0">
-        <div className="flex justify-between items-center mb-4">
+      <div className="p-4 sm:p-6 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
           <div className="relative max-w-md w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={16} />
             <input 
@@ -114,7 +114,7 @@ export default function WhatsAppLists() {
               className="w-full bg-white dark:bg-brand-sidebar border border-brand-card-border rounded-lg py-2 pl-9 pr-4 text-sm focus:outline-none focus:border-brand-primary"
             />
           </div>
-          <div className="flex bg-white dark:bg-brand-sidebar rounded-lg p-1 border border-brand-card-border ml-4 shadow-sm shrink-0">
+          <div className="flex scroll-tabs bg-white dark:bg-brand-sidebar rounded-lg p-1 border border-brand-card-border sm:ml-4 shadow-sm shrink-0 max-w-full">
             {['ALL', 'MARKETING', 'UTILITY', 'INTERNAL'].map(cat => (
               <button
                 key={cat}

@@ -24,7 +24,7 @@ const SkeletonKpiCard = () => (
  */
 export default function AppSkeleton() {
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-brand-bg" aria-hidden="true" aria-busy="true">
+    <div className="flex h-dvh w-full overflow-hidden bg-brand-bg" aria-hidden="true" aria-busy="true">
       <aside className="w-[260px] bg-brand-sidebar border-r border-brand-card-border hidden md:flex flex-col">
         <div className="flex items-center justify-center p-6 border-b border-brand-card-border h-24">
           <img src="/logo-coral.png" alt="" className="h-16 w-auto object-contain block dark:hidden" />

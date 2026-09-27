@@ -31,6 +31,45 @@
   --text-dim-color: #94a3b8;
 }
 
+/* Phones. iOS Safari zooms the page into any field whose text is under 16px, so fields
+   stay at 16px on small screens whatever size the page sets. Also stop iOS enlarging text
+   on rotation, and drop the grey flash on tap. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Tab bars that scroll sideways on phones: no scrollbar, and each tab keeps its label on one line. */
+.scroll-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.scroll-tabs::-webkit-scrollbar {
+  display: none;
+}
+.scroll-tabs > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+/* On phones, fade the right edge so a tab bar that continues off-screen looks like it does. */
+@media (max-width: 767px) {
+  .edge-fade {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  }
+}
+
 body {
   background-color: var(--color-brand-bg);
   color: var(--color-brand-text);

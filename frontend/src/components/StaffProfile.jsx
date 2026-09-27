@@ -285,13 +285,13 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
       {/* Header / Actions */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <button 
           onClick={onBack}
           disabled={saving}
-          className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors font-medium bg-black/5 dark:bg-white/5 px-3 py-1.5 rounded-lg disabled:opacity-50"
+          className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors font-medium bg-black/5 dark:bg-white/5 px-3 py-2 whitespace-nowrap rounded-lg disabled:opacity-50"
         >
-          <ArrowLeft size={18} /> Back to Directory
+          <ArrowLeft size={18} /> <span className="sm:hidden">Back</span><span className="hidden sm:inline">Back to Directory</span>
         </button>
         {canEdit && (
           <div className="flex items-center gap-2">
@@ -300,14 +300,14 @@ export default function StaffProfile({ uid, defaultName, onBack, canEdit }) {
                 <button 
                   onClick={handleDelete}
                   disabled={saving}
-                  className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 dark:bg-red-900/20 dark:border-red-900/30 dark:hover:bg-red-900/40 px-4 py-2 rounded-md font-medium text-sm transition-colors shadow-sm disabled:opacity-50"
+                  className="flex items-center gap-1.5 whitespace-nowrap bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 dark:bg-red-900/20 dark:border-red-900/30 dark:hover:bg-red-900/40 px-4 py-2 rounded-md font-medium text-sm transition-colors shadow-sm disabled:opacity-50"
                 >
                   <Trash2 size={16} /> Delete
                 </button>
                 <button 
                   onClick={() => setIsEditing(false)}
                   disabled={saving}
-                  className="flex items-center gap-1.5 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 px-4 py-2 rounded-md font-medium text-sm transition-colors text-brand-text shadow-sm disabled:opacity-50"
+                  className="flex items-center gap-1.5 whitespace-nowrap bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 px-4 py-2 rounded-md font-medium text-sm transition-colors text-brand-text shadow-sm disabled:opacity-50"
                 >
                   <X size={16} /> Cancel
                 </button>

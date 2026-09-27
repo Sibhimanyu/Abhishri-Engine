@@ -41,7 +41,7 @@ export default function Accounting() {
   return (
     <div className="h-full flex flex-col -mx-4 md:-mx-8 bg-brand-bg relative">
       <div className="bg-brand-sidebar pt-2 shrink-0">
-        <div className="flex overflow-x-auto hide-scrollbar gap-1 border-b border-brand-card-border px-4 md:px-8">
+        <div className="flex scroll-tabs edge-fade gap-1 border-b border-brand-card-border px-2 sm:px-4 md:px-8">
           {tabs.filter(t => t.show).map(tab => (
             <Link
               key={tab.id}

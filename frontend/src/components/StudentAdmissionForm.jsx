@@ -153,12 +153,12 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-4xl mx-auto">
       
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <button 
           type="button"
           onClick={onBack}
           disabled={saving}
-          className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors font-medium bg-black/5 dark:bg-white/5 px-3 py-1.5 rounded-lg disabled:opacity-50"
+          className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors font-medium bg-black/5 dark:bg-white/5 px-3 py-2 whitespace-nowrap rounded-lg disabled:opacity-50"
         >
           <ArrowLeft size={18} /> Cancel Admission
         </button>
@@ -266,7 +266,7 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
                 <label className="text-brand-text-dim text-xs block mb-1">Birth City</label>
                 <input type="text" name="birthCity" value={formData.birthCity} onChange={handleChange} className={inputClass} placeholder="e.g. Chennai"/>
               </div>
-              <div className="col-span-1 sm:col-span-2 md:col-span-1">
+              <div className="col-span-1">
                 <label className="text-brand-text-dim text-xs block mb-1">Gender</label>
                 <select 
                   name="gender"
@@ -282,7 +282,7 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
               </div>
 
               {/* Astrological Details Block */}
-              <div className="col-span-1 sm:col-span-2 md:col-span-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 mt-2">
+              <div className="col-span-1 sm:col-span-2 bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4 mt-2">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-sm font-semibold text-brand-text flex items-center gap-2">
                     <Star size={16} className="text-yellow-500"/>
@@ -368,7 +368,7 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
                   className={inputClass} 
                 />
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="text-brand-text-dim text-xs block mb-1">Student Login Email</label>
                 <input 
                   type="email" 
@@ -379,7 +379,7 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
                   placeholder="student@example.com (Optional)"
                 />
               </div>
-              <div className="col-span-2 mt-2">
+              <div className="sm:col-span-2 mt-2">
                 <label className="text-brand-text-dim text-xs block mb-1">Street Address</label>
                 <input 
                   type="text" 

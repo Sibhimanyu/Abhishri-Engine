@@ -274,7 +274,7 @@ export default function Reports() {
   return (
     <div className="h-full flex flex-col -mx-4 md:-mx-8 bg-brand-bg relative">
       <div className="bg-brand-sidebar pt-2 shrink-0 print:hidden">
-        <div className="flex overflow-x-auto hide-scrollbar gap-1 border-b border-brand-card-border px-4 md:px-8">
+        <div className="flex scroll-tabs edge-fade gap-1 border-b border-brand-card-border px-2 sm:px-4 md:px-8">
           {visibleTabs.map(tab => (
             <Link
               key={tab.id}
@@ -322,7 +322,7 @@ export default function Reports() {
             {canViewExpenses && <Route path="expenses" element={<ReportExpenses data={data} />} />}
             <Route path="cash-flow" element={<ReportCashFlow data={data} />} />
             {canViewIncome && <Route path="dues" element={<ReportDues data={data} />} />}
-            <Route path="*" element={<Navigate to={defaultTab} replace />} />
+            <Route path="*" element={<Navigate to={`/reports/${defaultTab}`} replace />} />
           </Routes>
         )}
       </div>

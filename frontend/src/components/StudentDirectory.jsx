@@ -131,7 +131,7 @@ export default function StudentDirectory() {
                 <button
                   key={opt.id}
                   onClick={() => setStatusFilter(opt.id)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${statusFilter === opt.id ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}
+                  className={`px-3 py-2 sm:py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${statusFilter === opt.id ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text' : 'text-brand-text-dim hover:text-brand-text'}`}
                 >
                   {opt.label}
                 </button>

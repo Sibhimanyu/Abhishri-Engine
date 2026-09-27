@@ -166,12 +166,12 @@ export default function StaffOnboardingForm({ onBack, onSuccess }) {
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-4xl mx-auto">
       
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <button 
           type="button"
           onClick={onBack}
           disabled={saving}
-          className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors font-medium bg-black/5 dark:bg-white/5 px-3 py-1.5 rounded-lg disabled:opacity-50"
+          className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors font-medium bg-black/5 dark:bg-white/5 px-3 py-2 whitespace-nowrap rounded-lg disabled:opacity-50"
         >
           <ArrowLeft size={18} /> Cancel Onboarding
         </button>
@@ -303,7 +303,7 @@ export default function StaffOnboardingForm({ onBack, onSuccess }) {
                   placeholder="e.g. O+, A-"
                 />
               </div>
-              <div className="col-span-2 mt-2">
+              <div className="sm:col-span-2 mt-2">
                 <label className="text-brand-text-dim text-xs block mb-1">Home Address</label>
                 <textarea 
                   name="address"
@@ -316,7 +316,7 @@ export default function StaffOnboardingForm({ onBack, onSuccess }) {
               </div>
 
               {/* Astrological Details Block for Staff */}
-              <div className="col-span-2 mt-4 border-t border-brand-card-border pt-4">
+              <div className="sm:col-span-2 mt-4 border-t border-brand-card-border pt-4">
                 <h4 className="text-sm font-semibold text-brand-text flex items-center gap-2 mb-3">
                   <Star size={16} className="text-yellow-500"/>
                   Astrological Details

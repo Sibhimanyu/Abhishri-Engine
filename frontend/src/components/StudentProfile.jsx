@@ -390,13 +390,13 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
       {/* Header / Actions */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <button 
           onClick={onBack}
           disabled={saving}
-          className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors font-medium bg-black/5 dark:bg-white/5 px-3 py-1.5 rounded-lg disabled:opacity-50"
+          className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors font-medium bg-black/5 dark:bg-white/5 px-3 py-2 whitespace-nowrap rounded-lg disabled:opacity-50"
         >
-          <ArrowLeft size={18} /> Back to Directory
+          <ArrowLeft size={18} /> <span className="sm:hidden">Back</span><span className="hidden sm:inline">Back to Directory</span>
         </button>
         {canEdit && (
           <div className="flex items-center gap-2">
@@ -405,14 +405,14 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                 <button 
                   onClick={() => setIsEditing(false)}
                   disabled={saving}
-                  className="flex items-center gap-1.5 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 px-4 py-2 rounded-md font-medium text-sm transition-colors text-brand-text shadow-sm disabled:opacity-50"
+                  className="flex items-center gap-1.5 whitespace-nowrap bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 px-4 py-2 rounded-md font-medium text-sm transition-colors text-brand-text shadow-sm disabled:opacity-50"
                 >
                   <X size={16} /> Cancel
                 </button>
                 <button 
                   onClick={handleSave}
                   disabled={saving}
-                  className="flex items-center gap-1.5 bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-md font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
+                  className="flex items-center gap-1.5 whitespace-nowrap bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-md font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
                 >
                   {saving ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>

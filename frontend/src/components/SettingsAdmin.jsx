@@ -53,14 +53,14 @@ export default function SettingsAdmin() {
     <div className="space-y-6">
 
       {/* Tabs */}
-      <div className="flex bg-black/5 dark:bg-white/5 rounded-lg p-1 overflow-x-auto">
+      <div className="flex bg-black/5 dark:bg-white/5 rounded-lg p-1 scroll-tabs edge-fade">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               onClick={() => goToTab(tab.id)}
-              className={`flex-1 min-w-[150px] px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+              className={`md:flex-1 md:min-w-[150px] px-4 py-2.5 md:py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
                 activeTab === tab.id
                   ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text'
                   : 'text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5'
