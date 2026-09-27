@@ -24,6 +24,7 @@ const StudentDirectory = lazy(() => import('./components/StudentDirectory'));
 const SmartCampus = lazy(() => import('./components/SmartCampus'));
 const Attendance = lazy(() => import('./components/Attendance'));
 const StudentPortal = lazy(() => import('./components/StudentPortal'));
+const ParentPortal = lazy(() => import('./components/ParentPortal'));
 const WhatsAppManager = lazy(() => import('./components/WhatsAppManager'));
 const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
 const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
@@ -325,8 +326,14 @@ function App() {
     return <Login />;
   }
 
-  const isStudentOrParent = userData?.dashboardType === 'student' || userData?.dashboardType === 'parent' || userData?.role === 'student' || userData?.role === 'parent';
-  if (isStudentOrParent) {
+  if (userData?.dashboardType === 'parent' || userData?.role === 'parent') {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<RouteLoader />}><ParentPortal /></Suspense>
+      </ErrorBoundary>
+    );
+  }
+  if (userData?.dashboardType === 'student' || userData?.role === 'student') {
     return (
       <ErrorBoundary>
         <Suspense fallback={<RouteLoader />}><StudentPortal /></Suspense>
