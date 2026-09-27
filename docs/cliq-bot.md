@@ -38,6 +38,16 @@ Clicking a button runs the Cliq function, which POSTs to the app's `cliqAction` 
 
 The decision is saved exactly like one made in the app, including the audit log (marked `via: cliq`).
 
+The first time each admin clicks Approve or Send back, Cliq asks them to allow Abhishri Bot to read their profile (for the email) and to call the app's endpoint. The permission lasts 60 days, after which Cliq asks again.
+
+## This school's setup
+
+- **Cliq org:** India data centre (`cliq.zoho.in`).
+- **Bot:** Abhishri Bot (`abhishribot`), available to the whole organisation.
+- **Channel:** `#approvals`, invite-only. Members are Vineetha, Sibhimanyu, Venkatesh and the bot.
+- **Cliq functions:** `abhishriapproval` (Button) and `abhishrisendback` (Form), both owned by `vineetha@abhishriacademy.in`.
+- **Different Cliq emails:** the admins sign in to Cliq with `@abhishriacademy.in` addresses but to the app with Gmail, so each is listed there. `staff@abhishriacademy.in` is the same in both and needs no entry.
+
 ## How it works
 
 - `functions/src/cliq/triggers.js`: Firestore triggers on `weekly_menus`, `daily_reports` and `feedback`, plus `sendCliqTest`, the admin-only callable behind the test button.
