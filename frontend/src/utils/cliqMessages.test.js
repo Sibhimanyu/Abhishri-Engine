@@ -120,5 +120,6 @@ describe('deciding from Cliq', () => {
     expect(decidedMessage({ ...args, data: {}, event: 'approved' }).text).toBe("*Daily report: Mon, 28 Sep 2026*\n✅ Sathya approved Vineetha's daily report.");
     expect(decidedMessage({ ...args, data: { approval: { note: 'Fix the date' } }, event: 'returned' }).text)
       .toBe("*Daily report: Mon, 28 Sep 2026*\n↩️ Sathya sent Vineetha's daily report back. Note: Fix the date");
+    expect(decidedMessage({ ...args, requesterName: 'Teachers', data: {}, event: 'approved' }).text).toContain("approved Teachers' daily report.");
   });
 });

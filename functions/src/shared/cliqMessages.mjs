@@ -126,13 +126,16 @@ export function requestMessage({ collection, id, data, requesterName, appUrl, cl
   });
 }
 
+// "Vineetha's", but "Teachers'" for a name ending in s.
+const possessive = (name) => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
+
 /** Channel note once a request is decided (in the app or from Cliq), so admins see it's done. */
 export function decidedMessage({ collection, id, data, event, reviewerName, requesterName }) {
   const kind = KINDS[collection];
   const note = String(data?.approval?.note || '').trim();
   const text = event === 'approved'
-    ? `✅ ${reviewerName} approved ${requesterName}'s ${kind.noun}.`
-    : `↩️ ${reviewerName} sent ${requesterName}'s ${kind.noun} back.${note ? ` Note: ${note}` : ''}`;
+    ? `✅ ${reviewerName} approved ${possessive(requesterName)} ${kind.noun}.`
+    : `↩️ ${reviewerName} sent ${possessive(requesterName)} ${kind.noun} back.${note ? ` Note: ${note}` : ''}`;
   return { text: `*${kind.title(id, data)}*\n${text}` };
 }
 
