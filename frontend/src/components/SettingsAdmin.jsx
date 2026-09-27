@@ -1,10 +1,11 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Shield, ShieldCheck, MapPin, MessageCircle, LayoutGrid, ScrollText, MessageSquare } from 'lucide-react';
+import { Shield, ShieldCheck, MapPin, MessageCircle, LayoutGrid, ScrollText, MessageSquare, BellRing } from 'lucide-react';
 import AdminUserPermissions from './AdminUserPermissions';
 import AdminAttendanceSetup from './AdminAttendanceSetup';
 import AdminWhatsAppConfig from './AdminWhatsAppConfig';
+import AdminCliqConfig from './AdminCliqConfig';
 import AdminEntities from './AdminEntities';
 import AdminAuditLog from './AdminAuditLog';
 import AdminFeedback from './AdminFeedback';
@@ -42,6 +43,7 @@ export default function SettingsAdmin() {
     { id: 'entities', label: 'Entities', icon: LayoutGrid, show: isMaster },
     { id: 'attendance', label: 'Attendance Setup', icon: MapPin, show: isMaster },
     { id: 'whatsapp', label: 'WhatsApp Config', icon: MessageCircle, show: isMaster },
+    { id: 'cliq', label: 'Cliq Bot', icon: BellRing, show: isMaster },
     { id: 'audit', label: 'Audit Log', icon: ScrollText, show: isMaster },
     { id: 'feedback', label: 'Feedback', icon: MessageSquare, show: isMaster },
   ];
@@ -77,6 +79,7 @@ export default function SettingsAdmin() {
         {activeTab === 'entities' && isMaster && <AdminEntities />}
         {activeTab === 'attendance' && isMaster && <AdminAttendanceSetup />}
         {activeTab === 'whatsapp' && isMaster && <AdminWhatsAppConfig />}
+        {activeTab === 'cliq' && isMaster && <AdminCliqConfig />}
         {activeTab === 'audit' && isMaster && <AdminAuditLog />}
         {activeTab === 'feedback' && isMaster && <AdminFeedback />}
       </div>

@@ -85,4 +85,11 @@ exports.getParentAttendance = parentPortal.getParentAttendance;
 exports.setParentPortalAccess = parentPortal.setParentPortalAccess;
 exports.syncStudentPortalPhones = parentPortal.syncStudentPortalPhones;
 
+// --- Zoho Cliq notifications (approvals, feedback) ---
+const cliq = require("./src/cliq/triggers");
+exports.cliqOnMenuApproval = cliq.cliqOnMenuApproval;
+exports.cliqOnReportApproval = cliq.cliqOnReportApproval;
+exports.cliqOnFeedback = cliq.cliqOnFeedback;
+exports.sendCliqTest = cliq.sendCliqTest;
+
 // Migration functions removed
