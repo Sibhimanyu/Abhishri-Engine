@@ -463,6 +463,12 @@ service cloud.firestore {
       allow write: if isAuthenticated() && (isAdmin() || isInternalStaff());
     }
 
+    // --- Daily Reports ("Connecting the Dots"), one per date: doc id is YYYY-MM-DD ---
+    match /daily_reports/{date} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isAdmin() || isInternalStaff());
+    }
+
     // --- App Feedback (complaints / suggestions / modification requests) ---
     match /feedback/{id} {
       // Admins see everything to review; a submitter can also see their own past submissions.

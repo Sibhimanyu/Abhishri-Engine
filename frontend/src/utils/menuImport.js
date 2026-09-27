@@ -1,6 +1,7 @@
 // Weekly menu import: the admin gives ChatGPT MENU_PROMPT plus their menu, and
 // pastes the reply back. The prompt only pins down the format; the parser is
 // forgiving about everything around it (chat text, code fences, key casing).
+import { extractJson, squash } from './chatJson';
 
 export const MENU_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 export const MENU_SLOTS = ['morningDrink', 'lunch', 'eveningSnack'];
@@ -40,8 +41,6 @@ Format rules:
 - Use "" for any of these that the menu doesn't have. If a meal has no items, use [].
 - "weekLabel" is the menu's week or title line; use "" if there isn't one.
 - Reply with only the JSON, in a single code block.`;
-
-const squash = (s) => String(s ?? '').toLowerCase().replace(/[^a-z]/g, '');
 
 const dayFromKey = (key) => {
   const k = squash(key);
@@ -85,30 +84,6 @@ const toItems = (raw) => {
   return list.map(toItem).filter(it => it && (it.name || it.description || it.translation));
 };
 
-// Pull the JSON object out of a pasted chat reply.
-const extractJson = (text) => {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const body = fenced ? fenced[1] : text;
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start === -1 || end <= start) throw new Error('No menu found in the pasted text. Paste the whole reply from ChatGPT.');
-  const candidate = body.slice(start, end + 1);
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    // Smart quotes and trailing commas are the usual copy-paste casualties.
-    const repaired = candidate
-      .replace(/[“”]/g, '"')
-      .replace(/[‘’]/g, "'")
-      .replace(/,\s*([}\]])/g, '$1');
-    try {
-      return JSON.parse(repaired);
-    } catch {
-      throw new Error('The pasted menu isn\'t valid JSON. Ask ChatGPT to reply again with only the JSON code block.');
-    }
-  }
-};
-
 /**
  * Parse a pasted ChatGPT reply into
  * `{ weekLabel, days: { monday: { morningDrink: [{name, description, translation}], ..., holiday, holidayNote }, ... }, warnings }`.
@@ -116,7 +91,7 @@ const extractJson = (text) => {
  * what was missing so the admin can check the preview. Throws if nothing usable was found.
  */
 export function parseMenuText(text) {
-  const data = extractJson(String(text ?? ''));
+  const data = extractJson(String(text ?? ''), 'menu');
   const rawDays = data?.days ?? data;
 
   // Accept `days` as an object keyed by day, or as an array of { day, ...slots }.

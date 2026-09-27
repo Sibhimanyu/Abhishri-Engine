@@ -11,7 +11,7 @@ import MainDashboard from './components/MainDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 import { CenteredSpinner } from './components/Spinner';
 import { getCurrentTamilDate } from './utils/astrologyApi';
-import { MessageCircle, Cake, CalendarDays, ChefHat } from 'lucide-react';
+import { MessageCircle, Cake, CalendarDays, ChefHat, NotebookPen } from 'lucide-react';
 import FeedbackWidget from './components/FeedbackWidget';
 
 // Route modules are lazy so the login screen and dashboard don't pay for the
@@ -29,6 +29,7 @@ const WhatsAppManager = lazy(() => import('./components/WhatsAppManager'));
 const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
 const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
 const WeeklyMenu = lazy(() => import('./components/WeeklyMenu'));
+const DailyReport = lazy(() => import('./components/DailyReport'));
 
 const RouteLoader = CenteredSpinner;
 
@@ -230,6 +231,7 @@ function App() {
     ...(hasReportsAccess ? [{ id: 'reports', label: 'Reports', icon: BarChart3 }] : []),
     { id: 'calendar', label: 'School Calendar', icon: CalendarDays },
     { id: 'weekly-menu', label: 'Weekly Menu', icon: ChefHat },
+    { id: 'daily-report', label: 'Daily Report', icon: NotebookPen },
     ...(isMaster ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];
 
@@ -627,6 +629,7 @@ function App() {
             <Route path="/reports/*" element={<Reports />} />
             <Route path="/calendar" element={<SchoolCalendar />} />
             <Route path="/weekly-menu" element={<WeeklyMenu />} />
+            <Route path="/daily-report" element={<DailyReport />} />
 
             <Route path="/settings/*" element={<SettingsAdmin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
