@@ -4,9 +4,9 @@ import { parseMenuText, MENU_DAYS } from './menuImport';
 const fullMenu = () => ({
   weekLabel: 'Week of 11 Aug 2026',
   days: Object.fromEntries(MENU_DAYS.map(d => [d, {
-    morningDrink: [{ name: `${d} drink`, translation: '' }],
-    lunch: [{ name: 'Rice', translation: 'சாதம்' }, { name: 'Sambar', translation: '' }],
-    eveningSnack: [{ name: 'Sundal', translation: '' }],
+    morningDrink: [{ name: `${d} drink`, description: '' }],
+    lunch: [{ name: 'Rice', description: 'சாதம்' }, { name: 'Sambar', description: '' }],
+    eveningSnack: [{ name: 'Sundal', description: '' }],
   }])),
 });
 
@@ -16,7 +16,7 @@ describe('parseMenuText', () => {
     const res = parseMenuText(text);
     expect(res.weekLabel).toBe('Week of 11 Aug 2026');
     expect(res.warnings).toEqual([]);
-    expect(res.days.monday.lunch).toEqual([{ name: 'Rice', translation: 'சாதம்' }, { name: 'Sambar', translation: '' }]);
+    expect(res.days.monday.lunch).toEqual([{ name: 'Rice', description: 'சாதம்' }, { name: 'Sambar', description: '' }]);
     expect(res.days.friday.morningDrink[0].name).toBe('friday drink');
   });
 
@@ -28,22 +28,27 @@ describe('parseMenuText', () => {
       ],
     });
     const res = parseMenuText(text);
-    expect(res.days.monday.morningDrink).toEqual([{ name: 'Ragi malt', translation: '' }]);
+    expect(res.days.monday.morningDrink).toEqual([{ name: 'Ragi malt', description: '' }]);
     expect(res.days.monday.lunch.map(i => i.name)).toEqual(['Idli', 'Chutney']);
-    expect(res.days.tuesday.lunch).toEqual([{ name: 'Pongal', translation: '' }]);
+    expect(res.days.tuesday.lunch).toEqual([{ name: 'Pongal', description: '' }]);
     expect(res.warnings).toContain('Wednesday is missing.');
   });
 
   it('repairs smart quotes and trailing commas', () => {
-    const text = '{ “days”: { “monday”: { “lunch”: [{ “name”: “Rice”, “translation”: “” },], }, }, }';
+    const text = '{ “days”: { “monday”: { “lunch”: [{ “name”: “Rice”, “description”: “” },], }, }, }';
     const res = parseMenuText(text);
-    expect(res.days.monday.lunch).toEqual([{ name: 'Rice', translation: '' }]);
+    expect(res.days.monday.lunch).toEqual([{ name: 'Rice', description: '' }]);
     expect(res.warnings).toContain('Monday: Morning Drink is missing.');
+  });
+
+  it('reads an older "translation" field as the description', () => {
+    const text = JSON.stringify({ days: { monday: { lunch: [{ name: 'Rice', translation: 'with ghee' }] } } });
+    expect(parseMenuText(text).days.monday.lunch).toEqual([{ name: 'Rice', description: 'with ghee' }]);
   });
 
   it('drops blank items', () => {
     const menu = fullMenu();
-    menu.days.monday.lunch.push({ name: '', translation: '' });
+    menu.days.monday.lunch.push({ name: '', description: '' });
     expect(parseMenuText(JSON.stringify(menu)).days.monday.lunch).toHaveLength(2);
   });
 
