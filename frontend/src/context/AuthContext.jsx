@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, collection, query, where, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, firestore } from '../firebase';
 import { writeSessionHint } from '../utils/sessionHint';
 
@@ -144,43 +144,14 @@ export function AuthProvider({ children }) {
                 }
 
                 // If we reach here, neither UID nor email allowed_users doc exists.
-                // We'll give the backend 5 seconds to complete any migrations before checking students
+                // Give the backend a moment to complete any migrations before giving up.
                 setTimeout(async () => {
                   try {
                     // If the snapshot fired again and set userData successfully, don't overwrite it
                     const doubleCheckUid = await getDoc(uidRef);
                     if (doubleCheckUid.exists()) return;
 
-                    const email = user.email ? user.email.toLowerCase() : '';
-                    const studentsRef = collection(firestore, 'students');
-                    
-                    let foundStudent = null;
-                    let studentRole = null;
-
-                    // Only a student's own email opens a portal here. Parents sign in by
-                    // phone (handled above); their emails no longer grant access.
-                    const checkRef = async (ref) => {
-                      if (foundStudent || !email) return;
-                      const snap = await getDocs(query(ref, where('studentEmail', '==', email)));
-                      if (!snap.empty) { foundStudent = snap.docs[0]; studentRole = 'student'; }
-                    };
-
-                    await checkRef(studentsRef);
-                    
-                    // Double check user data wasn't updated by onSnapshot while we were querying
-                    const tripleCheckUid = await getDoc(uidRef);
-                    if (tripleCheckUid.exists()) return;
-
-                    if (foundStudent) {
-                      setUserData({ 
-                        role: studentRole, 
-                        dashboardType: 'student', 
-                        studentId: foundStudent.id, 
-                        ...foundStudent.data() 
-                      });
-                    } else {
-                      setUserData({ role: 'unauthorized', permissions: {} });
-                    }
+                    setUserData({ role: 'unauthorized', permissions: {} });
                     setLoading(false);
                   } catch (err) {
                     console.error("Error in fallback timeout:", err);
@@ -222,8 +193,7 @@ export function AuthProvider({ children }) {
   // Persist the hint whenever we learn what kind of user this is.
   useEffect(() => {
     if (loading || !userData) return;
-    const isPortal = userData.dashboardType === 'student' || userData.dashboardType === 'parent'
-      || userData.role === 'student' || userData.role === 'parent';
+    const isPortal = userData.dashboardType === 'parent' || userData.role === 'parent';
     const isStaff = userData.isAdmin || ['admin', 'staff', 'teacher', 'pro'].includes(userData.role)
       || Object.keys(userData.permissions || {}).length > 0;
     writeSessionHint(isPortal ? 'portal' : isStaff ? 'shell' : '');

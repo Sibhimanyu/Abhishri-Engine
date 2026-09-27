@@ -24,7 +24,6 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
     gender: '',
     aadhaarNo: '',
     enrollmentDate: localKey(new Date()),
-    studentEmail: '',
     address: '',
     city: '',
     state: '',
@@ -366,17 +365,6 @@ export default function StudentAdmissionForm({ studentType, onBack }) {
                   value={formData.enrollmentDate} 
                   onChange={handleChange} 
                   className={inputClass} 
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-brand-text-dim text-xs block mb-1">Student Login Email</label>
-                <input 
-                  type="email" 
-                  name="studentEmail"
-                  value={formData.studentEmail} 
-                  onChange={handleChange} 
-                  className={inputClass} 
-                  placeholder="student@example.com (Optional)"
                 />
               </div>
               <div className="col-span-2 mt-2">
