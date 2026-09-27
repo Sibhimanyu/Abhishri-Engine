@@ -13,6 +13,46 @@ import PaymentReceipt from './PaymentReceipt';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// One fee component's annual figures, shared by the table (wide screens), the cards
+// (phones) and the totals row.
+function componentFigures(c, billingCycle) {
+  const mult = c.frequency === 'monthly' ? (billingCycle || 12) : 1;
+  const stdRate = c.baseAmount !== undefined ? c.baseAmount : (c.originalAmount || c.amount);
+  const stdTotal = stdRate * mult;
+  const netTotal = c.amount * mult;
+  const wav = Math.max(0, stdTotal - netTotal);
+  return { mult, stdRate, stdTotal, netTotal, wav };
+}
+
+// Human label for one payment breakdown key (e.g. "2025-<uid>-June").
+function breakdownLabel(k, t, components) {
+  let displayName;
+  let uidStr = k;
+  let monthStr = null;
+  
+  const monthRegex = new RegExp(`-(${MONTHS.join('|')})$`, 'i');
+  const monthMatch = uidStr.match(monthRegex);
+  if (monthMatch) {
+    monthStr = monthMatch[1];
+    uidStr = uidStr.replace(monthRegex, '');
+  }
+  
+  const yearRegex = /^(\d{4})-/;
+  if (uidStr.match(yearRegex)) {
+    uidStr = uidStr.replace(yearRegex, '');
+  }
+  
+  const comp = components?.find(c => c.uid === uidStr || c.name === uidStr);
+  if (comp) {
+    displayName = comp.name + (monthStr ? ` (${monthStr})` : '');
+  } else if (t.breakdownNames && t.breakdownNames[k]) {
+    displayName = t.breakdownNames[k] + (monthStr ? ` (${monthStr})` : '');
+  } else {
+    displayName = `Archived Fee` + (monthStr ? ` (${monthStr})` : '');
+  }
+  return displayName;
+}
+
 export default function StudentLedgerView({ studentId, wing, onBack }) {
   const { userData } = useAuth();
   const [student, setStudent] = useState(null);
@@ -898,6 +938,78 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
     }
   };
 
+  // Annual totals across every fee component (table footer and the phone totals card).
+  const componentTotals = components.reduce((acc, c) => {
+    const { stdTotal, netTotal, wav } = componentFigures(c, f.billingCycle);
+    return {
+      stdTotal: acc.stdTotal + stdTotal,
+      wav: acc.wav + wav,
+      netTotal: acc.netTotal + netTotal
+    };
+  }, { stdTotal: 0, wav: 0, netTotal: 0 });
+
+  // Row actions for one payment, shared by the table and the phone cards. `tap` makes
+  // every button at least 40px tall for touch.
+  const renderTxActions = (t, isDynamicallyVoided, tap = false) => {
+    const tapClass = tap ? ' min-h-10 min-w-10 justify-center' : '';
+    return (
+      <>
+        <button 
+          onClick={() => setReceiptTransaction(t)}
+          className={`p-2 text-brand-primary hover:bg-brand-primary/10 rounded-lg transition-colors${tap ? ' inline-flex items-center' : ''}${tapClass}`}
+          title="Print Receipt"
+        >
+          <Printer size={16} />
+        </button>
+        {canLogPayment && (
+          <button 
+            onClick={() => handleEditTransaction(t)}
+            className={`p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors${tap ? ' inline-flex items-center' : ''}${tapClass}`}
+            title="Edit Transaction"
+          >
+            <Edit2 size={16} />
+          </button>
+        )}
+        {canLogPayment && !isDynamicallyVoided && t.type !== 'void' && (
+          <button 
+            onClick={() => handleVoidTransaction(t)}
+            disabled={processingTransactionId !== null}
+            className={`inline-flex items-center gap-1.5 px-2 py-1.5 text-amber-600 hover:bg-amber-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed${tapClass}`}
+            title="Void Transaction"
+            aria-label="Void transaction"
+          >
+            <CircleSlash2 size={16} />
+            <span className="text-xs font-bold">Void</span>
+          </button>
+        )}
+        {isAdmin && t.type === 'void' && (
+          <button
+            onClick={() => handleDeleteTransaction(t)}
+            disabled={processingTransactionId !== null}
+            className={`inline-flex items-center gap-1.5 px-2 py-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed${tapClass}`}
+            title="Remove void record and restore original payment"
+            aria-label="Delete void record"
+          >
+            <Trash2 size={16} />
+            <span className="text-xs font-bold">Delete</span>
+          </button>
+        )}
+        {isAdmin && t.type !== 'void' && (
+          <button
+            onClick={() => handleDeleteTransaction(t)}
+            disabled={processingTransactionId !== null}
+            className={`inline-flex items-center gap-1.5 px-2 py-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed${tapClass}`}
+            title="Permanently delete ledger record"
+            aria-label="Permanently delete ledger record"
+          >
+            <Trash2 size={16} />
+            <span className="text-xs font-bold">Delete</span>
+          </button>
+        )}
+      </>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <button onClick={onBack} className="flex items-center gap-2 text-brand-text-dim hover:text-brand-text transition-colors bg-black/5 dark:bg-white/5 px-3 py-1.5 rounded-lg text-sm font-medium w-fit">
@@ -1075,7 +1187,8 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       <div className="space-y-6 pb-20">
         <div>
           <h3 className="font-bold text-lg text-brand-text flex items-center gap-2 mb-4"><Layers size={20} className="text-brand-secondary" /> Detailed Fee Architecture</h3>
-          <div className="bg-brand-card border border-brand-card-border rounded-xl overflow-x-auto">
+          <div className="bg-brand-card border border-brand-card-border rounded-xl overflow-hidden">
+          <div className="hidden md:block print:block overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-black/5 dark:bg-white/5 border-b border-brand-card-border text-brand-text font-bold text-xs uppercase">
                 <tr>
@@ -1089,11 +1202,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
               </thead>
               <tbody className="divide-y divide-brand-card-border text-brand-text font-medium">
                 {components.length > 0 ? components.map((c, i) => {
-                  const mult = c.frequency === 'monthly' ? (f.billingCycle || 12) : 1;
-                  const stdRate = c.baseAmount !== undefined ? c.baseAmount : (c.originalAmount || c.amount);
-                  const stdTotal = stdRate * mult;
-                  const netTotal = c.amount * mult;
-                  const wav = Math.max(0, stdTotal - netTotal);
+                  const { mult, stdRate, stdTotal, netTotal, wav } = componentFigures(c, f.billingCycle);
                   return (
                     <tr key={i} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                       <td className="px-6 py-4">
@@ -1111,18 +1220,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
               </tbody>
               <tfoot className="bg-black/5 dark:bg-white/5 border-t border-brand-card-border text-brand-text font-bold">
                 {components.length > 0 && (() => {
-                  const totals = components.reduce((acc, c) => {
-                    const mult = c.frequency === 'monthly' ? (f.billingCycle || 12) : 1;
-                    const stdRate = c.baseAmount !== undefined ? c.baseAmount : (c.originalAmount || c.amount);
-                    const stdTotal = stdRate * mult;
-                    const netTotal = c.amount * mult;
-                    const wav = Math.max(0, stdTotal - netTotal);
-                    return {
-                      stdTotal: acc.stdTotal + stdTotal,
-                      wav: acc.wav + wav,
-                      netTotal: acc.netTotal + netTotal
-                    };
-                  }, { stdTotal: 0, wav: 0, netTotal: 0 });
+                  const totals = componentTotals;
                   return (
                     <tr>
                       <td className="px-6 py-4 text-right uppercase tracking-wider text-xs" colSpan="3">Total Annual Architecture</td>
@@ -1135,11 +1233,51 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
               </tfoot>
             </table>
           </div>
+
+          {/* Phones: one card per component, totals card last. */}
+          <div className="md:hidden print:hidden divide-y divide-brand-card-border text-brand-text">
+            {components.length > 0 ? components.map((c, i) => {
+              const { mult, stdRate, stdTotal, netTotal, wav } = componentFigures(c, f.billingCycle);
+              return (
+                <div key={i} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm break-words">{c.name}</div>
+                      <div className="text-[10px] text-brand-text-dim uppercase mt-0.5">{c.frequency}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-black text-brand-primary text-sm whitespace-nowrap">₹{netTotal.toLocaleString('en-IN')}</div>
+                      <div className="text-[10px] text-brand-text-dim uppercase mt-0.5">Net payable</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-brand-text-dim">
+                    <span>Rate <span className="font-medium text-brand-text">₹{stdRate.toLocaleString('en-IN')}</span> × {mult}</span>
+                    <span>Std <span className="font-medium text-brand-text">₹{stdTotal.toLocaleString('en-IN')}</span></span>
+                    {wav > 0 && <span>Waiver <span className="font-bold text-red-500">-₹{wav.toLocaleString('en-IN')}</span></span>}
+                  </div>
+                </div>
+              );
+            }) : <div className="text-center py-8 text-sm text-brand-text-dim">No components configured.</div>}
+            {components.length > 0 && (
+              <div className="px-4 py-3 bg-black/5 dark:bg-white/5 font-bold">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="uppercase tracking-wider text-xs min-w-0">Total Annual Architecture</div>
+                  <div className="font-black text-brand-primary text-base whitespace-nowrap">₹{componentTotals.netTotal.toLocaleString('en-IN')}</div>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-brand-text-dim font-medium">
+                  <span>Std <span className="text-brand-text">₹{componentTotals.stdTotal.toLocaleString('en-IN')}</span></span>
+                  <span>Waiver <span className="text-red-500 font-bold">{componentTotals.wav > 0 ? `-₹${componentTotals.wav.toLocaleString('en-IN')}` : '—'}</span></span>
+                </div>
+              </div>
+            )}
+          </div>
+          </div>
         </div>
 
         <div>
           <h3 className="font-bold text-lg text-brand-text flex items-center gap-2 mb-4"><ListChecks size={20} className="text-green-500" /> Payment Audit Trail</h3>
-          <div className="bg-brand-card border border-brand-card-border rounded-xl overflow-x-auto">
+          <div className="bg-brand-card border border-brand-card-border rounded-xl overflow-hidden">
+          <div className="hidden md:block print:block overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-black/5 dark:bg-white/5 border-b border-brand-card-border text-brand-text font-bold text-xs uppercase">
                 <tr>
@@ -1167,31 +1305,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                         {t.breakdown && (
                           <div className="flex flex-wrap gap-1.5 mt-2">
                             {Object.entries(t.breakdown).map(([k, v]) => {
-                              let displayName = k;
-                              const parts = k.split('-');
-                              let uidStr = k;
-                              let monthStr = null;
-                              
-                              const monthRegex = new RegExp(`-(${MONTHS.join('|')})$`, 'i');
-                              const monthMatch = uidStr.match(monthRegex);
-                              if (monthMatch) {
-                                monthStr = monthMatch[1];
-                                uidStr = uidStr.replace(monthRegex, '');
-                              }
-                              
-                              const yearRegex = /^(\\d{4})-/;
-                              if (uidStr.match(yearRegex)) {
-                                uidStr = uidStr.replace(yearRegex, '');
-                              }
-                              
-                              const comp = components?.find(c => c.uid === uidStr || c.name === uidStr);
-                              if (comp) {
-                                displayName = comp.name + (monthStr ? ` (${monthStr})` : '');
-                              } else if (t.breakdownNames && t.breakdownNames[k]) {
-                                displayName = t.breakdownNames[k] + (monthStr ? ` (${monthStr})` : '');
-                              } else {
-                                displayName = `Archived Fee` + (monthStr ? ` (${monthStr})` : '');
-                              }
+                              const displayName = breakdownLabel(k, t, components);
                               return (
                                 <span key={k} className="text-[10px] px-1.5 py-0.5 bg-black/5 dark:bg-white/5 rounded text-brand-text-dim border border-black/5 dark:border-white/5">
                                   {displayName}: <span className="font-bold text-brand-text">₹{v.toLocaleString('en-IN')}</span>
@@ -1206,58 +1320,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                       </td>
                       <td className="px-6 py-4 text-right print:hidden">
                         <div className="flex items-center justify-end gap-2">
-                          <button 
-                            onClick={() => setReceiptTransaction(t)}
-                            className="p-2 text-brand-primary hover:bg-brand-primary/10 rounded-lg transition-colors"
-                            title="Print Receipt"
-                          >
-                            <Printer size={16} />
-                          </button>
-                          {canLogPayment && (
-                            <button 
-                              onClick={() => handleEditTransaction(t)}
-                              className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors"
-                              title="Edit Transaction"
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                          )}
-                          {canLogPayment && !isDynamicallyVoided && t.type !== 'void' && (
-                            <button 
-                              onClick={() => handleVoidTransaction(t)}
-                              disabled={processingTransactionId !== null}
-                              className="inline-flex items-center gap-1.5 px-2 py-1.5 text-amber-600 hover:bg-amber-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                              title="Void Transaction"
-                              aria-label="Void transaction"
-                            >
-                              <CircleSlash2 size={16} />
-                              <span className="text-xs font-bold">Void</span>
-                            </button>
-                          )}
-                          {isAdmin && t.type === 'void' && (
-                            <button
-                              onClick={() => handleDeleteTransaction(t)}
-                              disabled={processingTransactionId !== null}
-                              className="inline-flex items-center gap-1.5 px-2 py-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                              title="Remove void record and restore original payment"
-                              aria-label="Delete void record"
-                            >
-                              <Trash2 size={16} />
-                              <span className="text-xs font-bold">Delete</span>
-                            </button>
-                          )}
-                          {isAdmin && t.type !== 'void' && (
-                            <button
-                              onClick={() => handleDeleteTransaction(t)}
-                              disabled={processingTransactionId !== null}
-                              className="inline-flex items-center gap-1.5 px-2 py-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                              title="Permanently delete ledger record"
-                              aria-label="Permanently delete ledger record"
-                            >
-                              <Trash2 size={16} />
-                              <span className="text-xs font-bold">Delete</span>
-                            </button>
-                          )}
+                          {renderTxActions(t, isDynamicallyVoided)}
                         </div>
                       </td>
                     </tr>
@@ -1265,11 +1328,50 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
                 }) : <tr><td colSpan="3" className="text-center py-8 text-brand-text-dim">No transactions recorded.</td></tr>}
               </tbody>
             </table>
+          </div>
+
+          {/* Phones: one card per payment with the same actions. */}
+          <div className="md:hidden print:hidden divide-y divide-brand-card-border text-brand-text">
+            {transactions.length > 0 ? transactions.slice(0, txLimit).map((t) => {
+              const d = t.timestamp?.toDate ? t.timestamp.toDate() : (t.timestamp ? new Date(t.timestamp) : new Date());
+              const isDynamicallyVoided = transactions.some(v => v.type === 'void' && v.voidRefId === t.id);
+              return (
+                <div key={t.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-black/10 dark:bg-white/10 shrink-0">{t.method || 'CASH'}</span>
+                        <span className="text-sm font-medium break-words min-w-0">{t.description || t.reference || t.details || 'No ref'}</span>
+                      </div>
+                      <div className="text-xs text-brand-text-dim mt-1">
+                        {d.toLocaleDateString()} · {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                    <div className={`font-black text-base whitespace-nowrap ${t.type === 'void' ? 'text-red-500' : 'text-green-500'} ${isDynamicallyVoided ? 'line-through opacity-50' : ''}`}>
+                      {t.type === 'void' ? '' : '₹'}{t.amount.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  {t.breakdown && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {Object.entries(t.breakdown).map(([k, v]) => (
+                        <span key={k} className="text-[10px] px-1.5 py-0.5 bg-black/5 dark:bg-white/5 rounded text-brand-text-dim border border-black/5 dark:border-white/5 break-words">
+                          {breakdownLabel(k, t, components)}: <span className="font-bold text-brand-text">₹{v.toLocaleString('en-IN')}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center justify-end gap-1 mt-2">
+                    {renderTxActions(t, isDynamicallyVoided, true)}
+                  </div>
+                </div>
+              );
+            }) : <div className="text-center py-8 text-sm text-brand-text-dim">No transactions recorded.</div>}
+          </div>
             {transactions.length > txLimit && (
               <div className="p-4 text-center border-t border-brand-card-border bg-black/5 dark:bg-white/5">
                 <button 
                   onClick={() => setTxLimit(prev => prev + 15)}
-                  className="text-sm font-medium text-brand-secondary hover:text-brand-secondary-hover transition-colors"
+                  className="min-h-10 text-sm font-medium text-brand-secondary hover:text-brand-secondary-hover transition-colors"
                 >
                   Load More History
                 </button>

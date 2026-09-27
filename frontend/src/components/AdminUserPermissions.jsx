@@ -6,6 +6,17 @@ import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
 import { ShieldCheck, Search, UserPlus, X, Check, AlertCircle, Clock, Loader } from 'lucide-react';
 
+// A user's role badge and access summary, shared by the table (wide screens) and the
+// cards (phones).
+function describeAccess(user) {
+  const roleLabel = user.isAdmin ? 'Admin' : (user.role === 'pro' ? 'PRO' : (user.role || 'Staff'));
+  const roleClass = user.isAdmin
+    ? 'bg-brand-primary/10 text-brand-primary text-xs font-semibold px-2.5 py-1 rounded-md border border-brand-primary/20'
+    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 capitalize';
+  const accessLabel = user.isAdmin ? 'Full Access (Super Admin)' : `${user.role === 'pro' ? 'PRO' : (user.role || '')} Access`;
+  return { roleLabel, roleClass, accessLabel };
+}
+
 export default function AdminUserPermissions() {
   const { currentUser } = useAuth();
   const [users, setUsers] = useState([]);
@@ -228,7 +239,7 @@ export default function AdminUserPermissions() {
         </div>
         
         {/* Users Table */}
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm text-left text-brand-text-dim">
             <thead className="text-xs uppercase bg-black/5 dark:bg-white/5 text-brand-text">
               <tr>
@@ -246,49 +257,77 @@ export default function AdminUserPermissions() {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => (
-                  <tr key={user.id} className="border-b border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {user.photoURL ? (
-                          <img src={user.photoURL} alt="Avatar" className="w-8 h-8 rounded-full shadow-sm" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-brand-secondary/20 flex items-center justify-center text-brand-secondary font-bold">
-                            {user.email?.[0]?.toUpperCase() || 'U'}
+                filteredUsers.map((user) => {
+                  const { roleLabel, roleClass, accessLabel } = describeAccess(user);
+                  return (
+                    <tr key={user.id} className="border-b border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          {user.photoURL ? (
+                            <img src={user.photoURL} alt="Avatar" className="w-8 h-8 rounded-full shadow-sm" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-brand-secondary/20 flex items-center justify-center text-brand-secondary font-bold">
+                              {user.email?.[0]?.toUpperCase() || 'U'}
+                            </div>
+                          )}
+                          <div className="flex flex-col">
+                            <span className="font-medium text-brand-text">{user.displayName || 'Unknown Name'}</span>
+                            <span className="text-xs text-brand-text-dim">{user.email}</span>
                           </div>
-                        )}
-                        <div className="flex flex-col">
-                          <span className="font-medium text-brand-text">{user.displayName || 'Unknown Name'}</span>
-                          <span className="text-xs text-brand-text-dim">{user.email}</span>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {user.isAdmin ? (
-                        <span className="bg-brand-primary/10 text-brand-primary text-xs font-semibold px-2.5 py-1 rounded-md border border-brand-primary/20">Admin</span>
-                      ) : (
-                        <span className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 capitalize">{user.role === 'pro' ? 'PRO' : (user.role || 'Staff')}</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        {user.isAdmin ? (
-                          <span className="text-xs text-brand-text-dim font-medium italic">Full Access (Super Admin)</span>
-                        ) : (
-                          <span className="text-xs text-brand-text-dim font-medium italic capitalize">{user.role === 'pro' ? 'PRO' : user.role} Access</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button onClick={() => openEditModal(user)} className="text-brand-primary hover:text-brand-primary-hover font-medium text-sm transition-colors">
-                        Edit Access
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={roleClass}>{roleLabel}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`text-xs text-brand-text-dim font-medium italic ${user.isAdmin ? '' : 'capitalize'}`}>{accessLabel}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button onClick={() => openEditModal(user)} className="text-brand-primary hover:text-brand-primary-hover font-medium text-sm transition-colors">
+                          Edit Access
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Phones: one card per user. */}
+        <div className="md:hidden divide-y divide-brand-card-border">
+          {filteredUsers.length === 0 ? (
+            <div className="px-4 py-12 text-center text-brand-text-dim text-sm">No users found matching your search.</div>
+          ) : filteredUsers.map((user) => {
+            const { roleLabel, roleClass, accessLabel } = describeAccess(user);
+            return (
+              <div key={user.id} className="px-4 py-3 flex items-start gap-3">
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt="Avatar" className="w-8 h-8 rounded-full shadow-sm shrink-0 mt-0.5" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-brand-secondary/20 flex items-center justify-center text-brand-secondary font-bold shrink-0 mt-0.5">
+                    {user.email?.[0]?.toUpperCase() || 'U'}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="font-medium text-brand-text text-sm leading-snug min-w-0 break-words">{user.displayName || 'Unknown Name'}</div>
+                    <span className={`${roleClass} shrink-0 whitespace-nowrap`}>{roleLabel}</span>
+                  </div>
+                  <div className="text-xs text-brand-text-dim mt-0.5 break-words">{user.email}</div>
+                  <div className="flex items-center justify-between gap-3 mt-1">
+                    <span className={`text-xs text-brand-text-dim font-medium italic min-w-0 break-words ${user.isAdmin ? '' : 'capitalize'}`}>{accessLabel}</span>
+                    <button onClick={() => openEditModal(user)} className="min-h-[40px] shrink-0 text-brand-primary hover:text-brand-primary-hover font-medium text-sm transition-colors">
+                      Edit Access
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

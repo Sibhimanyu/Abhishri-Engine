@@ -43,6 +43,9 @@ const MONTH_LABEL = (pk) => {
   return new Date(y, m - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
 };
 
+/** "05 Mar"-style received date, shared by the table and the phone cards. */
+const receivedLabel = (r) => (r.receivedAt ? new Date(r.receivedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—');
+
 function Stat({ label, value, sub, tone = 'neutral', icon: Icon }) {
   const tones = {
     neutral: 'text-brand-text',
@@ -287,7 +290,8 @@ export default function Reconciliation() {
             <p className="text-sm text-brand-text-dim">No cash or cheques from this month are waiting to be banked.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-[10px] uppercase tracking-wider bg-brand-bg text-brand-text-dim border-b border-brand-card-border">
                 <tr>
@@ -319,7 +323,7 @@ export default function Reconciliation() {
                     <td className="px-3 py-3 font-medium text-brand-text">{r.studentName || '—'}</td>
                     <td className="px-3 py-3 text-brand-text-dim">{r.method}</td>
                     <td className="px-3 py-3 text-brand-text-dim whitespace-nowrap">
-                      {r.receivedAt ? new Date(r.receivedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
+                      {receivedLabel(r)}
                     </td>
                     <td className="px-4 py-3 text-right font-bold tabular-nums text-brand-text">{rupees(r.amountMinor)}</td>
                   </tr>
@@ -335,6 +339,43 @@ export default function Reconciliation() {
               )}
             </table>
           </div>
+
+          {/* Phones: one card per payment; the whole card toggles its checkbox. */}
+          <div className="md:hidden divide-y divide-brand-card-border">
+            <label className="px-4 py-3 min-h-10 flex items-center gap-3 bg-brand-bg text-[10px] uppercase tracking-wider font-bold text-brand-text-dim">
+              <input
+                type="checkbox"
+                checked={selected.length === periodCashRows.length && periodCashRows.length > 0}
+                onChange={(e) => setSelected(e.target.checked ? periodCashRows.map(r => r.paymentPath) : [])}
+                className="w-4 h-4 rounded border-gray-300"
+              />
+              Select all
+            </label>
+            {periodCashRows.map(r => (
+              <label key={r.paymentPath} className="px-4 py-3 flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(r.paymentPath)}
+                  onChange={(e) => setSelected(prev => e.target.checked ? [...prev, r.paymentPath] : prev.filter(p => p !== r.paymentPath))}
+                  className="w-4 h-4 mt-0.5 rounded border-gray-300 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="font-medium text-brand-text text-sm break-words min-w-0">{r.studentName || '—'}</div>
+                    <div className="font-bold tabular-nums text-brand-text text-sm whitespace-nowrap">{rupees(r.amountMinor)}</div>
+                  </div>
+                  <div className="text-xs text-brand-text-dim mt-0.5 break-words">{r.method} · {receivedLabel(r)}</div>
+                </div>
+              </label>
+            ))}
+            {selected.length > 0 && (
+              <div className="px-4 py-3 flex items-center justify-between gap-3 bg-brand-bg font-black text-brand-text text-sm">
+                <span>{selected.length} selected</span>
+                <span className="tabular-nums">{rupees(selectedMinor)}</span>
+              </div>
+            )}
+          </div>
+          </>
         )}
       </div>
 
