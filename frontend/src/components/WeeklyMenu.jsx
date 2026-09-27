@@ -23,12 +23,14 @@ const BRAND = {
   border: '#E7E2D8',
 };
 
+// `tint` is the pastel used in the exported image and the light-mode editor; the pastels
+// glare on the dark admin panel, so the dark-mode editor uses `darkTint` (same hue, low alpha).
 const DAY_THEMES = [
-  { key: 'monday', day: 'MONDAY', emoji: '⭐', tint: '#FDEEEC' },
-  { key: 'tuesday', day: 'TUESDAY', emoji: '🍉', tint: '#FDF3E3' },
-  { key: 'wednesday', day: 'WEDNESDAY', emoji: '🌸', tint: '#FCE9F3' },
-  { key: 'thursday', day: 'THURSDAY', emoji: '🌿', tint: '#EAF6EA' },
-  { key: 'friday', day: 'FRIDAY', emoji: '🌴', tint: '#E9F5F5' },
+  { key: 'monday', day: 'MONDAY', emoji: '⭐', tint: '#FDEEEC', darkTint: '#F1615B29' },
+  { key: 'tuesday', day: 'TUESDAY', emoji: '🍉', tint: '#FDF3E3', darkTint: '#F5A52429' },
+  { key: 'wednesday', day: 'WEDNESDAY', emoji: '🌸', tint: '#FCE9F3', darkTint: '#E879B929' },
+  { key: 'thursday', day: 'THURSDAY', emoji: '🌿', tint: '#EAF6EA', darkTint: '#4CAF5029' },
+  { key: 'friday', day: 'FRIDAY', emoji: '🌴', tint: '#E9F5F5', darkTint: '#3BB3B329' },
 ];
 
 const SLOTS = [
@@ -412,15 +414,18 @@ export default function WeeklyMenu() {
             const theme = DAY_THEMES[dayIdx];
             return (
               <div key={theme.key} className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm overflow-hidden">
-                <div className="p-4 flex items-center gap-3 border-b border-brand-card-border" style={{ background: theme.tint }}>
+                <div
+                  className="p-4 flex items-center gap-3 border-b border-brand-card-border bg-[var(--tint)] dark:bg-[var(--dark-tint)]"
+                  style={{ '--tint': theme.tint, '--dark-tint': theme.darkTint }}
+                >
                   <input
                     value={d.emoji}
                     onChange={(e) => updateEmoji(dayIdx, e.target.value)}
                     maxLength={2}
-                    className="w-10 h-10 text-center text-xl bg-white/70 border border-brand-card-border rounded-lg focus:outline-none focus:border-brand-primary"
+                    className="w-10 h-10 text-center text-xl bg-white/70 dark:bg-black/20 border border-brand-card-border rounded-lg focus:outline-none focus:border-brand-primary"
                     title="Day icon (emoji)"
                   />
-                  <h3 className="font-black tracking-wide" style={{ color: BRAND.ink }}>{d.day}</h3>
+                  <h3 className="font-black tracking-wide text-brand-text">{d.day}</h3>
                 </div>
                 <div className="p-4 space-y-4">
                   {SLOTS.map(slot => {
