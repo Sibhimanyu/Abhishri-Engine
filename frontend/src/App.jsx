@@ -31,6 +31,7 @@ const WhatsAppManager = lazy(() => import('./components/WhatsAppManager'));
 const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
 const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
 const MenuAndReport = lazy(() => import('./components/MenuAndReport'));
+const AuthAction = lazy(() => import('./components/AuthAction'));
 
 const RouteLoader = CenteredSpinner;
 
@@ -237,6 +238,15 @@ function App() {
     { id: 'menu-report', label: 'Menu & Report', icon: ChefHat, badge: pendingApprovals.total },
     ...(isMaster ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];
+
+  // Links in Firebase's emails (set password, confirm email) land here, signed in or not.
+  if (location.pathname === '/auth/action') {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<RouteLoader />}><AuthAction /></Suspense>
+      </ErrorBoundary>
+    );
+  }
 
   if (location.pathname.startsWith('/public-calendar')) {
     return (

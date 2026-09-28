@@ -1,10 +1,24 @@
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { firestore } from '../firebase';
+import { firestore, auth, functions } from '../firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
-import { ShieldCheck, Search, UserPlus, X, Check, AlertCircle, Clock, Loader, UserMinus } from 'lucide-react';
+import { ShieldCheck, Search, UserPlus, X, Check, AlertCircle, Clock, Loader, UserMinus, Mail } from 'lucide-react';
+
+// Addresses that are certainly Google accounts sign in with the Google button and need no
+// password. Anything else (e.g. @abhishriacademy.in on Zoho Mail) needs one.
+const isGmail = (email) => /@(gmail|googlemail)\.com$/i.test(email || '');
+
+// Being given access creates no sign-in account. This makes one for the address (if it's
+// on the access list and has none) and has Firebase email the "Set your password" link,
+// which lands on AuthAction. Sending it doesn't affect the admin's own session.
+async function sendPasswordSetupEmail(email) {
+  await httpsCallable(functions, 'prepareStaffPasswordSetup')({ email });
+  await sendPasswordResetEmail(auth, email);
+}
 
 // A user's role badge and access summary, shared by the table (wide screens) and the
 // cards (phones).
@@ -26,6 +40,7 @@ export default function AdminUserPermissions() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState(null); // { ok, text }
 
   useEffect(() => {
     let usersLoaded = false;
@@ -126,6 +141,19 @@ export default function AdminUserPermissions() {
 
       setIsModalOpen(false);
       setEditingUser(null);
+
+      // A new non-Gmail address can't sign in until it has a password, so send the link
+      // now rather than leaving them to find "First time here?" on the sign-in page.
+      if (!existingUser && !isGmail(emailKey)) {
+        sendPasswordSetupEmail(emailKey)
+          .then(() => setNotice({ ok: true, text: `Access saved. We emailed ${emailKey} a link to set their password; they'll be signed straight in after.` }))
+          .catch((err) => {
+            console.error('Password setup email failed', err);
+            setNotice({ ok: false, text: `Access saved, but the password email to ${emailKey} didn't send. Use "Email password link" in Edit Access to try again.` });
+          });
+      } else {
+        setNotice(null);
+      }
     } catch (err) {
       console.error('Error saving user:', err);
       alert('Failed to save user permissions.');
@@ -142,6 +170,23 @@ export default function AdminUserPermissions() {
     if (userData?.isAdmin || userData?.role === 'admin') return true;
     const targetIsAdmin = user.isAdmin === true || user.role === 'admin';
     return !targetIsAdmin && userData?.permissions?.staff_directory?.delete === true;
+  };
+
+  const handleSendSetupEmail = async () => {
+    const email = (editingUser?.email || '').toLowerCase().trim();
+    if (!email) return;
+    setSaving(true);
+    try {
+      await sendPasswordSetupEmail(email);
+      setNotice({ ok: true, text: `We emailed ${email} a link to set a new password.` });
+      setIsModalOpen(false);
+      setEditingUser(null);
+    } catch (err) {
+      console.error('Password setup email failed', err);
+      alert("Couldn't send the email. Try again in a few minutes.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleRemoveUser = async () => {
@@ -209,7 +254,17 @@ export default function AdminUserPermissions() {
 
   return (
     <div className="space-y-6">
-      
+
+      {notice && (
+        <div role="status" className={`p-4 rounded-xl text-sm flex items-start gap-3 border ${notice.ok
+          ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-100 dark:border-green-800/50'
+          : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-800/50'}`}>
+          {notice.ok ? <Mail size={18} className="shrink-0 mt-0.5" /> : <AlertCircle size={18} className="shrink-0 mt-0.5" />}
+          <span className="flex-1">{notice.text}</span>
+          <button onClick={() => setNotice(null)} aria-label="Dismiss" className="shrink-0 opacity-70 hover:opacity-100"><X size={16} /></button>
+        </div>
+      )}
+
       {/* Pending Requests Alert Block */}
       {filteredPending.length > 0 && (
         <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-4">
@@ -453,9 +508,9 @@ export default function AdminUserPermissions() {
                     </ul>
                   ) : editingUser.role === 'teacher' ? (
                     <ul className="list-disc pl-5 space-y-1">
-                      <li><span className="font-medium text-brand-text">Attendance:</span> Can mark daily attendance and view reports</li>
-                      <li><span className="font-medium text-brand-text">Directories:</span> View-only access to Staff and Student directories</li>
-                      <li><span className="font-medium text-brand-text">Fees & Accounting:</span> Can only log and view their own personal expenses</li>
+                      <li><span className="font-medium text-brand-text">Attendance:</span> Can mark student attendance and view reports (not staff attendance)</li>
+                      <li><span className="font-medium text-brand-text">Directories:</span> View-only access to the Student directory; no Staff directory</li>
+                      <li><span className="font-medium text-brand-text">Fees & Accounting:</span> No access</li>
                     </ul>
                   ) : (
                     <ul className="list-disc pl-5 space-y-1">
@@ -474,6 +529,16 @@ export default function AdminUserPermissions() {
                   className="sm:mr-auto px-4 py-2 rounded-lg font-semibold text-red-600 dark:text-red-500 border border-red-200 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2 disabled:opacity-50"
                 >
                   <UserMinus size={16} /> Remove access
+                </button>
+              )}
+              {editingUser.id && !isGmail(editingUser.email) && (
+                <button
+                  onClick={handleSendSetupEmail}
+                  disabled={saving}
+                  title="Emails a link to set (or reset) their password"
+                  className="px-4 py-2 rounded-lg font-semibold text-brand-text border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Mail size={16} /> Email password link
                 </button>
               )}
               <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg font-medium text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors">

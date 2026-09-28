@@ -17,13 +17,13 @@ function defaultPermissions(role) {
   const isTeach = role === 'teacher';
   const isPro = role === 'pro';
   return {
-    staff_directory: { view: true, manage: isPro, delete: false },
+    staff_directory: { view: !isTeach, manage: isPro, delete: false },
     student_directory: { view: true, manage: isPro, delete: false },
     attendance: { view: true, mark: isTeach || isPro, edit: isPro },
     fees_accounting: {
       view: false, view_dashboard: false, config: false,
       ledger: false, trans_add: false, trans_delete: false,
-      exp_own: true, exp_all: false, wallet_view_own: true, wallet_edit_own: false
+      exp_own: !isTeach, exp_all: false, wallet_view_own: !isTeach, wallet_edit_own: false
     },
     whatsapp_sender: { access: false, broadcast: false, manage: false },
     smart_campus: { view: isPro, control: isPro, scenes: false, config: false }

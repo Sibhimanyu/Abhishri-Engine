@@ -18,7 +18,7 @@ function passwordErrorMessage(err) {
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':
-      return "That email and password don't match. If you haven't set a password yet, or forgot it, use \"Set or reset password\" below. Gmail addresses can use the Google button instead.";
+      return "That email and password don't match. If you haven't set a password yet, or forgot it, press \"First time here, or forgot your password?\" below. Gmail addresses can use the Google button instead.";
     case 'auth/invalid-email': return "That doesn't look like an email address.";
     case 'auth/too-many-requests': return 'Too many attempts. Wait a few minutes, or reset your password.';
     case 'auth/user-disabled': return 'This account has been switched off. Contact the school office.';
@@ -59,7 +59,7 @@ export default function Login() {
     setError(null);
     setResetSentTo('');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
-      setError('Type your email address above first, then press "Set or reset password".');
+      setError('Type your email address above first, then press "First time here, or forgot your password?".');
       return;
     }
     setResetting(true);
@@ -139,7 +139,7 @@ export default function Login() {
             )}
             {resetSentTo && (
               <div role="status" className="mb-6 p-4 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm border border-green-100 dark:border-green-800/50">
-                If {resetSentTo} has access, we've emailed it a link to set a password. Open it, choose a password, then sign in here. Check spam if it doesn't arrive in a few minutes.
+                If {resetSentTo} has access, we've emailed it a link. Open it, choose a password, and you'll be signed straight in. Check spam if it doesn't arrive in a few minutes.
               </div>
             )}
 
@@ -187,7 +187,7 @@ export default function Login() {
                 disabled={resetting}
                 className="w-full text-sm font-semibold text-brand-primary hover:text-brand-primary-hover disabled:opacity-70"
               >
-                {resetting ? 'Sending...' : 'Set or reset password'}
+                {resetting ? 'Sending...' : 'First time here, or forgot your password?'}
               </button>
             </form>
 
