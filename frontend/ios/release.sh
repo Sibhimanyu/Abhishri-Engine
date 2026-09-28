@@ -86,7 +86,7 @@ source = {
   "apps": [{
     "name": "Abhishri", "bundleIdentifier": bundle, "developerName": "Abhishri Academy",
     "subtitle": "School workspace", "localizedDescription":
-      "The Abhishri Academy workspace: students, staff, attendance, fees, reports and WhatsApp for staff, and the student portal for parents. Sign in with your school account.",
+      "The Abhishri Academy workspace: students, staff, attendance, fees, reports and WhatsApp for staff, and the parent portal. Sign in with your school account.",
     "iconURL": f"{site}/icon.png", "tintColor": "#F1615B", "category": "education",
     # SideStore needs these top-level as well as in versions.
     "version": version, "versionDate": now, "versionDescription": notes,

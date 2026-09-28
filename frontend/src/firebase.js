@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, initializeAuth, indexedDBLocalPersistence, onAuthStateChanged, GoogleAuthProvider, connectAuthEmulator } from 'firebase/auth';
-import { initializeFirestore, connectFirestoreEmulator, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database';
+import { initializeFirestore, connectFirestoreEmulator, persistentLocalCache, persistentMultipleTabManager, disableNetwork, enableNetwork } from 'firebase/firestore';
+import { getDatabase, goOffline, goOnline } from 'firebase/database';
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 import { isNative } from './utils/native';
@@ -35,6 +35,40 @@ export const rtdb = getDatabase(app);
 export const functions = getFunctions(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Tear down and reopen Firestore's connection. A socket that died while the laptop slept
+// or the Wi-Fi changed can look alive, so reads wait on it forever. Concurrent callers
+// share one reconnect.
+let reconnecting = null;
+export function reconnectFirestore() {
+    if (!reconnecting) {
+        reconnecting = disableNetwork(firestore)
+            .then(() => enableNetwork(firestore))
+            .catch(err => console.warn('Firestore reconnect failed', err))
+            .finally(() => { reconnecting = null; });
+    }
+    return reconnecting;
+}
+
+function reconnectAll() {
+    reconnectFirestore();
+    goOffline(rtdb);
+    goOnline(rtdb);
+}
+
+// Reconnect when the network comes back, and after the device wakes from sleep — spotted
+// as a timer that fires far later than scheduled — instead of leaving screens spinning on
+// the dead connection. Listeners resume on their own once reconnected.
+if (typeof window !== 'undefined') {
+    window.addEventListener('online', reconnectAll);
+    const TICK_MS = 10000;
+    let lastTick = Date.now();
+    setInterval(() => {
+        const now = Date.now();
+        if (now - lastTick > TICK_MS * 3) reconnectAll();
+        lastTick = now;
+    }, TICK_MS);
+}
 
 // Signing out of Firebase must also drop the native Google session, or the
 // next "Continue with Google" silently reuses the previous account. In the native

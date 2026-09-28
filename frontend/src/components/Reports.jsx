@@ -1,7 +1,8 @@
 import { Spinner } from './Spinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { collection, onSnapshot, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, onSnapshot, collectionGroup } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { TrendingUp, TrendingDown, Scale, AlertCircle, ShieldAlert } from 'lucide-react';

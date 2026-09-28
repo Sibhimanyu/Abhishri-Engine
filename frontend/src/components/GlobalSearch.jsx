@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, getDocs, limit } from 'firebase/firestore';
+import { collection, query, limit } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { firestore } from '../firebase';
 import { Search, User, Briefcase, ChevronRight, X, LayoutDashboard, FileText, Settings, Users, MessageSquare } from 'lucide-react';
 import { isDiscontinued, isOnRolls } from '../utils/reportUtils';

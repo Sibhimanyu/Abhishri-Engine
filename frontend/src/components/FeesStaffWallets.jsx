@@ -1,6 +1,7 @@
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, setDoc, doc, serverTimestamp, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, addDoc, setDoc, doc, serverTimestamp, deleteDoc, getDoc } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { firestore, storage } from '../firebase';
 import { useAuth } from '../context/AuthContext';

@@ -1,6 +1,7 @@
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Search, Plus, Edit2, Trash2, X, IndianRupee } from 'lucide-react';

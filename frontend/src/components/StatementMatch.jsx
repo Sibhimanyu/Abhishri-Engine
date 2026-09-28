@@ -2,7 +2,8 @@ import { Spinner } from './Spinner';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Papa from 'papaparse';
 import { httpsCallable } from 'firebase/functions';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { functions, firestore } from '../firebase';
 import {
   Upload, Link2, Link2Off, EyeOff, CheckCircle2, AlertTriangle,

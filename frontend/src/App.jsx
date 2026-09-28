@@ -11,7 +11,8 @@ import MainDashboard from './components/MainDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 import { CenteredSpinner } from './components/Spinner';
 import { getCurrentTamilDate } from './utils/astrologyApi';
-import { CalendarDays, ChefHat } from 'lucide-react';
+import { CalendarDays, ChefHat, Smartphone } from 'lucide-react';
+import { isNative } from './utils/native';
 import { isAdminUser, usePendingApprovals, useMyApprovalOutcomes } from './components/poster/approval';
 import NotificationBell from './components/NotificationBell';
 import { bellEntries } from './utils/bellEntries';
@@ -26,12 +27,12 @@ const SettingsAdmin = lazy(() => import('./components/SettingsAdmin'));
 const StudentDirectory = lazy(() => import('./components/StudentDirectory'));
 const SmartCampus = lazy(() => import('./components/SmartCampus'));
 const Attendance = lazy(() => import('./components/Attendance'));
-const StudentPortal = lazy(() => import('./components/StudentPortal'));
 const ParentPortal = lazy(() => import('./components/ParentPortal'));
 const WhatsAppManager = lazy(() => import('./components/WhatsAppManager'));
 const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
 const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
 const MenuAndReport = lazy(() => import('./components/MenuAndReport'));
+const PhoneSignInSettings = lazy(() => import('./components/PhoneSignInSettings'));
 
 const RouteLoader = CenteredSpinner;
 
@@ -55,6 +56,7 @@ function App() {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showPhoneSignIn, setShowPhoneSignIn] = useState(false);
   const [pendingLoginsCount, setPendingLoginsCount] = useState(0);
   const [unreadWhatsAppCount, setUnreadWhatsAppCount] = useState(0);
   const [newFeedbackCount, setNewFeedbackCount] = useState(0);
@@ -339,17 +341,22 @@ function App() {
       </ErrorBoundary>
     );
   }
-  if (userData?.dashboardType === 'student' || userData?.role === 'student') {
-    return (
-      <ErrorBoundary>
-        <Suspense fallback={<RouteLoader />}><StudentPortal /></Suspense>
-      </ErrorBoundary>
-    );
-  }
 
   // Block unauthorized users from seeing the main admin dashboard and sidebar
   const authorizedRoles = ['admin', 'staff', 'teacher', 'pro'];
   const isAuthorizedAdminOrStaff = userData?.isAdmin || authorizedRoles.includes(userData?.role) || Object.keys(userData?.permissions || {}).length > 0;
+  if (userData?.role === 'admin-phone') {
+    return <AccessCheckFailedScreen
+      title="Admins sign in with Google"
+      message="Admin accounts can't use phone sign-in. Sign out, then sign in with Google."
+      canRetry={false}
+    />;
+  }
+  if (userData?.role === 'error') {
+    // The access lookup failed (usually the connection), which says nothing about
+    // whether they have access — don't tell them they're unauthorized.
+    return <AccessCheckFailedScreen />;
+  }
   if (!isAuthorizedAdminOrStaff) {
     return <UnauthorizedScreen user={currentUser} />;
   }
@@ -450,6 +457,15 @@ function App() {
             </nav>
             
             <div className="p-4 border-t border-brand-card-border shrink-0">
+              {!isNative && (
+                <button
+                  onClick={() => { setShowMobileSidebar(false); setShowPhoneSignIn(true); }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-brand-text-dim hover:bg-black/5 dark:hover:bg-white/5 hover:text-brand-text w-full transition-colors"
+                >
+                  <Smartphone size={18} className="opacity-70" />
+                  Phone sign-in
+                </button>
+              )}
               <button 
                 onClick={() => { setShowMobileSidebar(false); signOut(auth); }}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-brand-text-dim hover:bg-black/5 dark:hover:bg-white/5 hover:text-brand-text w-full transition-colors"
@@ -537,6 +553,15 @@ function App() {
                     >
                       <Settings size={16} /> Account Settings
                     </Link>
+                    {/* Phone auth needs reCAPTCHA, which the iOS app's web view can't load. */}
+                    {!isNative && (
+                      <button
+                        onClick={() => { setShowProfileMenu(false); setShowPhoneSignIn(true); }}
+                        className="w-full text-left px-4 py-2 text-sm text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2"
+                      >
+                        <Smartphone size={16} /> Phone sign-in
+                      </button>
+                    )}
                     <button 
                       onClick={() => signOut(auth)}
                       className="w-full text-left px-4 py-2.5 text-sm text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2"
@@ -587,11 +612,51 @@ function App() {
           </ErrorBoundary>
         </div>
       </main>
+
+      {showPhoneSignIn && (
+        <Suspense fallback={null}>
+          <PhoneSignInSettings onClose={() => setShowPhoneSignIn(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }
 
 export default App;
+
+function AccessCheckFailedScreen({
+  title = "Couldn't load your account",
+  message = "We couldn't check your access just now. Check your connection and try again.",
+  canRetry = true,
+}) {
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-brand-bg text-brand-text p-6">
+      <div className="max-w-md w-full p-8 bg-brand-card border border-brand-card-border rounded-2xl shadow-lg text-center space-y-6">
+        <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 text-amber-500 rounded-full flex items-center justify-center mx-auto">
+          <AlertTriangle size={32} />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black">{title}</h2>
+          <p className="text-brand-text-dim text-sm">{message}</p>
+        </div>
+        <div className="flex gap-3">
+          {canRetry && <button
+            onClick={() => window.location.reload()}
+            className="flex-1 py-2.5 bg-brand-primary hover:bg-brand-primary-hover text-white font-bold rounded-lg transition-colors shadow-sm"
+          >
+            Try Again
+          </button>}
+          <button
+            onClick={() => signOut(auth)}
+            className="flex-1 py-2.5 border border-brand-card-border hover:bg-brand-bg font-bold rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            <LogOut size={16} className="rotate-180" /> Sign Out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function UnauthorizedScreen({ user }) {
   React.useEffect(() => {

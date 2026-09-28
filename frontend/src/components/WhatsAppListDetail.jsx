@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';

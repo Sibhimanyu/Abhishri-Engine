@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { functions, auth, firestore } from '../firebase';
 import { Spinner } from './Spinner';
 import SchoolCalendar from './SchoolCalendar';

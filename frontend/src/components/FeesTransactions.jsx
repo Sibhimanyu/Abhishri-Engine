@@ -1,6 +1,7 @@
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, query, onSnapshot, collectionGroup } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Search, ArrowUpRight, ArrowDownRight, ExternalLink, X, RefreshCw, Briefcase } from 'lucide-react';

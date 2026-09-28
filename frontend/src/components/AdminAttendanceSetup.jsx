@@ -1,6 +1,7 @@
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { getDoc } from '../utils/firestoreRead';
 import { httpsCallable } from 'firebase/functions';
 import { firestore, functions } from '../firebase';
 import { MapPin, Crosshair, Save } from 'lucide-react';

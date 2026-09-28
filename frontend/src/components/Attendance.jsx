@@ -1,7 +1,8 @@
 import { localKey, parseISODate, isDiscontinued, isEnrolledOn } from '../utils/reportUtils';
 import { Spinner } from './Spinner';
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection } from 'firebase/firestore';
+import { getDocs } from '../utils/firestoreRead';
 import { ref, onValue, set, serverTimestamp, get } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
 import { useAuth } from '../context/AuthContext';
