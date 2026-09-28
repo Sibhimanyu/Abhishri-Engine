@@ -6,8 +6,8 @@ import { AlertCircle, Smartphone, KeyRound } from 'lucide-react';
 
 const RESEND_AFTER = 30; // seconds
 
-// Firebase's phone-auth errors, in words a parent or staff member can act on.
-export function phoneErrorMessage(err) {
+// Firebase's phone-auth errors, in words a parent can act on.
+function phoneErrorMessage(err) {
   switch (err?.code) {
     case 'auth/invalid-phone-number': return "That doesn't look like a mobile number. Enter the 10-digit number the school has on file.";
     case 'auth/invalid-verification-code': return "That code isn't right. Check the SMS and try again.";
@@ -16,21 +16,16 @@ export function phoneErrorMessage(err) {
     case 'auth/quota-exceeded': return 'The school has reached its SMS limit for today. Please try again tomorrow or contact the school office.';
     case 'auth/operation-not-allowed': return "Phone sign-in isn't switched on yet. Please contact the school office.";
     case 'auth/network-request-failed': return 'No connection. Check your internet and try again.';
-    case 'auth/credential-already-in-use':
-    case 'auth/account-exists-with-different-credential':
-      return 'That number already signs in to a different account (often the parent portal), so it can’t be added here. Contact the school office.';
-    case 'auth/provider-already-linked': return 'Your account already has a phone number. Remove it first to use a different one.';
-    case 'auth/requires-recent-login': return 'For your security, sign out and sign in with Google again, then add the number.';
     default: return "Couldn't sign you in. Check your connection and try again.";
   }
 }
 
 /**
- * Enter a mobile number, get an SMS code, type it in. `start(e164, verifier)` sends the
- * code and returns Firebase's ConfirmationResult — signInWithPhoneNumber to sign in,
- * linkWithPhoneNumber to add the number to the signed-in account — and `onConfirmed`
- * runs once the code is accepted. Web only: phone auth needs reCAPTCHA, which the iOS
- * app's bundled web view can't load.
+ * Parents sign in with the mobile number on their child's record and a one-time SMS
+ * code: enter the number, get the code, type it in. `start(e164, verifier)` sends the
+ * code and returns Firebase's ConfirmationResult; `onConfirmed` runs once the code is
+ * accepted. Web only: phone auth needs reCAPTCHA, which the iOS app's bundled web view
+ * can't load, and the iOS app is for staff.
  */
 export default function PhoneCodeForm({ start, onConfirmed, hint, confirmLabel = 'Sign In', idPrefix = 'phone' }) {
   const [phone, setPhone] = useState('');

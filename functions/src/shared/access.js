@@ -21,11 +21,30 @@ const FALLBACK = (role) => ({
   smart_campus: { view: role === "pro", control: role === "pro", scenes: false, config: false },
 });
 
+/**
+ * The caller's email, lowercased, or "" unless the account has proven it owns the inbox.
+ * Anyone can create an unverified email/password account for any address through the
+ * public API, so an unverified email must never unlock the allowed_users record keyed by
+ * it (same rule as authEmail() in firestore.rules). Google accounts are always verified;
+ * password accounts become verified by setting their password from the emailed link.
+ */
+function verifiedEmail(auth) {
+  const email = auth?.token?.email;
+  if (isPhoneSession(auth)) return "";
+  return email && auth.token.email_verified === true ? String(email).toLowerCase() : "";
+}
+
+/** Phone sign-in is for parents only; a phone session never counts as staff. */
+function isPhoneSession(auth) {
+  return auth?.token?.firebase?.sign_in_provider === "phone";
+}
+
 async function loadUser(auth) {
+  if (isPhoneSession(auth)) return null;
   const db = admin.firestore();
   const byUid = await db.collection("allowed_users").doc(auth.uid).get();
   if (byUid.exists) return byUid.data();
-  const email = String(auth.token?.email || "").toLowerCase();
+  const email = verifiedEmail(auth);
   if (!email) return null;
   const byEmail = await db.collection("allowed_users").doc(email).get();
   return byEmail.exists ? byEmail.data() : null;
@@ -46,7 +65,7 @@ async function resolveAccess(auth) {
     const source = groupPerms || FALLBACK(role);
     return source?.[module]?.[action] === true;
   };
-  return { isAdmin, role, email: auth.token?.email || null, can };
+  return { isAdmin, role, email: verifiedEmail(auth) || null, can };
 }
 
-module.exports = { resolveAccess };
+module.exports = { resolveAccess, verifiedEmail };

@@ -58,8 +58,8 @@ async function resolvePermissions(db, userData) {
  * character — so the write threw and rtdb_permissions stayed empty, denying every
  * modules/smart_campus read.
  *
- * onUserCreated migrates email-keyed docs to uid-keyed ones, so a docId with no '@' is
- * already a uid and is used directly.
+ * A docId with no '@' is a uid (older records were moved there on first sign-in) and is
+ * used directly.
  */
 async function resolveUid(docId, userData) {
   if (docId && !docId.includes('@')) return docId;
@@ -67,6 +67,12 @@ async function resolveUid(docId, userData) {
   if (!email || !email.includes('@')) return null;
   try {
     const user = await admin.auth().getUserByEmail(email);
+    // Same rule as the security rules: an unverified email doesn't own the record, or an
+    // account anyone created for the address would get its permissions mirrored.
+    if (!user.emailVerified) {
+      logger.warn('permissionsMirror: email not verified, not mirroring', { email });
+      return null;
+    }
     return user.uid;
   } catch (err) {
     // No Auth account yet: the person has been granted access but never signed in.
@@ -135,7 +141,7 @@ exports.onAllowedUserWrite = functions.region('us-central1').firestore
     const db = admin.firestore();
     const docId = context.params.docId;
     const { uid } = await mirrorUser(db, docId, change.after.exists ? change.after.data() : null);
-    await enforcePhoneSignIn(db, uid);
+    await enforcePhoneSignIn(uid);
   });
 
 // A role's permission_groups doc changing affects every user with that role.

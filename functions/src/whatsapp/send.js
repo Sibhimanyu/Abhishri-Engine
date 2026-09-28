@@ -3,6 +3,7 @@ const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https")
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const axios = require("axios");
+const { verifiedEmail } = require("../shared/access");
 
 const sanitizeKey = (key) => key ? String(key).replace(/[.#$/[\]]/g, "_") : key;
 
@@ -34,7 +35,7 @@ async function getAllowedUser(auth) {
   const db = admin.firestore();
   const uidDoc = await db.collection("allowed_users").doc(auth.uid).get();
   if (uidDoc.exists) return uidDoc.data();
-  const email = auth.token?.email?.toLowerCase();
+  const email = verifiedEmail(auth);
   if (email) {
     const emailDoc = await db.collection("allowed_users").doc(email).get();
     if (emailDoc.exists) return emailDoc.data();

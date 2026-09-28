@@ -8,17 +8,34 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // The signed-in email, lowercased, but only once the account has proven it owns that
+    // inbox; '' otherwise. Email/password accounts can be created by anyone through the
+    // public API, so an unverified email must never unlock an allowed_users record keyed
+    // by that address, or anyone could sign up as a staff member who hasn't yet.
+    // Google accounts are always verified; password accounts become verified by setting
+    // their password from the emailed link (Login -> "Set or reset password").
+    // Phone sign-in is for parents only, so a phone session never counts as staff, even
+    // on an account that somehow also has an email.
+    function authEmail() {
+      return request.auth != null
+          && !isPhoneSession()
+          && request.auth.token.get('email_verified', false) == true
+          && request.auth.token.get('email', null) != null
+        ? request.auth.token.email.lower()
+        : '';
+    }
+
+    function isPhoneSession() {
+      return request.auth.token.firebase.sign_in_provider == 'phone';
+    }
+
     function getUserDoc() {
-      return exists(/databases/$(database)/documents/allowed_users/$(request.auth.uid)) 
-        ? get(/databases/$(database)/documents/allowed_users/$(request.auth.uid)).data 
+      return isPhoneSession() ? null : exists(/databases/$(database)/documents/allowed_users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/allowed_users/$(request.auth.uid)).data
         : (
-            (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_users/$(request.auth.token.email.lower())))
-            ? get(/databases/$(database)/documents/allowed_users/$(request.auth.token.email.lower())).data
-            : (
-                (request.auth.token.email != null && exists(/databases/$(database)/documents/allowed_users/$(request.auth.token.email)))
-                ? get(/databases/$(database)/documents/allowed_users/$(request.auth.token.email)).data
-                : null
-              )
+            (authEmail() != '' && exists(/databases/$(database)/documents/allowed_users/$(authEmail())))
+            ? get(/databases/$(database)/documents/allowed_users/$(authEmail())).data
+            : null
           );
     }
 
@@ -39,7 +56,7 @@ service cloud.firestore {
     }
 
     function isOwnEmail(field) {
-      return request.auth.token.email != null && field.lower() == request.auth.token.email.lower();
+      return authEmail() != '' && field.lower() == authEmail();
     }
 
     function hasAnyPerm(module) {
@@ -97,7 +114,7 @@ service cloud.firestore {
       let staffId = data.get('staffId', '');
       return data.get('source', '') != 'staff_wallet' || (
         staffId != '' &&
-        getStaffEmail(staffId) == request.auth.token.email.lower() &&
+        authEmail() != '' && getStaffEmail(staffId) == authEmail() &&
         data.get('type', '') != 'funding'
       );
     }
@@ -308,12 +325,12 @@ service cloud.firestore {
         (resource != null && isInternalStaff() && (
           isOwnEmail(resource.data.get('createdBy', '')) ||
           isOwnEmail(resource.data.get('staffEmail', '')) ||
-          (resource.data.get('staffId', '') != '' && getStaffEmail(resource.data.get('staffId', '')) == request.auth.token.email.lower())
+          (resource.data.get('staffId', '') != '' && authEmail() != '' && getStaffEmail(resource.data.get('staffId', '')) == authEmail())
         )) ||
         (resource != null && getPerm('fees_accounting', 'wallet_view_own') && (
           isOwnEmail(resource.data.get('createdBy', '')) || 
           isOwnEmail(resource.data.get('staffEmail', '')) || 
-          (resource.data.get('staffId', '') != '' && getStaffEmail(resource.data.get('staffId', '')) == request.auth.token.email.lower())
+          (resource.data.get('staffId', '') != '' && authEmail() != '' && getStaffEmail(resource.data.get('staffId', '')) == authEmail())
         ))
       );
       allow create: if isAuthenticated() && (
@@ -371,7 +388,7 @@ service cloud.firestore {
     }
 
     match /salaries/{id} {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_view') || (getPerm('fees_accounting', 'wallet_view_own') && request.auth.token.email.lower() == getStaffEmail(id)));
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_view') || (getPerm('fees_accounting', 'wallet_view_own') && authEmail() != '' && authEmail() == getStaffEmail(id)));
       allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'salaries_process')); 
     }
 
@@ -410,9 +427,8 @@ service cloud.firestore {
     match /allowed_users/{id} {
       allow read: if isAuthenticated() && (
         id == request.auth.uid || 
-        id == request.auth.token.email ||
-        id == request.auth.token.email.lower() ||
-        (resource != null && resource.data.get('email', '') != '' && resource.data.get('email', '').lower() == request.auth.token.email.lower()) ||
+        (authEmail() != '' && id == authEmail()) ||
+        (resource != null && authEmail() != '' && resource.data.get('email', '').lower() == authEmail()) ||
         isAdmin() || 
         getPerm('staff_directory', 'view') || 
         getPerm('fees_accounting', 'wallet_view_own') || 

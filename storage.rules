@@ -3,8 +3,12 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
+    // Signed in with an email the account has proven it owns (see authEmail() in
+    // firestore.rules: anyone can create an unverified password account for any address).
     function isAuthenticated() {
-      return request.auth != null && request.auth.token.email != null;
+      return request.auth != null
+        && request.auth.token.get('email', null) != null
+        && request.auth.token.get('email_verified', false) == true;
     }
 
     function getUserData() {

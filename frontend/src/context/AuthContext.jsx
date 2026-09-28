@@ -54,9 +54,8 @@ async function resolvePermissions(data) {
 // Finds the user's access record — allowed_users/{uid}, else allowed_users/{email} — and
 // reports it through onResult, again whenever it changes. Returns a cleanup function.
 //
-// Both documents are *listened to*, not read once. Most accounts only have the
-// email-keyed document (onUserCreated moves it to the UID only for accounts created after
-// they were added), and the UID listener never fires again for them, so a one-time email
+// Both documents are *listened to*, not read once. Records are keyed by email (a few older
+// ones by UID), and the UID listener never fires again for those, so a one-time email
 // read that failed — a slow first connection right after sign-in — used to leave
 // staff who do have access stuck on "Access Unauthorized" until they reloaded. Listeners
 // retry on their own and pick up the record as soon as the server answers.
@@ -65,12 +64,18 @@ async function resolvePermissions(data) {
 // neither document exists. If nothing has been heard after LOOKUP_GIVE_UP_MS the lookup
 // reports 'error' (a "couldn't load" screen, not "no access"), and still keeps listening:
 // a late answer replaces it.
+//
+// Two sign-ins never get as far as the record, matching what the security rules allow:
+// staff who signed in by phone (phone sign-in is for parents; the record must be reached
+// through the email) get 'staff-phone', and email/password accounts that haven't proven
+// they own the inbox get 'unverified' (anyone can create one for any address).
 function watchAccessRecord(user, onResult) {
   const snaps = { uid: null, email: null };
   let seq = 0;
   let settled = false;
   let seeded = false;
-  const signInProvider = user.getIdTokenResult().then(t => t.signInProvider).catch(() => null);
+  let stopped = false;
+  const unsubs = [];
 
   const report = (next) => {
     settled = true;
@@ -91,12 +96,6 @@ function watchAccessRecord(user, onResult) {
 
     const data = found.data();
     const isAdmin = data.isAdmin || data.role === 'admin';
-    // Admins sign in with Google only (see PhoneSignInSettings); onAllowedUserWrite also
-    // strips the number from an admin's account, this covers the moment in between.
-    if (isAdmin && (await signInProvider) === 'phone') {
-      if (mine === seq) report({ role: 'admin-phone', permissions: {} });
-      return;
-    }
     if (isAdmin && !seeded) {
       seeded = true;
       seedPermissionGroups();
@@ -124,10 +123,16 @@ function watchAccessRecord(user, onResult) {
     if (!settled) report({ role: 'error', permissions: {} });
   }, LOOKUP_GIVE_UP_MS);
 
-  const unsubs = [listen('uid', user.uid)];
-  if (user.email) unsubs.push(listen('email', user.email.toLowerCase()));
+  user.getIdTokenResult().then(t => t.signInProvider).catch(() => null).then((provider) => {
+    if (stopped) return;
+    if (provider === 'phone') return report({ role: 'staff-phone', permissions: {} });
+    if (user.email && !user.emailVerified) return report({ role: 'unverified', permissions: {} });
+    unsubs.push(listen('uid', user.uid));
+    if (user.email) unsubs.push(listen('email', user.email.toLowerCase()));
+  });
 
   return () => {
+    stopped = true;
     seq++;
     clearTimeout(giveUp);
     unsubs.forEach(unsub => unsub());

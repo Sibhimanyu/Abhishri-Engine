@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
+const { verifiedEmail } = require("../shared/access");
 
 /**
  * Bank statement reconciliation.
@@ -26,14 +27,14 @@ async function assertCanReconcile(auth) {
   const byUid = await db.collection("allowed_users").doc(auth.uid).get();
   const doc = byUid.exists
     ? byUid
-    : await db.collection("allowed_users").doc(String(auth.token?.email || "").toLowerCase()).get();
+    : await db.collection("allowed_users").doc(verifiedEmail(auth) || "-").get();
   const data = doc.exists ? doc.data() : null;
   const isAdmin = data?.isAdmin === true || data?.role === "admin";
   const perms = data?.permissions?.fees_accounting || {};
   if (!isAdmin && perms.config !== true && perms.ledger !== true) {
     throw new HttpsError("permission-denied", "Reconciliation needs admin, fees config or ledger rights.");
   }
-  return { isAdmin, email: auth.token?.email || null };
+  return { isAdmin, email: verifiedEmail(auth) || null };
 }
 
 /** Shared with the matcher so both sides normalise references identically. */
