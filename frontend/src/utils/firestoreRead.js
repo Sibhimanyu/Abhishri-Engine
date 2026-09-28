@@ -33,10 +33,14 @@ async function readWithFallback(fromServer, fromCache, hasData, what) {
   if (first !== WAITED) return first;
 
   const cached = await fromCache().catch(() => null);
-  reconnectFirestore();
+  const reconnected = reconnectFirestore();
   if (cached && hasData(cached)) return cached;
 
-  const late = await Promise.race([server, wait(GIVE_UP_MS - SLOW_MS)]);
+  // Taking the connection down makes the pending read fail as "client is offline"; that
+  // is our doing, not an answer, so ask the server again once it is back up.
+  const retried = server.catch(() => reconnected.then(fromServer));
+  retried.catch(() => {});
+  const late = await Promise.race([retried, wait(GIVE_UP_MS - SLOW_MS)]);
   if (late !== WAITED) return late;
   throw new Error(`Timed out loading ${what} — check your connection and try again.`);
 }

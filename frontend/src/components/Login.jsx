@@ -1,191 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { auth, googleProvider } from '../firebase';
-import { signInWithEmailAndPassword, signInWithPopup, signInWithCredential, GoogleAuthProvider, RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, signInWithCredential, GoogleAuthProvider, signInWithPhoneNumber } from 'firebase/auth';
 import { isNative } from '../utils/native';
-import { normalizePhone } from '../../../functions/src/shared/phone.mjs';
-import { Mail, Lock, AlertCircle, Smartphone, KeyRound } from 'lucide-react';
+import PhoneCodeForm from './PhoneCodeForm';
+import { Mail, Lock, AlertCircle, Smartphone } from 'lucide-react';
 
-const RESEND_AFTER = 30; // seconds
-
-// Firebase's phone-auth errors, in words a parent can act on.
-function phoneErrorMessage(err) {
-  switch (err?.code) {
-    case 'auth/invalid-phone-number': return "That doesn't look like a mobile number. Enter the 10-digit number the school has on file.";
-    case 'auth/invalid-verification-code': return "That code isn't right. Check the SMS and try again.";
-    case 'auth/code-expired': return 'That code has expired. Send a new one.';
-    case 'auth/too-many-requests': return 'Too many attempts from this device. Please wait a while and try again.';
-    case 'auth/quota-exceeded': return 'The school has reached its SMS limit for today. Please try again tomorrow or contact the school office.';
-    case 'auth/operation-not-allowed': return "Phone sign-in isn't switched on yet. Please contact the school office.";
-    case 'auth/network-request-failed': return 'No connection. Check your internet and try again.';
-    default: return "Couldn't sign you in. Check your connection and try again.";
-  }
-}
-
-/**
- * Parents sign in with the mobile number on their child's record and a one-time SMS
- * code; which children they then see is decided by the server (getParentPortal).
- * Web only: phone auth needs reCAPTCHA, which the iOS app's bundled web view can't
- * load, and the iOS app is for staff.
- */
-function ParentPhoneLogin() {
-  const [phone, setPhone] = useState('');
-  const [code, setCode] = useState('');
-  const [confirmation, setConfirmation] = useState(null);
-  const [sentTo, setSentTo] = useState('');
-  const [resendIn, setResendIn] = useState(0);
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const verifierRef = useRef(null);
-  // A fresh element per attempt: a reCAPTCHA can't be rendered twice into one.
-  const [captchaKey, setCaptchaKey] = useState(0);
-
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const t = setTimeout(() => setResendIn(n => n - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendIn]);
-
-  useEffect(() => () => verifierRef.current?.clear(), []);
-
-  const resetVerifier = () => {
-    verifierRef.current?.clear();
-    verifierRef.current = null;
-    setCaptchaKey(k => k + 1);
-  };
-
-  const sendCode = async (e) => {
-    e?.preventDefault();
-    setError(null);
-    const e164 = normalizePhone(phone);
-    if (!e164) {
-      setError(phoneErrorMessage({ code: 'auth/invalid-phone-number' }));
-      return;
-    }
-    setBusy(true);
-    try {
-      if (!verifierRef.current) {
-        verifierRef.current = new RecaptchaVerifier(auth, `recaptcha-${captchaKey}`, { size: 'invisible' });
-      }
-      const result = await signInWithPhoneNumber(auth, e164, verifierRef.current);
-      setConfirmation(result);
-      setSentTo(e164);
-      setCode('');
-      setResendIn(RESEND_AFTER);
-    } catch (err) {
-      console.error('Phone sign-in: sending the code failed', err);
-      setError(phoneErrorMessage(err));
-      resetVerifier();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const verifyCode = async (e) => {
-    e.preventDefault();
-    if (!confirmation) return;
-    setError(null);
-    setBusy(true);
-    try {
-      // Signing in hands over to AuthContext, which opens the parent portal.
-      await confirmation.confirm(code.trim());
-    } catch (err) {
-      setError(phoneErrorMessage(err));
-      setBusy(false);
-    }
-  };
-
-  const changeNumber = () => {
-    setConfirmation(null);
-    setCode('');
-    setError(null);
-    resetVerifier();
-  };
-
-  const inputClass = 'w-full bg-brand-bg border border-brand-card-border rounded-lg py-2.5 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary transition-all text-brand-text';
-
-  return (
-    <div>
-      {error && (
-        <div role="alert" className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm flex items-start gap-3 border border-red-100 dark:border-red-800/50">
-          <AlertCircle size={18} className="shrink-0 mt-0.5" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {!confirmation ? (
-        <form onSubmit={sendCode} className="space-y-5">
-          <div>
-            <label htmlFor="parent-phone" className="block text-sm font-semibold mb-2">Mobile number</label>
-            <div className="relative">
-              <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={18} />
-              <input
-                id="parent-phone"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel-national"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className={inputClass}
-                placeholder="98765 43210"
-                required
-              />
-            </div>
-            <p className="text-xs text-brand-text-dim mt-2">Use the number you gave the school. We'll text you a 6-digit code.</p>
-          </div>
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full bg-brand-primary hover:bg-brand-primary-hover text-white font-semibold py-2.5 rounded-lg transition-colors shadow-sm disabled:opacity-70"
-          >
-            {busy ? 'Sending code...' : 'Send code'}
-          </button>
-        </form>
-      ) : (
-        <form onSubmit={verifyCode} className="space-y-5">
-          <div>
-            <label htmlFor="parent-code" className="block text-sm font-semibold mb-2">Code sent to {sentTo.replace(/^\+91/, '+91 ')}</label>
-            <div className="relative">
-              <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={18} />
-              <input
-                id="parent-code"
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                className={`${inputClass} tracking-[0.4em] font-mono`}
-                placeholder="••••••"
-                autoFocus
-                required
-              />
-            </div>
-          </div>
-          <button
-            type="submit"
-            disabled={busy || code.length !== 6}
-            className="w-full bg-brand-primary hover:bg-brand-primary-hover text-white font-semibold py-2.5 rounded-lg transition-colors shadow-sm disabled:opacity-70"
-          >
-            {busy ? 'Checking...' : 'Sign In'}
-          </button>
-          <div className="flex justify-between text-sm">
-            <button type="button" onClick={changeNumber} className="text-brand-text-dim hover:text-brand-text font-semibold">Change number</button>
-            <button
-              type="button"
-              onClick={sendCode}
-              disabled={busy || resendIn > 0}
-              className="text-brand-primary font-semibold disabled:text-brand-text-dim disabled:opacity-70"
-            >
-              {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
-            </button>
-          </div>
-        </form>
-      )}
-      <div key={captchaKey} id={`recaptcha-${captchaKey}`} />
-    </div>
-  );
-}
+// One phone sign-in serves both audiences. A number a staff member added to their account
+// (profile menu -> Phone sign-in) signs in to that account, email and all, so AuthContext
+// opens the staff app; any other number is a parent, and the server decides which
+// children it may see (getParentPortal).
+const phoneSignIn = (e164, verifier) => signInWithPhoneNumber(auth, e164, verifier);
 
 export default function Login() {
   // Parents are the many; staff are few and know where to look. The iOS app is staff-only.
@@ -194,6 +18,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [staffByPhone, setStaffByPhone] = useState(false);
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();
@@ -249,7 +74,7 @@ export default function Login() {
                 type="button"
                 role="tab"
                 aria-selected={mode === key}
-                onClick={() => { setMode(key); setError(null); }}
+                onClick={() => { setMode(key); setError(null); setStaffByPhone(false); }}
                 className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === key ? 'bg-brand-card text-brand-primary shadow-sm' : 'text-brand-text-dim hover:text-brand-text'}`}
               >
                 {label}
@@ -258,7 +83,16 @@ export default function Login() {
           </div>
         )}
 
-        {mode === 'parent' ? <ParentPhoneLogin /> : (
+        {mode === 'parent' ? (
+          <PhoneCodeForm key="parent" idPrefix="parent" start={phoneSignIn} hint="Use the number you gave the school. We'll text you a 6-digit code." />
+        ) : staffByPhone ? (
+          <>
+            <PhoneCodeForm key="staff" idPrefix="staff" start={phoneSignIn} hint="Use the number you added under Phone sign-in in your profile menu. Admins sign in with Google." />
+            <button type="button" onClick={() => setStaffByPhone(false)} className="mt-6 w-full text-sm font-semibold text-brand-text-dim hover:text-brand-text">
+              Use Google or email instead
+            </button>
+          </>
+        ) : (
           <>
             {error && (
               <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm flex items-start gap-3 border border-red-100 dark:border-red-800/50">
@@ -325,6 +159,17 @@ export default function Login() {
               </svg>
               Google
             </button>
+
+            {/* Phone auth needs reCAPTCHA, which the iOS app's web view can't load. */}
+            {!isNative && (
+              <button
+                type="button"
+                onClick={() => { setStaffByPhone(true); setError(null); }}
+                className="mt-3 w-full flex items-center justify-center gap-3 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 font-semibold py-2.5 rounded-lg transition-colors text-brand-text"
+              >
+                <Smartphone size={18} /> Mobile number
+              </button>
+            )}
           </>
         )}
       </div>

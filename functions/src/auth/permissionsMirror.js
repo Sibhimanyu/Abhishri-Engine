@@ -2,6 +2,7 @@ const functions = require('firebase-functions/v1');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const { enforcePhoneSignIn } = require('./phoneSignIn');
 
 // Mirrors the module/action set and fallback logic defined in firestore.rules' getPerm().
 const MODULE_ACTIONS = {
@@ -133,7 +134,8 @@ exports.onAllowedUserWrite = functions.region('us-central1').firestore
   .onWrite(async (change, context) => {
     const db = admin.firestore();
     const docId = context.params.docId;
-    await mirrorUser(db, docId, change.after.exists ? change.after.data() : null);
+    const { uid } = await mirrorUser(db, docId, change.after.exists ? change.after.data() : null);
+    await enforcePhoneSignIn(db, uid);
   });
 
 // A role's permission_groups doc changing affects every user with that role.
