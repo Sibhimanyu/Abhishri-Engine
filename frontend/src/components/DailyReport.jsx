@@ -25,7 +25,6 @@ const CAL_FIELDS = [
   { key: 'yearName', label: 'Year' },
   { key: 'tithi', label: 'Thithi' },
   { key: 'paksha', label: 'Paksha' },
-  { key: 'tithiEnds', label: 'Thithi ends' },
 ];
 
 const todayIST = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
@@ -86,22 +85,22 @@ const StickFigure = () => (
 function CalendarCard({ cal }) {
   return (
     <div style={{ width: 380, background: '#ffffff', borderRadius: 22, overflow: 'hidden', boxShadow: '0 8px 24px rgba(120,90,60,0.13)' }}>
-      <div style={{ position: 'relative', background: POSTER.coral, color: '#ffffff', height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, letterSpacing: 4.5 }}>
+      <div style={{ position: 'relative', background: POSTER.coral, color: '#ffffff', height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 17, letterSpacing: 4.5 }}>
         {[25, 75].map(x => <span key={x} style={{ position: 'absolute', top: 6, left: `${x}%`, width: 11, height: 11, borderRadius: 999, background: '#ffffff' }} />)}
         <span style={{ marginTop: 6 }}>{cal.monthYear}</span>
       </div>
       <div style={{ padding: '18px 22px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 500, fontSize: 92, lineHeight: 0.9, color: POSTER.coral }}>{cal.day}</div>
+          <div style={{ fontFamily: DISPLAY_FONT, fontWeight: 500, fontSize: 93, lineHeight: 0.9, color: POSTER.coral }}>{cal.day}</div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 15, letterSpacing: 3.5 }}>{cal.weekday}</div>
-            <div style={{ fontFamily: TAMIL_FONT, fontWeight: 700, fontSize: 27, color: POSTER.deepTeal, marginTop: 4, lineHeight: 1.3 }}>{cal.tamilMonth} {cal.tamilDate}</div>
-            <div style={{ fontFamily: TAMIL_FONT, fontWeight: 500, fontSize: 14, color: POSTER.inkDim, marginTop: 2 }}>{cal.weekdayTa} · {cal.yearName} ஆண்டு</div>
+            <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: 3.5 }}>{cal.weekday}</div>
+            <div style={{ fontFamily: TAMIL_FONT, fontWeight: 700, fontSize: 28, color: POSTER.deepTeal, marginTop: 4, lineHeight: 1.3 }}>{cal.tamilMonth} {cal.tamilDate}</div>
+            <div style={{ fontFamily: TAMIL_FONT, fontWeight: 500, fontSize: 15, color: POSTER.inkDim, marginTop: 2 }}>{cal.weekdayTa} · {cal.yearName} ஆண்டு</div>
           </div>
         </div>
         <div style={{ marginTop: 14, background: TITHI_BOX, borderRadius: 14, padding: '10px 14px', textAlign: 'center', fontFamily: TAMIL_FONT }}>
-          <div style={{ fontWeight: 700, fontSize: 21, color: POSTER.deepTeal }}>திதி: {cal.tithi}</div>
-          <div style={{ fontWeight: 500, fontSize: 14, color: POSTER.inkDim, marginTop: 2 }}>{cal.paksha} · {cal.tithiEnds}</div>
+          <div style={{ fontWeight: 700, fontSize: 22, color: POSTER.deepTeal }}>திதி: {cal.tithi}</div>
+          <div style={{ fontWeight: 500, fontSize: 15, color: POSTER.inkDim, marginTop: 2 }}>{cal.paksha}</div>
         </div>
       </div>
     </div>
@@ -459,7 +458,7 @@ export default function DailyReport() {
               <div className="min-w-0">
                 <div className="text-xs font-bold uppercase tracking-wider text-brand-text-dim">Tamil calendar</div>
                 <div className="text-sm text-brand-text truncate" lang="ta">
-                  {cal ? `${cal.tamilMonth} ${cal.tamilDate} · திதி: ${cal.tithi} · ${cal.tithiEnds}` : 'Could not calculate for this date'}
+                  {cal ? `${cal.tamilMonth} ${cal.tamilDate} · திதி: ${cal.tithi}` : 'Could not calculate for this date'}
                 </div>
               </div>
               <span className="flex items-center gap-2 shrink-0">
