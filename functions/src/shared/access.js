@@ -10,12 +10,12 @@ const admin = require("firebase-admin");
  * The user document is allowed_users/{uid}, falling back to allowed_users/{email}.
  */
 const FALLBACK = (role) => ({
-  staff_directory: { view: true, manage: role === "pro", delete: false },
+  staff_directory: { view: role !== "teacher", manage: role === "pro", delete: false },
   student_directory: { view: true, manage: role === "pro", delete: false },
   attendance: { view: true, mark: role === "teacher" || role === "pro", edit: role === "pro" },
   fees_accounting: {
     view: false, view_dashboard: false, config: false, ledger: false, trans_add: false, trans_delete: false,
-    exp_own: true, exp_all: false, wallet_view_own: true, wallet_edit_own: false,
+    exp_own: role !== "teacher", exp_all: false, wallet_view_own: role !== "teacher", wallet_edit_own: false,
   },
   whatsapp_sender: { access: false, broadcast: false, manage: false },
   smart_campus: { view: role === "pro", control: role === "pro", scenes: false, config: false },

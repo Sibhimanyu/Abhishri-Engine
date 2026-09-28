@@ -53,8 +53,8 @@
         ".read": false,
         ".write": false,
         "attendance": {
-          ".read": "auth != null && root.child('rtdb_permissions').child(auth.uid).exists()",
-          ".write": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('attendance').child('mark').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('attendance').child('edit').val() === true)"
+          ".read": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('staff_directory').child('view').val() === true)",
+          ".write": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || (root.child('rtdb_permissions').child(auth.uid).child('permissions').child('staff_directory').child('view').val() === true && (root.child('rtdb_permissions').child(auth.uid).child('permissions').child('attendance').child('mark').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('attendance').child('edit').val() === true)))"
         }
       },
       "fees_accounting": {

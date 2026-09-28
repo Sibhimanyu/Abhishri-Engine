@@ -26,8 +26,12 @@ export default function Attendance() {
   const isAdmin = userData?.isAdmin;
   const attPerms = userData?.permissions?.attendance || {};
 
-  const canViewStaff = isAdmin || attPerms === true || attPerms.view || attPerms.mark || attPerms.edit;
-  const canMarkStaff = isAdmin || attPerms === true || attPerms.mark;
+  // Staff attendance is part of the staff directory: it also needs staff_directory.view, so
+  // roles that can't see the staff directory (teachers) only get the student tabs.
+  const staffPerms = userData?.permissions?.staff_directory;
+  const canSeeStaff = staffPerms === true || staffPerms?.view === true;
+  const canViewStaff = isAdmin || attPerms === true || (canSeeStaff && (attPerms.view || attPerms.mark || attPerms.edit));
+  const canMarkStaff = isAdmin || attPerms === true || (canSeeStaff && attPerms.mark);
   
   const canViewStudents = isAdmin || attPerms === true || attPerms.view || attPerms.mark || attPerms.edit;
   const canMarkStudents = isAdmin || attPerms === true || attPerms.mark;

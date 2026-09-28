@@ -239,7 +239,8 @@ export default function MainDashboard() {
       markReady('studentAtt');
     }, () => markReady('studentAtt'));
 
-    const unsubStaffAtt = onValue(staffAttendanceRef, (snap) => {
+    // Staff attendance is part of the staff directory; roles without it (teachers) can't read it.
+    const unsubStaffAtt = !showStaffAttendance ? (markReady('staffAtt'), () => {}) : onValue(staffAttendanceRef, (snap) => {
       if (snap.exists()) {
         let present = 0;
         Object.values(snap.val()).forEach(att => {

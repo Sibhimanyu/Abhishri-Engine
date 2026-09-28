@@ -29,12 +29,21 @@ service cloud.firestore {
       return request.auth.token.firebase.sign_in_provider == 'phone';
     }
 
+    // Firestore stops evaluating a request after 1000 expressions, and helpers are
+    // re-evaluated on every call (nothing is cached), so these are written to do as little
+    // as possible per call: authEmail() once per lookup, and the built-in role defaults only
+    // when a role has no permission_groups document. Expense writes call getPerm() several
+    // times and went over the limit when each call rebuilt everything.
     function getUserDoc() {
-      return isPhoneSession() ? null : exists(/databases/$(database)/documents/allowed_users/$(request.auth.uid))
+      return isPhoneSession() ? null : userDocFor(authEmail());
+    }
+
+    function userDocFor(email) {
+      return exists(/databases/$(database)/documents/allowed_users/$(request.auth.uid))
         ? get(/databases/$(database)/documents/allowed_users/$(request.auth.uid)).data
         : (
-            (authEmail() != '' && exists(/databases/$(database)/documents/allowed_users/$(authEmail())))
-            ? get(/databases/$(database)/documents/allowed_users/$(authEmail())).data
+            (email != '' && exists(/databases/$(database)/documents/allowed_users/$(email)))
+            ? get(/databases/$(database)/documents/allowed_users/$(email)).data
             : null
           );
     }
@@ -66,29 +75,32 @@ service cloud.firestore {
 
     function getPerm(module, action) {
       let doc = getUserDoc();
-      let hasDirectPerm = doc != null && doc.get('permissions', null) != null && doc.get('permissions', {}).get(module, {}).get(action, false) == true;
-      let role = (doc != null && doc.get('role', null) != null) ? doc.get('role', 'staff') : 'staff';
+      return doc != null && permFor(doc, module, action);
+    }
+
+    function permFor(doc, module, action) {
+      let role = doc.get('role', null) != null ? doc.get('role', 'staff') : 'staff';
       let pGroup = /databases/$(database)/documents/permission_groups/$(role);
-      
+      return doc.get('isAdmin', false) == true ||
+        doc.get('permissions', {}).get(module, {}).get(action, false) == true ||
+        (exists(pGroup)
+          ? get(pGroup).data.get('permissions', {}).get(module, {}).get(action, false) == true
+          : defaultPerm(role, module, action));
+    }
+
+    // Built-in permissions for a role with no permission_groups document. Mirrors
+    // defaultPermissions() in AuthContext.jsx and FALLBACK in functions/src/shared/access.js.
+    function defaultPerm(role, module, action) {
       let isPro = role == 'pro';
       let isTeach = role == 'teacher';
-      let fallbackPerms = {
-        'staff_directory': {'view': true, 'manage': isPro, 'delete': false},
+      return {
+        'staff_directory': {'view': !isTeach, 'manage': isPro, 'delete': false},
         'student_directory': {'view': true, 'manage': isPro, 'delete': false},
         'attendance': {'view': true, 'mark': isTeach || isPro, 'edit': isPro},
-        'fees_accounting': {'view': false, 'view_dashboard': false, 'config': false, 'ledger': false, 'trans_add': false, 'trans_delete': false, 'exp_own': true, 'exp_all': false, 'wallet_view_own': true, 'wallet_edit_own': false},
+        'fees_accounting': {'view': false, 'view_dashboard': false, 'config': false, 'ledger': false, 'trans_add': false, 'trans_delete': false, 'exp_own': !isTeach, 'exp_all': false, 'wallet_view_own': !isTeach, 'wallet_edit_own': false},
         'whatsapp_sender': {'access': false, 'broadcast': false, 'manage': false},
         'smart_campus': {'view': isPro, 'control': isPro, 'scenes': false, 'config': false}
-      };
-      let hasFallback = fallbackPerms.get(module, {}).get(action, false) == true;
-
-      return doc != null && (
-        doc.get('isAdmin', false) == true || 
-        hasDirectPerm || 
-        (
-          exists(pGroup) ? get(pGroup).data.get('permissions', {}).get(module, {}).get(action, false) == true : hasFallback
-        )
-      );
+      }.get(module, {}).get(action, false) == true;
     }
 
     // Resolve a staff member's email from the SAME collection their wallet lives in
@@ -189,11 +201,17 @@ service cloud.firestore {
     match /staff/{staffId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
-        getPerm('staff_directory', 'view') || 
-        getPerm('fees_accounting', 'wallet_view_own') || 
-        getPerm('fees_accounting', 'exp_own') ||
-        getPerm('attendance', 'view') || getPerm('attendance', 'mark') || getPerm('attendance', 'edit') ||
-        (resource != null && isOwnEmail(resource.data.get('email', '')))
+        getPerm('staff_directory', 'view') ||
+        // Fees screens that work across staff (all wallets, all transactions, reports).
+        getPerm('fees_accounting', 'exp_all') || getPerm('fees_accounting', 'view') ||
+        getPerm('fees_accounting', 'ledger') || getPerm('fees_accounting', 'view_dashboard') ||
+        // Everyone else (e.g. teachers, who don't get the staff directory) only their own
+        // record, which My Expenses looks up by email. Own-expense/own-wallet rights and
+        // attendance rights used to open every staff record.
+        (resource != null && isOwnEmail(resource.data.get('email', ''))) ||
+        // The same, in the plain form a query (where email == mine) can be checked against;
+        // staff emails are stored lowercase.
+        (authEmail() != '' && resource.data.email == authEmail())
       );
       allow write: if isAdmin();
     }
@@ -338,7 +356,9 @@ service cloud.firestore {
         getPerm('fees_accounting', 'exp_all') ||
         (
           // Non-"exp_all" holders may only create records attributed to themselves.
-          (getPerm('fees_accounting', 'exp_own') || getPerm('fees_accounting', 'wallet_edit_own') || isInternalStaff()) &&
+          // Logging expenses is an accounting permission; roles without it (teachers) can't,
+          // even for themselves.
+          (getPerm('fees_accounting', 'exp_own') || getPerm('fees_accounting', 'wallet_edit_own')) &&
           isOwnEmail(request.resource.data.get('createdBy', '')) &&
           // A staff_wallet-sourced expense must target the caller's OWN staff record and must
           // not be a 'funding' entry — otherwise any staff account could fund/drain another

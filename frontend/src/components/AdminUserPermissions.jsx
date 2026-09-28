@@ -508,9 +508,9 @@ export default function AdminUserPermissions() {
                     </ul>
                   ) : editingUser.role === 'teacher' ? (
                     <ul className="list-disc pl-5 space-y-1">
-                      <li><span className="font-medium text-brand-text">Attendance:</span> Can mark daily attendance and view reports</li>
-                      <li><span className="font-medium text-brand-text">Directories:</span> View-only access to Staff and Student directories</li>
-                      <li><span className="font-medium text-brand-text">Fees & Accounting:</span> Can only log and view their own personal expenses</li>
+                      <li><span className="font-medium text-brand-text">Attendance:</span> Can mark student attendance and view reports (not staff attendance)</li>
+                      <li><span className="font-medium text-brand-text">Directories:</span> View-only access to the Student directory; no Staff directory</li>
+                      <li><span className="font-medium text-brand-text">Fees & Accounting:</span> No access</li>
                     </ul>
                   ) : (
                     <ul className="list-disc pl-5 space-y-1">
