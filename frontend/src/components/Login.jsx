@@ -1,15 +1,31 @@
 import React, { useState } from 'react';
-import { auth, googleProvider } from '../firebase';
-import { signInWithEmailAndPassword, signInWithPopup, signInWithCredential, GoogleAuthProvider, signInWithPhoneNumber } from 'firebase/auth';
+import { auth, googleProvider, functions } from '../firebase';
+import { signInWithEmailAndPassword, signInWithPopup, signInWithCredential, GoogleAuthProvider, signInWithPhoneNumber, sendPasswordResetEmail } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 import { isNative } from '../utils/native';
 import PhoneCodeForm from './PhoneCodeForm';
-import { Mail, Lock, AlertCircle, Smartphone } from 'lucide-react';
+import { Mail, Lock, AlertCircle } from 'lucide-react';
 
-// One phone sign-in serves both audiences. A number a staff member added to their account
-// (profile menu -> Phone sign-in) signs in to that account, email and all, so AuthContext
-// opens the staff app; any other number is a parent, and the server decides which
-// children it may see (getParentPortal).
+// Phone sign-in is for parents only; the server decides which children a number may see
+// (getParentPortal). Staff sign in with their email (Google or password).
 const phoneSignIn = (e164, verifier) => signInWithPhoneNumber(auth, e164, verifier);
+
+// Firebase's email/password errors, in words staff can act on. Firebase reports a wrong
+// password, an unknown email and an account with no password alike as invalid-credential,
+// so the message has to cover all three.
+function passwordErrorMessage(err) {
+  switch (err?.code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return "That email and password don't match. If you haven't set a password yet, or forgot it, use \"Set or reset password\" below. Gmail addresses can use the Google button instead.";
+    case 'auth/invalid-email': return "That doesn't look like an email address.";
+    case 'auth/too-many-requests': return 'Too many attempts. Wait a few minutes, or reset your password.';
+    case 'auth/user-disabled': return 'This account has been switched off. Contact the school office.';
+    case 'auth/network-request-failed': return 'No connection. Check your internet and try again.';
+    default: return "Couldn't sign you in. Check your connection and try again.";
+  }
+}
 
 export default function Login() {
   // Parents are the many; staff are few and know where to look. The iOS app is staff-only.
@@ -18,18 +34,46 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [staffByPhone, setStaffByPhone] = useState(false);
+  const [resetSentTo, setResetSentTo] = useState('');
+  const [resetting, setResetting] = useState(false);
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (err) {
-      setError(err.message);
+      setError(passwordErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Being given access creates no sign-in account, so first make sure one exists for an
+  // address on the access list (prepareStaffPasswordSetup), then have Firebase email the
+  // link. Following it sets the password and confirms the email, which is what unlocks
+  // the account. Same answer whatever the address, so this can't reveal who has access.
+  const handlePasswordReset = async () => {
+    const address = email.trim().toLowerCase();
+    setError(null);
+    setResetSentTo('');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      setError('Type your email address above first, then press "Set or reset password".');
+      return;
+    }
+    setResetting(true);
+    try {
+      await httpsCallable(functions, 'prepareStaffPasswordSetup')({ email: address });
+      await sendPasswordResetEmail(auth, address);
+      setResetSentTo(address);
+    } catch (err) {
+      console.error('Password reset failed', err);
+      setError(err?.code === 'auth/too-many-requests'
+        ? 'Too many emails sent. Wait a few minutes and try again.'
+        : "Couldn't send the email. Check your connection and try again.");
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -74,7 +118,7 @@ export default function Login() {
                 type="button"
                 role="tab"
                 aria-selected={mode === key}
-                onClick={() => { setMode(key); setError(null); setStaffByPhone(false); }}
+                onClick={() => { setMode(key); setError(null); }}
                 className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === key ? 'bg-brand-card text-brand-primary shadow-sm' : 'text-brand-text-dim hover:text-brand-text'}`}
               >
                 {label}
@@ -85,19 +129,17 @@ export default function Login() {
 
         {mode === 'parent' ? (
           <PhoneCodeForm key="parent" idPrefix="parent" start={phoneSignIn} hint="Use the number you gave the school. We'll text you a 6-digit code." />
-        ) : staffByPhone ? (
-          <>
-            <PhoneCodeForm key="staff" idPrefix="staff" start={phoneSignIn} hint="Use the number you added under Phone sign-in in your profile menu. Admins sign in with Google." />
-            <button type="button" onClick={() => setStaffByPhone(false)} className="mt-6 w-full text-sm font-semibold text-brand-text-dim hover:text-brand-text">
-              Use Google or email instead
-            </button>
-          </>
         ) : (
           <>
             {error && (
               <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm flex items-start gap-3 border border-red-100 dark:border-red-800/50">
                 <AlertCircle size={18} className="shrink-0 mt-0.5" />
                 <span>{error}</span>
+              </div>
+            )}
+            {resetSentTo && (
+              <div role="status" className="mb-6 p-4 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-sm border border-green-100 dark:border-green-800/50">
+                If {resetSentTo} has access, we've emailed it a link to set a password. Open it, choose a password, then sign in here. Check spam if it doesn't arrive in a few minutes.
               </div>
             )}
 
@@ -139,6 +181,14 @@ export default function Login() {
               >
                 {loading ? 'Signing in...' : 'Sign In'}
               </button>
+              <button
+                type="button"
+                onClick={handlePasswordReset}
+                disabled={resetting}
+                className="w-full text-sm font-semibold text-brand-primary hover:text-brand-primary-hover disabled:opacity-70"
+              >
+                {resetting ? 'Sending...' : 'Set or reset password'}
+              </button>
             </form>
 
             <div className="mt-6 flex items-center gap-4">
@@ -159,17 +209,6 @@ export default function Login() {
               </svg>
               Google
             </button>
-
-            {/* Phone auth needs reCAPTCHA, which the iOS app's web view can't load. */}
-            {!isNative && (
-              <button
-                type="button"
-                onClick={() => { setStaffByPhone(true); setError(null); }}
-                className="mt-3 w-full flex items-center justify-center gap-3 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 font-semibold py-2.5 rounded-lg transition-colors text-brand-text"
-              >
-                <Smartphone size={18} /> Mobile number
-              </button>
-            )}
           </>
         )}
       </div>

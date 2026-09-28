@@ -66,8 +66,8 @@ exports.updateStaffAttendanceConfig = staffAttendance.updateStaffAttendanceConfi
 
 // --- Auth Triggers ---
 const authTriggers = require("./src/auth/triggers");
-exports.onUserCreated = authTriggers.onUserCreated;
 exports.onUserDeleted = authTriggers.onUserDeleted;
+exports.prepareStaffPasswordSetup = require("./src/auth/passwordSetup").prepareStaffPasswordSetup;
 
 const permissionsMirror = require("./src/auth/permissionsMirror");
 exports.onAllowedUserWrite = permissionsMirror.onAllowedUserWrite;

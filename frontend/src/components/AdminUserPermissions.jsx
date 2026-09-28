@@ -4,7 +4,7 @@ import { collection, query, onSnapshot, doc, setDoc, deleteDoc, orderBy } from '
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
-import { ShieldCheck, Search, UserPlus, X, Check, AlertCircle, Clock, Loader } from 'lucide-react';
+import { ShieldCheck, Search, UserPlus, X, Check, AlertCircle, Clock, Loader, UserMinus } from 'lucide-react';
 
 // A user's role badge and access summary, shared by the table (wide screens) and the
 // cards (phones).
@@ -18,7 +18,7 @@ function describeAccess(user) {
 }
 
 export default function AdminUserPermissions() {
-  const { currentUser } = useAuth();
+  const { currentUser, userData } = useAuth();
   const [users, setUsers] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -129,6 +129,48 @@ export default function AdminUserPermissions() {
     } catch (err) {
       console.error('Error saving user:', err);
       alert('Failed to save user permissions.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Who may remove someone matches the delete rule on allowed_users: admins, or holders of
+  // staff_directory.delete for non-admins. Nobody removes themselves (no self-lockout).
+  const isSelf = (user) => !!user?.email && user.email.toLowerCase() === currentUser?.email?.toLowerCase();
+  const canRemove = (user) => {
+    if (!user?.id || isSelf(user)) return false;
+    if (userData?.isAdmin || userData?.role === 'admin') return true;
+    const targetIsAdmin = user.isAdmin === true || user.role === 'admin';
+    return !targetIsAdmin && userData?.permissions?.staff_directory?.delete === true;
+  };
+
+  const handleRemoveUser = async () => {
+    const user = editingUser;
+    if (!canRemove(user)) return;
+    const name = user.displayName || user.email;
+    if (!window.confirm(`Remove ${name}'s access?\n\nThey'll be signed out of the workspace straight away. You can add them again later.`)) return;
+    setSaving(true);
+    try {
+      const emailKey = (user.email || user.id).toLowerCase();
+      // Every record for this person: the email-keyed one, plus any older uid-keyed copy.
+      const ids = users.filter(u => u.id === user.id || u.id === emailKey || u.email?.toLowerCase() === emailKey).map(u => u.id);
+      await Promise.all([...new Set(ids)].map(id => deleteDoc(doc(firestore, 'allowed_users', id))));
+      logAudit({
+        action: 'USER_ACCESS_REMOVED',
+        module: 'staff_directory',
+        targetId: emailKey,
+        targetName: name,
+        performedBy: currentUser?.email,
+        details: {
+          role: { from: user.role ?? null, to: null },
+          isAdmin: { from: user.isAdmin ?? false, to: false }
+        }
+      });
+      setIsModalOpen(false);
+      setEditingUser(null);
+    } catch (err) {
+      console.error('Error removing user:', err);
+      alert("Couldn't remove this user's access.");
     } finally {
       setSaving(false);
     }
@@ -424,7 +466,16 @@ export default function AdminUserPermissions() {
               </div>
             </div>
 
-            <div className="p-6 border-t border-brand-card-border bg-brand-sidebar flex justify-end gap-3 shrink-0">
+            <div className="p-6 border-t border-brand-card-border bg-brand-sidebar flex flex-wrap justify-end gap-3 shrink-0">
+              {canRemove(editingUser) && (
+                <button
+                  onClick={handleRemoveUser}
+                  disabled={saving}
+                  className="sm:mr-auto px-4 py-2 rounded-lg font-semibold text-red-600 dark:text-red-500 border border-red-200 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2 disabled:opacity-50"
+                >
+                  <UserMinus size={16} /> Remove access
+                </button>
+              )}
               <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg font-medium text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                 Cancel
               </button>

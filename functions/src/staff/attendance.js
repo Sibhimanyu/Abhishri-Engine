@@ -1,10 +1,11 @@
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const {verifiedEmail} = require("../shared/access");
 
 const ATTENDANCE_CONFIG = admin.firestore().collection("configs").doc("attendance");
 
 function requireAuth(request) {
-  if (!request.auth?.uid || !request.auth?.token?.email) {
+  if (!request.auth?.uid || !verifiedEmail(request.auth)) {
     throw new HttpsError("unauthenticated", "User must be logged in.");
   }
 }
@@ -17,7 +18,7 @@ async function getAllowedUser(email) {
 
 async function requireAdmin(request) {
   requireAuth(request);
-  const email = request.auth.token.email.toLowerCase();
+  const email = verifiedEmail(request.auth);
   const user = await getAllowedUser(email);
   if (!user.isAdmin) {
     throw new HttpsError("permission-denied", "Only admins can configure staff attendance.");
@@ -118,7 +119,7 @@ exports.updateStaffAttendanceConfig = onCall(async (request) => {
 
 exports.selfMarkStaffAttendance = onCall(async (request) => {
   requireAuth(request);
-  const email = request.auth.token.email.toLowerCase();
+  const email = verifiedEmail(request.auth);
   await getAllowedUser(email);
 
   const config = await getAttendanceConfig();
