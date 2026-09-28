@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { auth, googleProvider, functions } from '../firebase';
+import { auth, googleProvider, functions, emailLinkSettings } from '../firebase';
 import { signInWithEmailAndPassword, signInWithPopup, signInWithCredential, GoogleAuthProvider, signInWithPhoneNumber, sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { isNative } from '../utils/native';
@@ -65,7 +65,7 @@ export default function Login() {
     setResetting(true);
     try {
       await httpsCallable(functions, 'prepareStaffPasswordSetup')({ email: address });
-      await sendPasswordResetEmail(auth, address);
+      await sendPasswordResetEmail(auth, address, emailLinkSettings);
       setResetSentTo(address);
     } catch (err) {
       console.error('Password reset failed', err);

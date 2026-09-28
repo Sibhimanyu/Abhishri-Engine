@@ -1,7 +1,7 @@
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { firestore, auth, functions } from '../firebase';
+import { firestore, auth, functions, emailLinkSettings } from '../firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../context/AuthContext';
@@ -17,7 +17,7 @@ const isGmail = (email) => /@(gmail|googlemail)\.com$/i.test(email || '');
 // which lands on AuthAction. Sending it doesn't affect the admin's own session.
 async function sendPasswordSetupEmail(email) {
   await httpsCallable(functions, 'prepareStaffPasswordSetup')({ email });
-  await sendPasswordResetEmail(auth, email);
+  await sendPasswordResetEmail(auth, email, emailLinkSettings);
 }
 
 // A user's role badge and access summary, shared by the table (wide screens) and the
