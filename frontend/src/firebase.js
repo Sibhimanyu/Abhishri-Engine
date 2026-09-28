@@ -36,6 +36,14 @@ export const functions = getFunctions(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
+// For password and confirm-email links. The project's email action URL (Firebase console
+// -> Authentication -> Templates -> Customize action URL) should point at
+// https://abhishri-academy.web.app/auth/action, our own page (AuthAction). Until it does,
+// Firebase's generic page opens instead, and this puts a "Continue" button on it that
+// comes back here. Fixed rather than window.location.origin: the iOS app's origin isn't
+// an authorized domain.
+export const emailLinkSettings = { url: 'https://abhishri-academy.web.app/' };
+
 // Tear down and reopen Firestore's connection. A socket that died while the laptop slept
 // or the Wi-Fi changed can look alive, so reads wait on it forever. Concurrent callers
 // share one reconnect.

@@ -652,8 +652,8 @@ function UnverifiedEmailScreen({ user }) {
   const send = async () => {
     setState('sending');
     try {
-      const { sendEmailVerification } = await import('firebase/auth');
-      await sendEmailVerification(user);
+      const [{ sendEmailVerification }, { emailLinkSettings }] = await Promise.all([import('firebase/auth'), import('./firebase')]);
+      await sendEmailVerification(user, emailLinkSettings);
       setState('sent');
     } catch (err) {
       console.error('Sending the verification email failed', err);
