@@ -15,7 +15,6 @@ import { CalendarDays, ChefHat } from 'lucide-react';
 import { isAdminUser, usePendingApprovals, useMyApprovalOutcomes } from './components/poster/approval';
 import NotificationBell from './components/NotificationBell';
 import { bellEntries } from './utils/bellEntries';
-import FeedbackWidget from './components/FeedbackWidget';
 
 // Route modules are lazy so the login screen and dashboard don't pay for the
 // entire app up front — each section downloads on first visit instead.
@@ -57,7 +56,6 @@ function App() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [pendingLoginsCount, setPendingLoginsCount] = useState(0);
   const [unreadWhatsAppCount, setUnreadWhatsAppCount] = useState(0);
-  const [newFeedbackCount, setNewFeedbackCount] = useState(0);
   const [tamilBirthdayMembers, setTamilBirthdayMembers] = useState([]);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const { currentUser, userData, loading } = useAuth();
@@ -132,22 +130,6 @@ function App() {
         unsubUsers();
         unsubPending();
       };
-    });
-    return () => unsubscribe();
-  }, [userData?.isAdmin]);
-
-  // New Feedback Listener (admin only)
-  React.useEffect(() => {
-    if (!userData?.isAdmin) return;
-
-    let unsubscribe = () => {};
-    import('firebase/firestore').then(({ collection, query, where, onSnapshot }) => {
-      const q = query(collection(firestore, 'feedback'), where('status', '==', 'new'));
-      unsubscribe = onSnapshot(q, (snap) => {
-        setNewFeedbackCount(snap.size);
-      }, (err) => {
-        console.warn('Failed to load feedback count:', err);
-      });
     });
     return () => unsubscribe();
   }, [userData?.isAdmin]);
@@ -503,13 +485,10 @@ function App() {
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
 
-            <FeedbackWidget isAdmin={isMaster} newCount={newFeedbackCount} />
-
             <NotificationBell entries={bellEntries({
               pendingLogins: pendingLoginsCount,
               pendingApprovals,
               myOutcomes,
-              newFeedback: isMaster ? newFeedbackCount : 0,
               unreadWhatsApp: unreadWhatsAppCount,
               birthdays: tamilBirthdayMembers,
             })} />

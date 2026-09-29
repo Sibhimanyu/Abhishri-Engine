@@ -39,13 +39,6 @@ export const NOTIFICATIONS = {
       ? `${reviewerName} approved your ${noun}${label ? ` (${label})` : ''}. You can export it now.`
       : `${reviewerName} sent your ${noun}${label ? ` (${label})` : ''} back for changes.${note ? ` Note: ${note}` : ''}`),
   },
-  feedback: {
-    title: 'New Feedback',
-    audience: 'admins',
-    cliq: 'channel',
-    path: '/settings/feedback',
-    summary: (count) => `${plural(count, 'new suggestion or complaint', 'new suggestions or complaints')} to review.`,
-  },
   tamilBirthday: {
     title: 'Tamil Birthday Today!',
     audience: 'anyone who can see the student or staff directory',

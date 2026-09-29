@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { approvalEvent, prettyDate, requestMessage, outcomeMessage, feedbackMessage, decidedMessage, actionKey, parseActionKey, decisionProblem } from '../../../functions/src/shared/cliqMessages.mjs';
+import { approvalEvent, prettyDate, requestMessage, outcomeMessage, decidedMessage, actionKey, parseActionKey, decisionProblem } from '../../../functions/src/shared/cliqMessages.mjs';
 
 const ts = (ms) => ({ toMillis: () => ms });
 const doc = (approval) => (approval ? { weekLabel: '28 Sep – 02 Oct 2026', approval } : { weekLabel: 'x' });
@@ -60,14 +60,6 @@ describe('messages', () => {
     expect(returned.text).toBe('Sathya sent your daily report back for changes. Note: Fix the Tamil date');
     expect(outcomeMessage({ collection: 'daily_reports', id: 'd', data: {}, event: 'returned', reviewerName: 'S', appUrl }).text)
       .toBe('S sent your daily report back for changes.');
-  });
-
-  it('posts feedback with its type, sender and page', () => {
-    const m = feedbackMessage({ data: { type: 'complaint', message: ' Poster footer not needed ', submittedByName: 'Vineetha', page: '/weekly-menu' }, appUrl });
-    expect(m.card.title).toBe('Complaint from Vineetha');
-    expect(m.text).toBe('Poster footer not needed\n\n_Sent (from /weekly-menu)_');
-    expect(m.buttons[0].action.data.web).toBe('https://abhishri-academy.web.app/settings/feedback');
-    expect(feedbackMessage({ data: { message: 'hi', submittedBy: 'a@b.in' }, appUrl }).card.title).toBe('Feedback from a@b.in');
   });
 });
 

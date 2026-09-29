@@ -85,11 +85,10 @@ exports.getParentAttendance = parentPortal.getParentAttendance;
 exports.setParentPortalAccess = parentPortal.setParentPortalAccess;
 exports.syncStudentPortalPhones = parentPortal.syncStudentPortalPhones;
 
-// --- Zoho Cliq notifications (approvals, feedback) ---
+// --- Zoho Cliq notifications (approvals, access requests, birthdays) ---
 const cliq = require("./src/cliq/triggers");
 exports.cliqOnMenuApproval = cliq.cliqOnMenuApproval;
 exports.cliqOnReportApproval = cliq.cliqOnReportApproval;
-exports.cliqOnFeedback = cliq.cliqOnFeedback;
 exports.cliqOnAccessRequest = cliq.cliqOnAccessRequest;
 exports.cliqTamilBirthdays = cliq.cliqTamilBirthdays;
 exports.sendCliqTest = cliq.sendCliqTest;

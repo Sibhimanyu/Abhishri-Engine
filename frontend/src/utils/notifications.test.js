@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { NOTIFICATIONS, outcomeEntries, APPROVED_SHOWS_FOR_MS } from '../../../functions/src/shared/notifications.mjs';
-import { outcomeMessage, feedbackMessage, accessRequestMessage, birthdayDigestMessage, requestMessage } from '../../../functions/src/shared/cliqMessages.mjs';
+import { outcomeMessage, accessRequestMessage, birthdayDigestMessage, requestMessage } from '../../../functions/src/shared/cliqMessages.mjs';
 import { tamilSolarDate, TAMIL_MONTHS } from '../../../functions/src/shared/tamilSolarDate.mjs';
 import { bellEntries } from './bellEntries';
 
@@ -21,7 +21,6 @@ describe('notification list', () => {
     expect(NOTIFICATIONS.accessRequest.summary(3)).toBe('There are 3 pending requests awaiting review.');
     expect(NOTIFICATIONS.approvalPending.summary({ menus: 1, reports: 0 })).toBe('1 weekly menu is waiting for your approval.');
     expect(NOTIFICATIONS.approvalPending.summary({ menus: 2, reports: 1 })).toBe('2 weekly menus and 1 daily report are waiting for your approval.');
-    expect(NOTIFICATIONS.feedback.summary(1)).toBe('1 new suggestion or complaint to review.');
     expect(NOTIFICATIONS.whatsappUnread.summary(2)).toBe('You have 2 unread messages.');
   });
 });
@@ -36,13 +35,12 @@ describe('bell and Cliq match', () => {
     expect(bell.title).toBe('Sent Back');
   });
 
-  it('links requests, feedback and access requests to the same screens', () => {
-    const bell = bellEntries({ pendingLogins: 1, pendingApprovals: { menus: 0, reports: 1, total: 1 }, newFeedback: 2 });
+  it('links requests and access requests to the same screens', () => {
+    const bell = bellEntries({ pendingLogins: 1, pendingApprovals: { menus: 0, reports: 1, total: 1 } });
     const byKey = Object.fromEntries(bell.map(e => [e.key, e]));
     expect(byKey.approvals.path).toBe(linkOf(requestMessage({ collection: 'daily_reports', id: '2026-09-28', data: {}, requesterName: 'V', appUrl })));
-    expect(byKey.feedback.path).toBe(linkOf(feedbackMessage({ data: { message: 'x' }, appUrl })));
     expect(byKey.access.path).toBe(linkOf(accessRequestMessage({ data: { email: 'a@b.in' }, appUrl })));
-    expect(bell.map(e => e.key)).toEqual(['access', 'approvals', 'feedback']);
+    expect(bell.map(e => e.key)).toEqual(['access', 'approvals']);
   });
 
   it('lists the same birthdays, in the same words', () => {

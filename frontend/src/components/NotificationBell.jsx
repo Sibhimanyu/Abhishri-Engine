@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, AlertTriangle, MessageCircle, Cake, ChefHat, CheckCircle, RotateCcw, MessageSquare } from 'lucide-react';
+import { Bell, AlertTriangle, MessageCircle, Cake, ChefHat, CheckCircle, RotateCcw } from 'lucide-react';
 
 // The top-bar bell. What it lists, and the words and links, come from bellEntries
 // (utils/bellEntries.js), built on functions/src/shared/notifications.mjs, the same list
@@ -11,7 +11,6 @@ const LOOK = {
   approvalPending: { icon: ChefHat, iconClass: 'text-brand-primary', titleClass: 'text-brand-primary' },
   approved: { icon: CheckCircle, iconClass: 'text-green-500', titleClass: 'text-green-600 dark:text-green-400' },
   returned: { icon: RotateCcw, iconClass: 'text-amber-500', titleClass: 'text-amber-600 dark:text-amber-400' },
-  feedback: { icon: MessageSquare, iconClass: 'text-violet-500', titleClass: 'text-violet-600 dark:text-violet-400' },
   whatsappUnread: { icon: MessageCircle, iconClass: 'text-green-500', titleClass: 'text-green-600 dark:text-green-400' },
   tamilBirthday: { icon: Cake, iconClass: 'text-pink-500', titleClass: 'text-pink-600 dark:text-pink-400' },
 };
