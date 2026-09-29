@@ -61,7 +61,7 @@ function App() {
   const { currentUser, userData, loading } = useAuth();
 
   const isMaster = userData?.isAdmin;
-  // Menus and daily reports waiting for an admin, badged on their sidebar entry.
+  // Menus and daily reports waiting for an admin, for the bell.
   const pendingApprovals = usePendingApprovals(isAdminUser(userData));
   // The signed-in person's own requests that were decided, for the bell.
   const myOutcomes = useMyApprovalOutcomes(currentUser?.email);
@@ -217,7 +217,7 @@ function App() {
     ...(hasAccountingAccess ? [{ id: 'accounting', label: 'Accounting', icon: Landmark }] : []),
     ...(hasReportsAccess ? [{ id: 'reports', label: 'Reports', icon: BarChart3 }] : []),
     { id: 'calendar', label: 'School Calendar', icon: CalendarDays },
-    { id: 'menu-report', label: 'Menu & Report', icon: ChefHat, badge: pendingApprovals.total },
+    { id: 'menu-report', label: 'Menu & Report', icon: ChefHat },
     ...(isMaster ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];
 
@@ -379,9 +379,6 @@ function App() {
               >
                 <item.icon size={18} className={isActive ? 'text-brand-primary' : 'opacity-70'} />
                 {item.label}
-                {item.badge > 0 && (
-                  <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-black flex items-center justify-center" title={`${item.badge} waiting for approval`}>{item.badge}</span>
-                )}
               </Link>
             );
           })}
@@ -440,9 +437,6 @@ function App() {
                   >
                     <item.icon size={18} className={isActive ? 'text-brand-primary' : 'opacity-70'} />
                     {item.label}
-                    {item.badge > 0 && (
-                      <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-black flex items-center justify-center" title={`${item.badge} waiting for approval`}>{item.badge}</span>
-                    )}
                   </Link>
                 );
               })}
