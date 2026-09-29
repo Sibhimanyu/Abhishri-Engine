@@ -6,7 +6,7 @@ import { NOTIFICATIONS } from '../../../functions/src/shared/notifications.mjs';
  * The bell's entries, in display order, from what App.jsx has loaded. Each is
  * { key, look, title, text, path }.
  */
-export function bellEntries({ pendingLogins = 0, pendingApprovals, myOutcomes = [], newFeedback = 0, unreadWhatsApp = 0, birthdays = [] }) {
+export function bellEntries({ pendingLogins = 0, pendingApprovals, myOutcomes = [], unreadWhatsApp = 0, birthdays = [] }) {
   const N = NOTIFICATIONS;
   const entries = [];
   if (pendingLogins > 0) {
@@ -24,9 +24,6 @@ export function bellEntries({ pendingLogins = 0, pendingApprovals, myOutcomes = 
     text: N.approvalOutcome.summary({ event: o.event, noun: o.noun, label: o.label, reviewerName: o.approval.reviewedByName || 'An admin', note: o.approval.note }),
     path: N.approvalOutcome.path(o.collection),
   }));
-  if (newFeedback > 0) {
-    entries.push({ key: 'feedback', look: 'feedback', title: N.feedback.title, text: N.feedback.summary(newFeedback), path: N.feedback.path });
-  }
   if (unreadWhatsApp > 0) {
     entries.push({ key: 'whatsapp', look: 'whatsappUnread', title: N.whatsappUnread.title, text: N.whatsappUnread.summary(unreadWhatsApp), path: N.whatsappUnread.path });
   }

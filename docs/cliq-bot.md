@@ -7,7 +7,6 @@ The app posts to Zoho Cliq whenever something is waiting on someone. Cliq and th
 | Access request (someone signed in who isn't set up yet) | Admins | The admins' channel, as each arrives |
 | A menu or daily report is waiting for approval | Admins | The admins' channel, with Approve / Send back |
 | Your request was approved or sent back | The teacher who asked (approvals for 3 days; send-backs until re-sent) | A DM to that teacher, and a note in the channel |
-| New in-app feedback | Admins | The admins' channel |
 | Tamil birthdays today | Anyone who can see the student or staff directory | One post in the channel at 7:30 am |
 | Unread WhatsApp live-chat messages | WhatsApp users | Not sent: the count changes with every message and would flood the channel |
 
@@ -55,7 +54,7 @@ The first time each admin clicks Approve or Send back, Cliq asks them to allow A
 
 ## How it works
 
-- `functions/src/cliq/triggers.js`: Firestore triggers on `weekly_menus`, `daily_reports` and `feedback`, plus `sendCliqTest`, the admin-only callable behind the test button.
+- `functions/src/cliq/triggers.js`: Firestore triggers on `weekly_menus`, `daily_reports` and `unauthorized_logins`, plus `sendCliqTest`, the admin-only callable behind the test button.
 - `functions/src/shared/cliqMessages.mjs`: which writes are worth a message, and the wording. Tested in `frontend/src/utils/cliqMessages.test.js`.
 - `functions/src/cliq/actions.js`: the `cliqAction` endpoint behind the Approve / Send back buttons.
 - `frontend/src/utils/cliqDeluge.js`: the Deluge source for the two Cliq functions.

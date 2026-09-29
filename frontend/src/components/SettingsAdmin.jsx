@@ -1,26 +1,24 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Shield, ShieldCheck, MapPin, MessageCircle, LayoutGrid, ScrollText, MessageSquare, BellRing } from 'lucide-react';
+import { Shield, ShieldCheck, MapPin, MessageCircle, LayoutGrid, ScrollText, BellRing } from 'lucide-react';
 import AdminUserPermissions from './AdminUserPermissions';
 import AdminAttendanceSetup from './AdminAttendanceSetup';
 import AdminWhatsAppConfig from './AdminWhatsAppConfig';
 import AdminCliqConfig from './AdminCliqConfig';
 import AdminEntities from './AdminEntities';
 import AdminAuditLog from './AdminAuditLog';
-import AdminFeedback from './AdminFeedback';
 
-// /settings/* doesn't declare per-tab sub-routes, so a deep link like /settings/feedback
-// (used by the top-bar Feedback widget's "Review Feedback" link) needs to be read here
-// directly rather than always falling back to the default tab.
+// /settings/* doesn't declare per-tab sub-routes, so a deep link like /settings/cliq
+// needs to be read here directly rather than always falling back to the default tab.
 const tabFromPath = (pathname) => pathname.split('/')[2] || 'users';
 
 export default function SettingsAdmin() {
   const { userData } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  // Derived straight from the URL — no local state needed, and it keeps a deep link like
-  // /settings/feedback (from the top-bar Feedback widget) in sync with the visible tab.
+  // Derived straight from the URL — no local state needed, and it keeps a deep link
+  // in sync with the visible tab.
   const activeTab = tabFromPath(location.pathname);
 
   const goToTab = (id) => navigate(`/settings/${id}`);
@@ -45,7 +43,6 @@ export default function SettingsAdmin() {
     { id: 'whatsapp', label: 'WhatsApp Config', icon: MessageCircle, show: isMaster },
     { id: 'cliq', label: 'Cliq Bot', icon: BellRing, show: isMaster },
     { id: 'audit', label: 'Audit Log', icon: ScrollText, show: isMaster },
-    { id: 'feedback', label: 'Feedback', icon: MessageSquare, show: isMaster },
   ];
   const tabs = allTabs.filter(t => t.show);
 
@@ -81,7 +78,6 @@ export default function SettingsAdmin() {
         {activeTab === 'whatsapp' && isMaster && <AdminWhatsAppConfig />}
         {activeTab === 'cliq' && isMaster && <AdminCliqConfig />}
         {activeTab === 'audit' && isMaster && <AdminAuditLog />}
-        {activeTab === 'feedback' && isMaster && <AdminFeedback />}
       </div>
     </div>
   );

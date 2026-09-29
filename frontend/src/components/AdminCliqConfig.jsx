@@ -8,7 +8,7 @@ import { CheckCircle, AlertCircle, Save, Send, Loader2, Copy, KeyRound } from 'l
 import { buttonFunctionCode, formFunctionCode, DEFAULT_BUTTON_FUNCTION, DEFAULT_FORM_FUNCTION } from '../utils/cliqDeluge';
 
 // Zoho Cliq bot settings (configs/cliq, read by functions/src/cliq). Approval requests
-// and feedback go to the admins' channel; approval outcomes are DMed to the teacher.
+// go to the admins' channel; approval outcomes are DMed to the teacher.
 const DOMAINS = [
   ['cliq.zoho.in', 'India (cliq.zoho.in)'],
   ['cliq.zoho.com', 'US (cliq.zoho.com)'],
@@ -152,7 +152,6 @@ export default function AdminCliqConfig() {
         <ul className="text-sm text-brand-text-dim space-y-1 list-disc pl-5">
           <li>A teacher sends a menu or daily report for approval: posted in the admins' channel.</li>
           <li>An admin approves it or sends it back: the teacher gets a direct message, with the note.</li>
-          <li>Someone sends feedback from the app: posted in the admins' channel.</li>
           <li>Someone who isn't set up yet signs in (an access request): posted in the admins' channel.</li>
           <li>Tamil birthdays: one post in the admins' channel at 7:30 each morning.</li>
         </ul>

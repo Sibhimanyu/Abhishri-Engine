@@ -3,7 +3,6 @@
 //   Approve / Send back buttons when the Cliq functions are set up (see ./actions.js)
 // - an admin approves it or sends it back, in the app or Cliq  -> DM to that teacher, and
 //   a note in the channel so the other admins see it's handled
-// - someone sends in-app feedback                              -> admins' channel
 // - someone signs in who isn't set up yet (access request)     -> admins' channel
 // - Tamil birthdays today                                      -> one morning post
 // These match the web app's bell: both follow shared/notifications.mjs. What counts as an
@@ -69,20 +68,6 @@ function approvalTrigger(collection) {
 
 exports.cliqOnMenuApproval = approvalTrigger("weekly_menus");
 exports.cliqOnReportApproval = approvalTrigger("daily_reports");
-
-exports.cliqOnFeedback = onDocumentCreated("feedback/{feedbackId}", async (event) => {
-  const data = event.data?.data();
-  if (!data) return;
-  const cfg = await readyConfig(`feedback/${event.params.feedbackId}`);
-  if (!cfg) return;
-  const { feedbackMessage } = await messages();
-  try {
-    await postToChannel(cfg, feedbackMessage({ data, appUrl: cfg.appUrl }));
-    logger.info(`Cliq: sent feedback/${event.params.feedbackId}`);
-  } catch (err) {
-    logger.error(`Cliq: failed to send feedback/${event.params.feedbackId}`, err.message);
-  }
-});
 
 // Created on someone's first sign-in attempt; later attempts only update it. If an admin
 // removes the request and they try again, it's created again and posted again.

@@ -1,9 +1,9 @@
-// Zoho Cliq notifications: which change to a menu, report or feedback entry is worth
+// Zoho Cliq notifications: which change to a menu or report is worth
 // a message, and what that message says. Pure, so the frontend test suite covers it;
 // functions/src/cliq/triggers.js does the sending. Titles, wording and links come from
 // ./notifications.mjs, which the web app's bell uses too.
 //
-// Admins get approval requests and feedback in a shared channel, so they can all see
+// Admins get approval requests in a shared channel, so they can all see
 // what's waiting; the teacher who asked gets the outcome as a direct message.
 
 import { NOTIFICATIONS } from './notifications.mjs';
@@ -152,21 +152,6 @@ export function outcomeMessage({ collection, id, data, event, reviewerName, appU
     text,
     buttonLabel: event === 'approved' ? 'Open and export' : 'Open and edit',
     url: `${trimUrl(appUrl)}${kind.path}`,
-  });
-}
-
-const FEEDBACK_TYPES = { suggestion: 'Suggestion', complaint: 'Complaint', modification: 'Modification request' };
-
-/** Channel message for a new entry from the in-app feedback widget. */
-export function feedbackMessage({ data, appUrl }) {
-  const type = FEEDBACK_TYPES[data?.type] || 'Feedback';
-  const who = data?.submittedByName || data?.submittedBy || 'Someone';
-  const page = data?.page ? ` (from ${data.page})` : '';
-  return card({
-    title: `${type} from ${who}`,
-    text: `${String(data?.message || '').trim()}${page ? `\n\n_Sent${page}_` : ''}`,
-    buttonLabel: 'Open feedback',
-    url: `${trimUrl(appUrl)}${NOTIFICATIONS.feedback.path}`,
   });
 }
 
