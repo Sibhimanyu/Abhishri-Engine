@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "heresay": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "heresay@0",
+        "mcp"
+      ]
+    }
+  }
+}
