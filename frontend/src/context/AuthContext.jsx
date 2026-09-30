@@ -3,6 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, firestore } from '../firebase';
 import { writeSessionHint } from '../utils/sessionHint';
+import { identifyForHeresay } from '../utils/heresay';
 import { getDoc as readDoc } from '../utils/firestoreRead';
 
 const AuthContext = createContext();
@@ -197,6 +198,12 @@ export function AuthProvider({ children }) {
       || Object.keys(userData.permissions || {}).length > 0;
     writeSessionHint(isPortal ? 'portal' : isStaff ? 'shell' : '');
   }, [loading, userData]);
+
+  // Heresay follows whoever is signed in on this device, and forgets them on sign-out.
+  useEffect(() => {
+    if (loading) return;
+    return identifyForHeresay(currentUser, userData);
+  }, [loading, currentUser, userData]);
 
   const value = {
     currentUser,

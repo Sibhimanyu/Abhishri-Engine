@@ -14,6 +14,7 @@ import { getCurrentTamilDate } from './utils/astrologyApi';
 import { CalendarDays, ChefHat } from 'lucide-react';
 import { isAdminUser, usePendingApprovals, useMyApprovalOutcomes } from './components/poster/approval';
 import NotificationBell from './components/NotificationBell';
+import HeresayIntro from './components/HeresayIntro';
 import { bellEntries } from './utils/bellEntries';
 
 // Route modules are lazy so the login screen and dashboard don't pay for the
@@ -327,6 +328,7 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={<RouteLoader />}><ParentPortal /></Suspense>
+        <HeresayIntro />
       </ErrorBoundary>
     );
   }
@@ -355,6 +357,7 @@ function App() {
 
   return (
     <div className="flex h-dvh w-full overflow-hidden text-brand-text bg-brand-bg font-sans transition-colors duration-300">
+      <HeresayIntro />
       {/* Sidebar */}
       <aside className="w-[260px] bg-brand-sidebar border-r border-brand-card-border hidden md:flex flex-col z-50 transition-colors duration-300">
         <div className="flex items-center justify-center p-6 border-b border-brand-card-border h-24">
