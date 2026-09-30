@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "heresay@0",
+        "heresay@latest",
         "mcp"
       ]
     }
