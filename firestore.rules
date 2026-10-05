@@ -171,10 +171,13 @@ service cloud.firestore {
 
     // --- System Configurations & Aggregates ---
     match /configs/{configId} {
+      // daily_report: the class list staff pick from in the daily report editor.
       allow read: if isAuthenticated() && (
         configId == 'whatsapp_main'
           ? (isAdmin() || getPerm('whatsapp_sender', 'manage'))
-          : isAdmin()
+          : configId == 'daily_report'
+            ? (isAdmin() || isInternalStaff())
+            : isAdmin()
       );
       allow write: if isAdmin() || (
         configId == 'whatsapp_main' && getPerm('whatsapp_sender', 'manage')
@@ -501,7 +504,8 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (isAdmin() || isInternalStaff());
     }
 
-    // --- Daily Reports ("Connecting the Dots"), one per date: doc id is YYYY-MM-DD ---
+    // --- Daily Reports ("Connecting the Dots"), one per class per date: doc id is
+    // YYYY-MM-DD--<class-slug>, or plain YYYY-MM-DD for reports saved before classes ---
     match /daily_reports/{date} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && (isAdmin() || (isInternalStaff() && isNonAdminPosterWrite()));

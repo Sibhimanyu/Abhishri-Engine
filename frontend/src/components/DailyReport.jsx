@@ -10,10 +10,12 @@ import { POSTER, POSTER_WIDTH, DISPLAY_FONT, BODY_FONT, TAMIL_FONT, SCRIPT_FONT,
 import { Flake, ScaledPreview } from './poster/PosterParts';
 import { isAdminUser, statusOf, approvalForSave, reviewDocument, APPROVED, PENDING } from './poster/approval';
 import { ApprovalActions, ApprovalStatus, ApprovalChip, PendingList } from './poster/ApprovalControls';
-import { School, HouseHeart, Plus, Trash2, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react';
+import { School, HouseHeart, Plus, Trash2, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste, ChevronUp, ChevronDown, RotateCcw, Pencil } from 'lucide-react';
+import { DEFAULT_CLASSES, reportId, classSlug, cleanClasses, compareReports } from '../utils/reportClasses';
 
 // "Connecting the Dots": the day's classroom highlights for parents, each optionally
-// paired with something to try at home. One report per date (the Firestore doc id).
+// paired with something to try at home. One report per class per date (see
+// utils/reportClasses: the class is for staff only and never printed on the poster).
 
 const HOME_PILL = '#FBEAE7';
 const TITHI_BOX = '#E4F3F2';
@@ -183,8 +185,11 @@ const ReportPoster = forwardRef(function ReportPoster({ cal, highlights }, ref) 
 const inputClass = 'w-full bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary';
 const buttonClass = 'flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2.5 sm:py-2 rounded-lg font-medium text-sm transition-colors';
 
-// What approval covers: the report as it would print. Compared to tell unsaved edits apart.
-const reportSignature = (date, highlights, calendar) => JSON.stringify({ date, highlights: highlights.filter(hasText), calendar });
+// What approval covers: the report as it would print, for that class. Compared to tell unsaved edits apart.
+const reportSignature = (date, className, highlights, calendar) => JSON.stringify({ date, className, highlights: highlights.filter(hasText), calendar });
+
+/** "Mon, 5 Oct 2026 · Wonder Wings": how a saved report is named in lists and the audit log. */
+const reportLabel = (r) => (r.className ? `${prettyDate(r.date)} · ${r.className}` : prettyDate(r.date));
 
 export default function DailyReport() {
   const { currentUser, userData } = useAuth();
@@ -192,9 +197,14 @@ export default function DailyReport() {
   const isAdmin = isAdminUser(userData);
 
   const [date, setDate] = useState(todayIST());
+  // '' until someone picks one; reports saved before classes have none.
+  const [className, setClassName] = useState('');
+  const [classes, setClasses] = useState(DEFAULT_CLASSES);
+  const [editingClasses, setEditingClasses] = useState(null); // admin's draft list, one per line
   const [highlights, setHighlights] = useState([emptyHighlight()]);
   const [calOverrides, setCalOverrides] = useState({});
-  const [loadedDate, setLoadedDate] = useState(null);
+  // The doc id of the saved report this editor was loaded from (or last saved to).
+  const [loadedId, setLoadedId] = useState(null);
   const [savedReports, setSavedReports] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -209,7 +219,7 @@ export default function DailyReport() {
   useEffect(() => {
     const q = query(collection(firestore, 'daily_reports'), orderBy('date', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
-      setSavedReports(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setSavedReports(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort(compareReports));
       setLoadingList(false);
     }, (err) => {
       console.error('Failed to load saved reports:', err);
@@ -217,6 +227,31 @@ export default function DailyReport() {
     });
     return () => unsub();
   }, []);
+
+  // The class list admins keep in configs/daily_report; the default until one is saved.
+  useEffect(() => {
+    const unsub = onSnapshot(doc(firestore, 'configs', 'daily_report'), (snap) => {
+      const saved = cleanClasses(snap.data()?.classes);
+      setClasses(saved.length ? saved : DEFAULT_CLASSES);
+    }, (err) => console.warn('Failed to load the daily report classes:', err));
+    return () => unsub();
+  }, []);
+
+  const saveClasses = async () => {
+    const next = cleanClasses((editingClasses || '').split('\n'));
+    if (!next.length) {
+      alert('Add at least one class.');
+      return;
+    }
+    try {
+      await setDoc(doc(firestore, 'configs', 'daily_report'), { classes: next, updatedAt: serverTimestamp(), updatedBy: email || 'unknown' }, { merge: true });
+      logAudit({ action: 'DAILY_REPORT_CLASSES_UPDATED', module: 'school_calendar', targetId: 'daily_report', targetName: 'Daily report classes', performedBy: email, details: { classes: next } });
+      setEditingClasses(null);
+    } catch (err) {
+      console.error('Failed to save the class list:', err);
+      alert('Could not save the class list. Please try again.');
+    }
+  };
 
   const computedCal = useMemo(() => safeCalendar(date), [date]);
   const cal = computedCal && { ...computedCal, ...calOverrides };
@@ -256,28 +291,37 @@ export default function DailyReport() {
     });
   };
 
-  // The saved report this editor is showing: reports are keyed by date, and only one
-  // that was loaded (or saved) here counts, never another report that shares the date.
-  const savedReport = loadedDate === date ? savedReports.find(r => r.id === date) : null;
+  // The saved report this editor is showing: reports are keyed by date and class, and only
+  // one that was loaded (or saved) here counts, never another report that shares the key.
+  const currentId = reportId(date, className);
+  const savedReport = loadedId === currentId ? savedReports.find(r => r.id === currentId) : null;
   const status = statusOf(savedReport);
-  const dirty = !savedReport || reportSignature(date, highlights, calOverrides) !== savedSignature;
+  const dirty = !savedReport || reportSignature(date, className, highlights, calOverrides) !== savedSignature;
+  // A loaded report keeps its class (changing it would be a different report); an old
+  // report's class can still be picked, which saves it as that class's report.
+  const classLocked = !!savedReport && !!savedReport.className;
+  // A saved class no longer in the list stays selectable for its own report.
+  const classOptions = className && !classes.includes(className) ? [...classes, className] : classes;
   const canExport = isAdmin || (status === APPROVED && !dirty);
 
   const handleNew = () => {
     setDate(todayIST());
+    // Staff may share a login, so whoever is next picks their own class.
+    setClassName('');
     setHighlights([emptyHighlight()]);
     setCalOverrides({});
-    setLoadedDate(null);
+    setLoadedId(null);
     setShowLoadPanel(false);
   };
 
   const handleLoad = (saved) => {
     const loadedHighlights = saved.highlights?.length ? saved.highlights.map(h => ({ activity: h.activity || '', classroom: h.classroom || '', home: h.home || '' })) : [emptyHighlight()];
     setDate(saved.date);
+    setClassName(saved.className || '');
     setHighlights(loadedHighlights);
     setCalOverrides(saved.calendar || {});
-    setLoadedDate(saved.date);
-    setSavedSignature(reportSignature(saved.date, loadedHighlights, saved.calendar || {}));
+    setLoadedId(saved.id);
+    setSavedSignature(reportSignature(saved.date, saved.className || '', loadedHighlights, saved.calendar || {}));
     setShowLoadPanel(false);
   };
 
@@ -295,16 +339,23 @@ export default function DailyReport() {
   const handleSave = async ({ submit = false } = {}) => {
     // Re-saving an unchanged approved report as a draft would only undo its approval.
     if (!isAdmin && !submit && !dirty) return;
+    if (!className) {
+      alert('Choose the class this report is for.');
+      return;
+    }
     if (!highlights.some(hasText)) {
       alert('Add at least one highlight before saving.');
       return;
     }
-    const existing = savedReports.find(r => r.id === date);
-    if (existing && loadedDate !== date && !window.confirm(`A report for ${prettyDate(date)} is already saved. Replace it?`)) return;
+    const id = currentId;
+    const label = reportLabel({ date, className });
+    const existing = savedReports.find(r => r.id === id);
+    if (existing && loadedId !== id && !window.confirm(`A report for ${label} is already saved. Replace it?`)) return;
     setSaving(true);
     try {
-      await setDoc(doc(firestore, 'daily_reports', date), {
+      await setDoc(doc(firestore, 'daily_reports', id), {
         date,
+        className,
         highlights: highlights.filter(hasText),
         calendar: calOverrides,
         approval: approvalForSave({ isAdmin, email, submit }),
@@ -312,10 +363,10 @@ export default function DailyReport() {
         updatedBy: email || 'unknown',
         ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: email || 'unknown' }),
       }, { merge: true });
-      setLoadedDate(date);
-      setSavedSignature(reportSignature(date, highlights, calOverrides));
-      logAudit({ action: existing ? 'DAILY_REPORT_UPDATED' : 'DAILY_REPORT_CREATED', module: 'school_calendar', targetId: date, targetName: prettyDate(date), performedBy: email, details: {} });
-      if (submit) logAudit({ action: 'DAILY_REPORT_SENT_FOR_APPROVAL', module: 'school_calendar', targetId: date, targetName: prettyDate(date), performedBy: email, details: {} });
+      setLoadedId(id);
+      setSavedSignature(reportSignature(date, className, highlights, calOverrides));
+      logAudit({ action: existing ? 'DAILY_REPORT_UPDATED' : 'DAILY_REPORT_CREATED', module: 'school_calendar', targetId: id, targetName: label, performedBy: email, details: {} });
+      if (submit) logAudit({ action: 'DAILY_REPORT_SENT_FOR_APPROVAL', module: 'school_calendar', targetId: id, targetName: label, performedBy: email, details: {} });
     } catch (err) {
       console.error('Failed to save report:', err);
       alert('Failed to save report.');
@@ -325,11 +376,11 @@ export default function DailyReport() {
   };
 
   const handleDelete = async (saved) => {
-    if (!window.confirm(`Delete the report for ${prettyDate(saved.date)}? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete the report for ${reportLabel(saved)}? This cannot be undone.`)) return;
     try {
       await deleteDoc(doc(firestore, 'daily_reports', saved.id));
-      logAudit({ action: 'DAILY_REPORT_DELETED', module: 'school_calendar', targetId: saved.id, targetName: prettyDate(saved.date), performedBy: email, details: {} });
-      if (loadedDate === saved.date) setLoadedDate(null);
+      logAudit({ action: 'DAILY_REPORT_DELETED', module: 'school_calendar', targetId: saved.id, targetName: reportLabel(saved), performedBy: email, details: {} });
+      if (loadedId === saved.id) setLoadedId(null);
     } catch (err) {
       console.error('Failed to delete report:', err);
       alert('Failed to delete report.');
@@ -345,7 +396,7 @@ export default function DailyReport() {
     }
     setReviewing(true);
     try {
-      await reviewDocument({ collectionName: 'daily_reports', id: savedReport.id, approve, note, email, reviewerName: userData?.displayName, auditPrefix: 'DAILY_REPORT', targetName: prettyDate(savedReport.date) });
+      await reviewDocument({ collectionName: 'daily_reports', id: savedReport.id, approve, note, email, reviewerName: userData?.displayName, auditPrefix: 'DAILY_REPORT', targetName: reportLabel(savedReport) });
     } catch (err) {
       console.error('Failed to review report:', err);
       alert('Could not save your review. Please try again.');
@@ -358,8 +409,9 @@ export default function DailyReport() {
     if (!previewRef.current || !canExport) return;
     setExporting(true);
     try {
-      await exportPosterPng(previewRef.current, `daily-report-${date}.png`);
-      logAudit({ action: 'DAILY_REPORT_EXPORTED', module: 'school_calendar', targetId: date, targetName: prettyDate(date), performedBy: email, details: {} });
+      const slug = classSlug(className);
+      await exportPosterPng(previewRef.current, `daily-report-${date}${slug ? `-${slug}` : ''}.png`);
+      logAudit({ action: 'DAILY_REPORT_EXPORTED', module: 'school_calendar', targetId: currentId, targetName: reportLabel({ date, className }), performedBy: email, details: {} });
     } catch (err) {
       console.error('Failed to export report image:', err);
       alert('Failed to export image. Please try again.');
@@ -373,7 +425,7 @@ export default function DailyReport() {
       {isAdmin && (
         <PendingList
           items={savedReports.filter(r => statusOf(r) === PENDING && r.id !== savedReport?.id)}
-          labelOf={r => prettyDate(r.date)}
+          labelOf={reportLabel}
           onReview={handleLoad}
           what="report"
         />
@@ -390,12 +442,33 @@ export default function DailyReport() {
             className="w-full md:w-56 bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
           />
         </div>
+        <div className="w-full sm:w-auto sm:shrink-0 max-w-full">
+          <label htmlFor="report-class" className="flex items-center justify-between gap-3 text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-1.5">
+            <span>Class</span>
+            {isAdmin && editingClasses === null && (
+              <button type="button" onClick={() => setEditingClasses(classes.join('\n'))} className="flex items-center gap-1 normal-case tracking-normal font-bold text-brand-primary hover:text-brand-primary-hover">
+                <Pencil size={11} /> Edit list
+              </button>
+            )}
+          </label>
+          <select
+            id="report-class"
+            value={className}
+            onChange={(e) => setClassName(e.target.value)}
+            disabled={classLocked}
+            title={classLocked ? 'A saved report keeps its class. Use New for another class.' : undefined}
+            className={`w-full md:w-56 bg-brand-bg border rounded-lg py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary disabled:opacity-70 ${className ? 'border-brand-card-border' : 'border-amber-500/60'}`}
+          >
+            <option value="" disabled>Choose a class</option>
+            {classOptions.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
         <div className="grid grid-cols-2 w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
           <button onClick={() => setShowLoadPanel(v => !v)} className={buttonClass}><FolderOpen size={16} /> Load</button>
           <button onClick={() => setShowImport(true)} className={buttonClass}><ClipboardPaste size={16} /> Import from ChatGPT</button>
           <button onClick={handleNew} className={buttonClass}><FilePlus2 size={16} /> New</button>
           <button onClick={() => handleSave()} disabled={saving} className={`${buttonClass} disabled:opacity-50`}>
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {loadedDate === date ? 'Save Changes' : 'Save'}
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {loadedId === currentId ? 'Save Changes' : 'Save'}
           </button>
           <ApprovalActions
             isAdmin={isAdmin}
@@ -410,6 +483,20 @@ export default function DailyReport() {
           />
         </div>
       </div>
+
+      {editingClasses !== null && (
+        <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-4 space-y-3">
+          <div>
+            <h3 className="font-bold text-brand-text text-sm">Classes</h3>
+            <p className="text-xs text-brand-text-dim">One per line. Staff choose one for each report; parents never see it. Renaming a class doesn't change reports already saved.</p>
+          </div>
+          <textarea value={editingClasses} onChange={(e) => setEditingClasses(e.target.value)} rows={6} className={inputClass} aria-label="Classes, one per line" />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditingClasses(null)} className="px-3 py-2 rounded-lg text-sm font-medium text-brand-text-dim hover:text-brand-text">Cancel</button>
+            <button type="button" onClick={saveClasses} className="px-4 py-2 rounded-lg text-sm font-bold bg-brand-primary text-white hover:bg-brand-primary-hover">Save classes</button>
+          </div>
+        </div>
+      )}
 
       <ApprovalStatus isAdmin={isAdmin} saved={savedReport} dirty={dirty} what="report" />
 
@@ -434,7 +521,7 @@ export default function DailyReport() {
                 <div key={r.id} className="p-4 flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                   <button onClick={() => handleLoad(r)} className="text-left flex-1 min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-bold text-brand-text truncate">{prettyDate(r.date)}</span>
+                      <span className="font-bold text-brand-text truncate">{reportLabel(r)}</span>
                       <ApprovalChip status={statusOf(r)} />
                     </div>
                     <div className="text-xs text-brand-text-dim">{r.highlights?.length || 0} highlights · last updated by {r.updatedBy || 'unknown'}</div>
