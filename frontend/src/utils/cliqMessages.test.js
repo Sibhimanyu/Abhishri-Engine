@@ -49,6 +49,9 @@ describe('messages', () => {
     const report = requestMessage({ collection: 'daily_reports', id: '2026-09-28', data: {}, requesterName: 'Vineetha', appUrl });
     expect(report.card.title).toBe('Daily report: Mon, 28 Sep 2026');
     expect(report.buttons[0].action.data.web).toBe('https://abhishri-academy.web.app/menu-report?tab=report');
+
+    const classReport = requestMessage({ collection: 'daily_reports', id: '2026-09-28--wonder-wings', data: { date: '2026-09-28', className: 'Wonder Wings' }, requesterName: 'Vineetha', appUrl });
+    expect(classReport.card.title).toBe('Daily report: Mon, 28 Sep 2026 · Wonder Wings');
   });
 
   it("tells the teacher the outcome, with the admin's note when sent back", () => {

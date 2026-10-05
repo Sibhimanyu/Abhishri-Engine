@@ -52,7 +52,9 @@ export const KINDS = {
   },
   daily_reports: {
     noun: 'daily report',
-    title: (id) => `Daily report: ${prettyDate(id)}`,
+    // Ids are the date, or "<date>--<class>" once reports have a class (staff-only, so it
+    // goes in admin and teacher messages but never on the poster).
+    title: (id, data) => `Daily report: ${prettyDate(data?.date || id)}${data?.className ? ` · ${data.className}` : ''}`,
     path: NOTIFICATIONS.approvalPending.path('daily_reports'),
   },
 };
