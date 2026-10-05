@@ -19,9 +19,10 @@ const primaryClass = 'col-span-2 sm:col-auto flex items-center justify-center ga
 
 /**
  * The toolbar's last buttons. Admins export directly and, on a pending document, can
- * approve or send it back. Everyone else sends for approval, waits, then exports.
+ * approve or send it back, or save their own edits and approve in one go. Everyone
+ * else sends for approval, waits, then exports.
  */
-export function ApprovalActions({ isAdmin, status, dirty, busy, exporting, onExport, onSubmit, onApprove, onSendBack }) {
+export function ApprovalActions({ isAdmin, status, dirty, busy, exporting, onExport, onSubmit, onApprove, onSendBack, onSaveAndApprove }) {
   const exportButton = (
     <button onClick={onExport} disabled={exporting || busy} className={primaryClass}>
       {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export as PNG
@@ -40,6 +41,11 @@ export function ApprovalActions({ isAdmin, status, dirty, busy, exporting, onExp
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Approve
             </button>
           </>
+        )}
+        {status === PENDING && dirty && (
+          <button onClick={onSaveAndApprove} disabled={busy} className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 sm:py-2 rounded-lg font-bold text-sm transition-colors shadow-sm disabled:opacity-50">
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Save & approve
+          </button>
         )}
         {exportButton}
       </>
@@ -76,7 +82,9 @@ export function ApprovalStatus({ isAdmin, saved, dirty, what }) {
 
   if (status === PENDING) {
     return isAdmin
-      ? <Banner tone="amber"><b>{who(a.requestedBy)}</b> sent this {what} for approval. Check it, then approve it or send it back.{unsaved}</Banner>
+      ? <Banner tone="amber"><b>{who(a.requestedBy)}</b> sent this {what} for approval. {dirty
+          ? <>You've made changes: <b>Save & approve</b> saves them and approves it, and they're told it's ready to export.</>
+          : 'Check it, then approve it or send it back.'}</Banner>
       : <Banner tone="amber">Sent for approval by {who(a.requestedBy)}. You can export it once an admin approves it.{dirty ? ' Saving your changes withdraws it until you send it again.' : ''}</Banner>;
   }
   if (status === APPROVED) {

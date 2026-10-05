@@ -30,8 +30,9 @@ export const statusOf = (savedDoc) => savedDoc?.approval?.status || DRAFT;
  * The approval to write with a save. Merged into the document (setDoc merge), so the
  * previous reviewer and note stay on record until the next review replaces them.
  */
-export function approvalForSave({ isAdmin, email, submit }) {
-  if (isAdmin) return { status: APPROVED, reviewedBy: email || 'unknown', reviewedAt: serverTimestamp(), note: '' };
+export function approvalForSave({ isAdmin, email, submit, reviewerName }) {
+  // An admin saving a teacher's pending request approves it: the teacher's bell names them.
+  if (isAdmin) return { status: APPROVED, reviewedBy: email || 'unknown', reviewedByName: reviewerName || email || 'An admin', reviewedAt: serverTimestamp(), note: '' };
   if (submit) return { status: PENDING, requestedBy: email || 'unknown', requestedAt: serverTimestamp(), note: '' };
   return { status: DRAFT };
 }
