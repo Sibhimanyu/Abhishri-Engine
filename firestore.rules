@@ -201,6 +201,27 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'delete'));
     }
 
+    // Remarks on a child (what staff observed, what parents said). Staff who can see the
+    // student read and add them, as themselves; the author or an admin edits or deletes.
+    // Parents never read these: the portal goes through the server.
+    function isValidRemark(data) {
+      return data.date is string && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        data.text is string && data.text.size() > 0 && data.text.size() <= 2000 &&
+        data.get('kind', '') in ['', 'observation', 'parents'];
+    }
+
+    match /students/{studentId}/remarks/{remarkId} {
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'view'));
+      allow create: if isAuthenticated() && (isAdmin() || getPerm('student_directory', 'view')) &&
+        isOwnEmail(request.resource.data.get('createdBy', '')) &&
+        request.resource.data.keys().hasOnly(['date', 'kind', 'text', 'createdBy', 'createdByName', 'createdAt']) &&
+        isValidRemark(request.resource.data);
+      allow update: if isAuthenticated() && (isAdmin() || isOwnEmail(resource.data.get('createdBy', ''))) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['date', 'kind', 'text', 'updatedAt']) &&
+        isValidRemark(request.resource.data);
+      allow delete: if isAuthenticated() && (isAdmin() || isOwnEmail(resource.data.get('createdBy', '')));
+    }
+
     match /staff/{staffId} {
       allow read: if isAuthenticated() && (
         isAdmin() || 
