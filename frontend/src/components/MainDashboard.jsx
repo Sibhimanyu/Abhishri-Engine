@@ -10,8 +10,25 @@ import {
   Users, CreditCard, ClipboardCheck, Briefcase, 
   ArrowUpRight, ArrowDownRight, Activity, Calendar, 
   TrendingUp, Award, UserPlus, FileText, CheckCircle2, 
-  Clock, Plus, MessageSquare
+  Clock, Plus, MessageSquare, Eye, EyeOff
 } from 'lucide-react';
+
+/** Money on the dashboard stays hidden until asked for: the screen is often in view of others. */
+const HIDDEN_AMOUNT = '••••••';
+
+/** Show / hide the dashboard's amounts. */
+const AmountsToggle = ({ shown, onToggle }) => (
+  <button
+    type="button"
+    onClick={onToggle}
+    aria-pressed={shown}
+    aria-label={shown ? 'Hide amounts' : 'Show amounts'}
+    title={shown ? 'Hide amounts' : 'Show amounts'}
+    className="p-1.5 -m-1.5 rounded-lg text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+  >
+    {shown ? <EyeOff size={16} /> : <Eye size={16} />}
+  </button>
+);
 
 /** Renders a value, or a shimmering bar until its data source has answered. */
 const Val = ({ ok, w = 'w-16', h = 'h-8', children }) =>
@@ -52,6 +69,10 @@ export default function MainDashboard() {
   });
 
   const [recentTxns, setRecentTxns] = useState([]);
+  // Hidden on every visit (not remembered), so signing in never shows the figures.
+  const [showAmounts, setShowAmounts] = useState(false);
+  const toggleAmounts = () => setShowAmounts(v => !v);
+  const money = (n) => (showAmounts ? n.toLocaleString() : HIDDEN_AMOUNT);
   const [recentAdmissions, setRecentAdmissions] = useState([]);
   // Per-source "first snapshot received" flags. Cards render a skeleton bar until
   // their source has answered, instead of a misleading 0.
@@ -312,8 +333,11 @@ export default function MainDashboard() {
         {showMonthlyRevenue && (
           <div className="bg-brand-card border border-brand-card-border p-6 rounded-2xl shadow-sm hover:shadow-md transition-all flex items-start justify-between">
             <div>
-              <p className="text-brand-text-dim text-xs font-bold uppercase tracking-wider mb-2">Monthly Revenue</p>
-              <h3 className="text-3xl font-black text-brand-text leading-none mb-2"><Val ok={ready.txns} w="w-28">₹ {stats.monthlyRevenue.toLocaleString()}</Val></h3>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-brand-text-dim text-xs font-bold uppercase tracking-wider">Monthly Revenue</p>
+                <AmountsToggle shown={showAmounts} onToggle={toggleAmounts} />
+              </div>
+              <h3 className="text-3xl font-black text-brand-text leading-none mb-2"><Val ok={ready.txns} w="w-28">₹ {money(stats.monthlyRevenue)}</Val></h3>
               <p className="text-brand-text-dim text-xs flex items-center gap-1">
                 <TrendingUp size={14} className="text-green-500" /> realization this month
               </p>
@@ -518,7 +542,10 @@ export default function MainDashboard() {
               <h3 className="font-bold text-lg text-brand-text">Recent Realized Payments</h3>
               <p className="text-xs text-brand-text-dim">Real-time incoming fee collections feed</p>
             </div>
-            <Link to="/fees/transactions" className="text-xs font-bold text-brand-primary hover:underline">View All Collections</Link>
+            <div className="flex items-center gap-4 shrink-0">
+              <AmountsToggle shown={showAmounts} onToggle={toggleAmounts} />
+              <Link to="/fees/transactions" className="text-xs font-bold text-brand-primary hover:underline">View All Collections</Link>
+            </div>
           </div>
 
           {!ready.txns ? (
@@ -541,7 +568,7 @@ export default function MainDashboard() {
                     <p className="text-brand-text-dim text-[10px] mt-0.5">{t.date.toLocaleDateString()}</p>
                   </div>
                   <div className="text-right shrink-0 ml-3">
-                    <span className="text-sm font-black text-green-600 dark:text-green-400">+ ₹{t.amount.toLocaleString()}</span>
+                    <span className="text-sm font-black text-green-600 dark:text-green-400">+ ₹{money(t.amount)}</span>
                     <p className="text-[9px] uppercase tracking-wider font-bold text-brand-text-dim mt-0.5">{t.method}</p>
                   </div>
                 </div>
