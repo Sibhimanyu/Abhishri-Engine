@@ -3,10 +3,11 @@ import { Spinner } from './Spinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection } from 'firebase/firestore';
 import { getDocs } from '../utils/firestoreRead';
-import { ref, onValue, set, serverTimestamp, get } from 'firebase/database';
+import { ref, onValue, set, remove, serverTimestamp, get } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, CheckCircle, XCircle, Clock, BarChart2, CheckSquare } from 'lucide-react';
+import { Calendar, CheckCircle, XCircle, Clock, BarChart2, CheckSquare, Pencil } from 'lucide-react';
+import { tapAction, cleanNote, NEEDS_NOTE, NOTE_MAX } from '../utils/attendanceMark';
 
 // Width of the attendance report window, in calendar days.
 const REPORT_DAYS = 30;
@@ -178,27 +179,70 @@ export default function Attendance() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entities, reportDays, activeTab, todayKey]);
 
-  const markAttendance = (entityId, status) => {
+  // Where one person's mark for the selected day lives, or null when it can't be changed.
+  const markRef = (entityId) => {
     const canMark = activeTab === 'staff' ? canMarkStaff : canMarkStudents;
-    if (!canMark) return;
+    if (!canMark) return null;
     // A cleared date input gives '' and would write to attendance//{id}.
-    if (!selectedDate) return;
+    if (!selectedDate) return null;
     // Days that haven't happened can't be attended; 'YYYY-MM-DD' compares as a date.
-    if (selectedDate > todayKey) return;
+    if (selectedDate > todayKey) return null;
     // Only people on that day's roster: never a student who had left by then.
-    if (!roster.some(e => e.id === entityId)) return;
+    if (!roster.some(e => e.id === entityId)) return null;
 
     let modulePath = activeTab === 'staff' ? 'staff_directory' : 'student_directory';
-    const dbRef = ref(rtdb, `modules/${modulePath}/attendance/${selectedDate}/${entityId}`);
-    
-    set(dbRef, {
+    return ref(rtdb, `modules/${modulePath}/attendance/${selectedDate}/${entityId}`);
+  };
+
+  const saveFailed = (err) => {
+    console.error('Failed to save attendance:', err);
+    alert('Could not save attendance. Check your connection and permissions, then try again.');
+  };
+
+  const markAttendance = (entityId, status, note = '') => {
+    const dbRef = markRef(entityId);
+    if (!dbRef) return Promise.resolve(false);
+    return set(dbRef, {
       status,
+      ...(note ? { note } : {}),
       timestamp: serverTimestamp(),
       performedBy: currentUser?.email || null
-    }).catch(err => {
-      console.error('Failed to save attendance:', err);
-      alert('Could not save attendance. Check your connection and permissions, then try again.');
-    });
+    }).then(() => true, (err) => { saveFailed(err); return false; });
+  };
+
+  const clearAttendance = (entityId) => {
+    const dbRef = markRef(entityId);
+    if (dbRef) remove(dbRef).catch(saveFailed);
+  };
+
+  // Absent / Late waiting for its reason: { id, status, note }. Nothing is saved until then.
+  // Tagged with the tab+day it was started on, so switching either drops it.
+  const [draft, setNoteDraft] = useState(null);
+  const sheetKey = `${activeTab}|${selectedDate}|${mode}`;
+  const noteDraft = draft?.sheet === sheetKey ? draft : null;
+
+  const tapStatus = (entityId, status) => {
+    const current = attendance[entityId]?.status || 'none';
+    const action = tapAction(current, status);
+    if (action === 'note') {
+      setNoteDraft({ sheet: sheetKey, id: entityId, status, note: attendance[entityId]?.note || '' });
+      return;
+    }
+    setNoteDraft(d => (d?.id === entityId ? null : d));
+    if (action === 'clear') clearAttendance(entityId);
+    else markAttendance(entityId, status);
+  };
+
+  const saveNoteDraft = async () => {
+    const note = cleanNote(noteDraft?.note);
+    if (!noteDraft || !note) return;
+    if (await markAttendance(noteDraft.id, noteDraft.status, note)) setNoteDraft(null);
+  };
+
+  // A saved Absent / Late note, opened for editing.
+  const editNote = (entityId) => {
+    const rec = attendance[entityId];
+    if (rec && NEEDS_NOTE.includes(rec.status)) setNoteDraft({ sheet: sheetKey, id: entityId, status: rec.status, note: rec.note || '' });
   };
 
   const getStatusCounts = () => {
@@ -225,6 +269,82 @@ export default function Attendance() {
 
   // Disabled, not just ignored, for a future date so the sheet doesn't look markable.
   const canMarkActive = (activeTab === 'staff' ? canMarkStaff : canMarkStudents) && !!selectedDate && selectedDate <= todayKey;
+
+  const STATUS_BUTTONS = [
+    { status: 'present', label: 'PRESENT', on: 'bg-green-500 text-white border-green-500 shadow-sm', off: 'bg-transparent text-green-600 dark:text-green-500 border-green-200 dark:border-green-900/50 hover:bg-green-50 dark:hover:bg-green-900/20' },
+    { status: 'absent', label: 'ABSENT', on: 'bg-red-500 text-white border-red-500 shadow-sm', off: 'bg-transparent text-red-600 dark:text-red-500 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-900/20' },
+    { status: 'late', label: 'LATE', on: 'bg-yellow-500 text-white border-yellow-500 shadow-sm', off: 'bg-transparent text-yellow-600 dark:text-yellow-500 border-yellow-200 dark:border-yellow-900/50 hover:bg-yellow-50 dark:hover:bg-yellow-900/20' },
+  ];
+
+  // Present / Absent / Late. The one already set is filled; tapping it again clears it.
+  const renderStatusButtons = (entityId, currentStatus, sizing) => STATUS_BUTTONS.map(b => {
+    const selected = currentStatus === b.status;
+    const drafting = noteDraft?.id === entityId && noteDraft.status === b.status;
+    return (
+      <button
+        key={b.status}
+        onClick={() => tapStatus(entityId, b.status)}
+        disabled={!canMarkActive}
+        aria-pressed={selected}
+        title={selected && canMarkActive ? 'Tap again to clear' : undefined}
+        className={`${sizing} rounded-full font-bold text-xs tracking-wider transition-all border ${
+          selected ? b.on : b.off
+        } ${drafting ? 'ring-2 ring-offset-1 ring-brand-primary/40' : ''} ${!canMarkActive ? 'opacity-50 cursor-not-allowed' : ''}`}
+      >
+        {b.label}
+      </button>
+    );
+  });
+
+  // The reason saved with an Absent / Late mark, under the name.
+  const renderSavedNote = (entityId) => {
+    const rec = attendance[entityId];
+    if (!rec || !NEEDS_NOTE.includes(rec.status)) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => editNote(entityId)}
+        disabled={!canMarkActive}
+        className="mt-0.5 flex items-center gap-1 text-left text-xs text-brand-text-dim hover:text-brand-text disabled:hover:text-brand-text-dim"
+      >
+        <span className={rec.note ? '' : 'italic'}>{rec.note || 'No note'}</span>
+        {canMarkActive && <Pencil size={11} className="shrink-0" />}
+      </button>
+    );
+  };
+
+  // The reason a student is absent or late; required before the mark is saved.
+  const renderNoteEditor = () => {
+    const label = noteDraft.status === 'late' ? 'Why late?' : 'Why absent?';
+    const ready = !!cleanNote(noteDraft.note);
+    return (
+      <form
+        onSubmit={(e) => { e.preventDefault(); saveNoteDraft(); }}
+        className="flex flex-col sm:flex-row gap-2 sm:items-center"
+      >
+        <input
+          type="text"
+          autoFocus
+          required
+          maxLength={NOTE_MAX}
+          value={noteDraft.note}
+          onChange={(e) => setNoteDraft(d => ({ ...d, note: e.target.value }))}
+          onKeyDown={(e) => { if (e.key === 'Escape') setNoteDraft(null); }}
+          placeholder={`${label} (required)`}
+          aria-label={`${label} (required)`}
+          className="flex-1 min-w-0 bg-brand-bg border border-brand-card-border rounded-md py-2 px-3 text-sm text-brand-text focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary"
+        />
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={() => setNoteDraft(null)} className="px-3 py-2 rounded-md text-sm font-medium text-brand-text-dim hover:text-brand-text">
+            Cancel
+          </button>
+          <button type="submit" disabled={!ready} className="px-4 py-2 rounded-md text-sm font-bold bg-brand-primary text-white disabled:opacity-50 disabled:cursor-not-allowed">
+            Save
+          </button>
+        </div>
+      </form>
+    );
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -311,57 +431,34 @@ export default function Attendance() {
                       {roster.map(entity => {
                         const name = entity.name || entity.email;
                         const currentStatus = attendance[entity.id]?.status || 'none';
-                        
+                        const editing = noteDraft?.id === entity.id;
+
                         return (
-                          <tr key={entity.id} className="border-b border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center font-bold">
-                                  {(name || 'U').charAt(0).toUpperCase()}
+                          <React.Fragment key={entity.id}>
+                            <tr className={`${editing ? '' : 'border-b'} border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center font-bold shrink-0">
+                                    {(name || 'U').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span className="font-bold text-brand-text text-base">{name}</span>
+                                    {!editing && renderSavedNote(entity.id)}
+                                  </div>
                                 </div>
-                                <span className="font-bold text-brand-text text-base">{name}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex justify-end gap-2">
-                                <button 
-                                  onClick={() => markAttendance(entity.id, 'present')}
-                                  disabled={!canMarkActive}
-                                  className={`px-4 py-1.5 rounded-full font-bold text-xs tracking-wider transition-all border ${
-                                    currentStatus === 'present' 
-                                      ? 'bg-green-500 text-white border-green-500 shadow-sm' 
-                                      : 'bg-transparent text-green-600 dark:text-green-500 border-green-200 dark:border-green-900/50 hover:bg-green-50 dark:hover:bg-green-900/20'
-                                  } ${!canMarkActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                >
-                                  PRESENT
-                                </button>
-                                
-                                <button 
-                                  onClick={() => markAttendance(entity.id, 'absent')}
-                                  disabled={!canMarkActive}
-                                  className={`px-4 py-1.5 rounded-full font-bold text-xs tracking-wider transition-all border ${
-                                    currentStatus === 'absent' 
-                                      ? 'bg-red-500 text-white border-red-500 shadow-sm' 
-                                      : 'bg-transparent text-red-600 dark:text-red-500 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-900/20'
-                                  } ${!canMarkActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                >
-                                  ABSENT
-                                </button>
-                                
-                                <button 
-                                  onClick={() => markAttendance(entity.id, 'late')}
-                                  disabled={!canMarkActive}
-                                  className={`px-4 py-1.5 rounded-full font-bold text-xs tracking-wider transition-all border ${
-                                    currentStatus === 'late' 
-                                      ? 'bg-yellow-500 text-white border-yellow-500 shadow-sm' 
-                                      : 'bg-transparent text-yellow-600 dark:text-yellow-500 border-yellow-200 dark:border-yellow-900/50 hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
-                                  } ${!canMarkActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                >
-                                  LATE
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex justify-end gap-2">
+                                  {renderStatusButtons(entity.id, currentStatus, 'px-4 py-1.5')}
+                                </div>
+                              </td>
+                            </tr>
+                            {editing && (
+                              <tr className="border-b border-brand-card-border">
+                                <td colSpan={2} className="px-6 pb-4">{renderNoteEditor()}</td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })}
                     </tbody>
@@ -373,49 +470,22 @@ export default function Attendance() {
                   {roster.map(entity => {
                     const name = entity.name || entity.email;
                     const currentStatus = attendance[entity.id]?.status || 'none';
+                    const editing = noteDraft?.id === entity.id;
                     return (
                       <div key={entity.id} className="p-4 space-y-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-brand-primary/10 text-brand-primary flex items-center justify-center font-bold shrink-0">
                             {(name || 'U').charAt(0).toUpperCase()}
                           </div>
-                          <span className="font-bold text-brand-text text-base">{name}</span>
+                          <div className="min-w-0">
+                            <span className="font-bold text-brand-text text-base">{name}</span>
+                            {!editing && renderSavedNote(entity.id)}
+                          </div>
                         </div>
                         <div className="flex gap-2">
-                          <button 
-                            onClick={() => markAttendance(entity.id, 'present')}
-                            disabled={!canMarkActive}
-                            className={`flex-1 py-2 rounded-full font-bold text-xs tracking-wider transition-all border text-center ${
-                              currentStatus === 'present' 
-                                ? 'bg-green-500 text-white border-green-500 shadow-sm' 
-                                : 'bg-transparent text-green-600 dark:text-green-500 border-green-200 dark:border-green-900/50 hover:bg-green-50 dark:hover:bg-green-900/20'
-                            } ${!canMarkActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            PRESENT
-                          </button>
-                          <button 
-                            onClick={() => markAttendance(entity.id, 'absent')}
-                            disabled={!canMarkActive}
-                            className={`flex-1 py-2 rounded-full font-bold text-xs tracking-wider transition-all border text-center ${
-                              currentStatus === 'absent' 
-                                ? 'bg-red-500 text-white border-red-500 shadow-sm' 
-                                : 'bg-transparent text-red-600 dark:text-red-500 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-900/20'
-                            } ${!canMarkActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            ABSENT
-                          </button>
-                          <button 
-                            onClick={() => markAttendance(entity.id, 'late')}
-                            disabled={!canMarkActive}
-                            className={`flex-1 py-2 rounded-full font-bold text-xs tracking-wider transition-all border text-center ${
-                              currentStatus === 'late' 
-                                ? 'bg-yellow-500 text-white border-yellow-500 shadow-sm' 
-                                : 'bg-transparent text-yellow-600 dark:text-yellow-500 border-yellow-200 dark:border-yellow-900/50 hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
-                            } ${!canMarkActive ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            LATE
-                          </button>
+                          {renderStatusButtons(entity.id, currentStatus, 'flex-1 py-2 text-center')}
                         </div>
+                        {editing && renderNoteEditor()}
                       </div>
                     );
                   })}
