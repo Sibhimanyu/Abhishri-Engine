@@ -267,7 +267,9 @@ export default function WeeklyMenu() {
 
   // `submit` also sends it for approval. A non-admin's plain save leaves it a draft,
   // so saving an approved menu with changes puts it back through approval.
-  const handleSave = async ({ submit = false } = {}) => {
+  // An admin saving a pending request approves it (approvalForSave); `approving` marks
+  // that as their review, from the Save & approve button.
+  const handleSave = async ({ submit = false, approving = false } = {}) => {
     // Re-saving an unchanged approved menu as a draft would only undo its approval.
     if (!isAdmin && !submit && !dirty) return;
     if (!isMenuDate(menu.startDate) || !isMenuDate(menu.endDate)) {
@@ -286,7 +288,7 @@ export default function WeeklyMenu() {
         // Kept for the saved-menus list and audit names; always built from the dates.
         weekLabel: weekRangeLabel(menu.startDate, menu.endDate),
         days: menu.days,
-        approval: approvalForSave({ isAdmin, email, submit }),
+        approval: approvalForSave({ isAdmin, email, submit, reviewerName: userData?.displayName }),
         updatedAt: serverTimestamp(),
         updatedBy: email || 'unknown',
       };
@@ -301,6 +303,7 @@ export default function WeeklyMenu() {
         logAudit({ action: 'WEEKLY_MENU_CREATED', module: 'school_calendar', targetId: ref.id, targetName: payload.weekLabel, performedBy: email, details: {} });
       }
       setSavedSignature(menuSignature(menu));
+      if (approving) logAudit({ action: 'WEEKLY_MENU_APPROVED', module: 'school_calendar', targetId: id, targetName: payload.weekLabel, performedBy: email, details: { edited: true } });
       if (submit) logAudit({ action: 'WEEKLY_MENU_SENT_FOR_APPROVAL', module: 'school_calendar', targetId: id, targetName: payload.weekLabel, performedBy: email, details: {} });
     } catch (err) {
       console.error('Failed to save menu:', err);
@@ -437,6 +440,7 @@ export default function WeeklyMenu() {
             onSubmit={() => handleSave({ submit: true })}
             onApprove={() => handleReview(true)}
             onSendBack={() => handleReview(false)}
+            onSaveAndApprove={() => handleSave({ approving: true })}
           />
         </div>
       </div>

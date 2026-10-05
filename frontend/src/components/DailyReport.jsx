@@ -182,6 +182,13 @@ const ReportPoster = forwardRef(function ReportPoster({ cal, highlights }, ref) 
   );
 });
 
+// "Paste text": staff's own write-up goes straight in (utils/reportImport parsePlainReport).
+const PASTE_TEXT = {
+  title: 'Paste report text',
+  hint: 'Put each activity in its own paragraph: its name on the first line, then what happened in the classroom. Start a line with "At home:" for the part parents can try at home.',
+  placeholder: 'Circle Time\nWe talked about the rainy season and sang a song.\nAt home: Ask your child to name three things that need rain.\n\nArt\nWe made paper boats.',
+};
+
 const inputClass = 'w-full bg-brand-bg border border-brand-card-border rounded-lg py-1.5 px-2.5 text-sm text-brand-text focus:outline-none focus:border-brand-primary';
 const buttonClass = 'flex items-center justify-center gap-2 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-brand-text px-4 py-2.5 sm:py-2 rounded-lg font-medium text-sm transition-colors';
 
@@ -336,7 +343,9 @@ export default function DailyReport() {
 
   // `submit` also sends it for approval. A non-admin's plain save leaves it a draft,
   // so saving an approved report with changes puts it back through approval.
-  const handleSave = async ({ submit = false } = {}) => {
+  // An admin saving a pending request approves it (approvalForSave); `approving` marks
+  // that as their review, from the Save & approve button.
+  const handleSave = async ({ submit = false, approving = false } = {}) => {
     // Re-saving an unchanged approved report as a draft would only undo its approval.
     if (!isAdmin && !submit && !dirty) return;
     if (!className) {
@@ -358,7 +367,7 @@ export default function DailyReport() {
         className,
         highlights: highlights.filter(hasText),
         calendar: calOverrides,
-        approval: approvalForSave({ isAdmin, email, submit }),
+        approval: approvalForSave({ isAdmin, email, submit, reviewerName: userData?.displayName }),
         updatedAt: serverTimestamp(),
         updatedBy: email || 'unknown',
         ...(existing ? {} : { createdAt: serverTimestamp(), createdBy: email || 'unknown' }),
@@ -366,6 +375,7 @@ export default function DailyReport() {
       setLoadedId(id);
       setSavedSignature(reportSignature(date, className, highlights, calOverrides));
       logAudit({ action: existing ? 'DAILY_REPORT_UPDATED' : 'DAILY_REPORT_CREATED', module: 'school_calendar', targetId: id, targetName: label, performedBy: email, details: {} });
+      if (approving) logAudit({ action: 'DAILY_REPORT_APPROVED', module: 'school_calendar', targetId: id, targetName: label, performedBy: email, details: { edited: true } });
       if (submit) logAudit({ action: 'DAILY_REPORT_SENT_FOR_APPROVAL', module: 'school_calendar', targetId: id, targetName: label, performedBy: email, details: {} });
     } catch (err) {
       console.error('Failed to save report:', err);
@@ -465,7 +475,7 @@ export default function DailyReport() {
         </div>
         <div className="grid grid-cols-2 w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
           <button onClick={() => setShowLoadPanel(v => !v)} className={buttonClass}><FolderOpen size={16} /> Load</button>
-          <button onClick={() => setShowImport(true)} className={buttonClass}><ClipboardPaste size={16} /> Import from ChatGPT</button>
+          <button onClick={() => setShowImport(true)} className={buttonClass}><ClipboardPaste size={16} /> Paste text</button>
           <button onClick={handleNew} className={buttonClass}><FilePlus2 size={16} /> New</button>
           <button onClick={() => handleSave()} disabled={saving} className={`${buttonClass} disabled:opacity-50`}>
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {loadedId === currentId ? 'Save Changes' : 'Save'}
@@ -480,6 +490,7 @@ export default function DailyReport() {
             onSubmit={() => handleSave({ submit: true })}
             onApprove={() => handleReview(true)}
             onSendBack={() => handleReview(false)}
+            onSaveAndApprove={() => handleSave({ approving: true })}
           />
         </div>
       </div>
@@ -501,7 +512,7 @@ export default function DailyReport() {
       <ApprovalStatus isAdmin={isAdmin} saved={savedReport} dirty={dirty} what="report" />
 
       {showImport && (
-        <ChatGPTImportDialog prompt={REPORT_PROMPT} what="report" fillLabel="Fill Report" onImport={handleImport} onClose={() => setShowImport(false)} />
+        <ChatGPTImportDialog prompt={REPORT_PROMPT} what="report" fillLabel="Fill Report" onImport={handleImport} onClose={() => setShowImport(false)} ownText={PASTE_TEXT} />
       )}
 
       {/* Load Panel */}
