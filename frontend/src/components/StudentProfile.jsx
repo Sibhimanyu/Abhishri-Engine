@@ -10,6 +10,7 @@ import { ArrowLeft, Edit3, MapPin, Phone, User, Users, HeartPulse, FileText, Ale
 import { isDiscontinued, getDiscontinuationDate } from '../utils/reportUtils';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 import { phonesIn, hasPortalAccess } from '../../../functions/src/shared/phone.mjs';
+import StudentRemarks from './StudentRemarks';
 
 const setParentPortalAccess = httpsCallable(functions, 'setParentPortalAccess');
 
@@ -992,6 +993,8 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
             </div>
           )}
         </div>
+
+        <StudentRemarks studentId={student.id} studentName={student.name} />
 
       </div>
 
