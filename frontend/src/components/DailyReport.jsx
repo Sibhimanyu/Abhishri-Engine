@@ -11,7 +11,8 @@ import { Flake, ScaledPreview } from './poster/PosterParts';
 import { isAdminUser, statusOf, approvalForSave, reviewDocument, APPROVED, PENDING } from './poster/approval';
 import { ApprovalActions, ApprovalStatus, ApprovalChip, PendingList } from './poster/ApprovalControls';
 import { School, HouseHeart, Plus, Trash2, Save, FolderOpen, X, Loader2, FilePlus2, ClipboardPaste, ChevronUp, ChevronDown, RotateCcw, Pencil } from 'lucide-react';
-import { DEFAULT_CLASSES, reportId, classSlug, cleanClasses, compareReports } from '../utils/reportClasses';
+import { reportId, classSlug, cleanClasses, compareReports } from '../utils/reportClasses';
+import { useReportClasses } from '../utils/useReportClasses';
 
 // "Connecting the Dots": the day's classroom highlights for parents, each optionally
 // paired with something to try at home. One report per class per date (see
@@ -206,7 +207,7 @@ export default function DailyReport() {
   const [date, setDate] = useState(todayIST());
   // '' until someone picks one; reports saved before classes have none.
   const [className, setClassName] = useState('');
-  const [classes, setClasses] = useState(DEFAULT_CLASSES);
+  const classes = useReportClasses();
   const [editingClasses, setEditingClasses] = useState(null); // admin's draft list, one per line
   const [highlights, setHighlights] = useState([emptyHighlight()]);
   const [calOverrides, setCalOverrides] = useState({});
@@ -232,15 +233,6 @@ export default function DailyReport() {
       console.error('Failed to load saved reports:', err);
       setLoadingList(false);
     });
-    return () => unsub();
-  }, []);
-
-  // The class list admins keep in configs/daily_report; the default until one is saved.
-  useEffect(() => {
-    const unsub = onSnapshot(doc(firestore, 'configs', 'daily_report'), (snap) => {
-      const saved = cleanClasses(snap.data()?.classes);
-      setClasses(saved.length ? saved : DEFAULT_CLASSES);
-    }, (err) => console.warn('Failed to load the daily report classes:', err));
     return () => unsub();
   }, []);
 

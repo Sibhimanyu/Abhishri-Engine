@@ -8,9 +8,19 @@ import { firestore, rtdb } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Calendar, CheckCircle, XCircle, Clock, BarChart2, CheckSquare, Pencil } from 'lucide-react';
 import { tapAction, cleanNote, NEEDS_NOTE, NOTE_MAX } from '../utils/attendanceMark';
+import { studentsInClass, NO_CLASS } from '../utils/reportClasses';
+import { useReportClasses } from '../utils/useReportClasses';
 
 // Width of the attendance report window, in calendar days.
 const REPORT_DAYS = 30;
+
+// The class picked on each student tab, remembered on this device: a teacher opens
+// straight to their own class.
+const CLASS_PICK_KEY = 'attendance.class';
+
+function loadClassPicks() {
+  try { return JSON.parse(localStorage.getItem(CLASS_PICK_KEY)) || {}; } catch { return {}; }
+}
 
 export default function Attendance() {
   const { currentUser, userData } = useAuth();
@@ -23,6 +33,8 @@ export default function Attendance() {
   const [loadingEntities, setLoadingEntities] = useState(true);
   const [reportDays, setReportDays] = useState({}); // { 'YYYY-MM-DD': { [id]: record } }
   const [loadingReport, setLoadingReport] = useState(false);
+  const classes = useReportClasses();
+  const [classPicks, setClassPicks] = useState(loadClassPicks);
 
   const isAdmin = userData?.isAdmin;
   const attPerms = userData?.permissions?.attendance || {};
@@ -140,6 +152,20 @@ export default function Attendance() {
   // day's marks would otherwise show (and count) until the new listener's first reply.
   const attendance = attendanceSnap.key === `${activeTab}|${selectedDate}` ? attendanceSnap.data : {};
 
+  // The class shown on a student tab ('' = everyone). A remembered class that has since
+  // been removed from the list falls back to everyone rather than an empty sheet.
+  const savedPick = activeTab === 'staff' ? '' : (classPicks[activeTab] || '');
+  const classFilter = savedPick === NO_CLASS || classes.includes(savedPick) ? savedPick : '';
+  const pickClass = (value) => {
+    const next = { ...classPicks, [activeTab]: value };
+    setClassPicks(next);
+    try { localStorage.setItem(CLASS_PICK_KEY, JSON.stringify(next)); } catch { /* private mode: just not remembered */ }
+  };
+  const classEntities = useMemo(
+    () => (activeTab === 'staff' ? entities : studentsInClass(entities, classFilter, classes)),
+    [entities, activeTab, classFilter, classes]
+  );
+
   const todayKey = localKey(new Date());
   // Day-level enrollment only applies to students; staff have no discontinuation.
   const enrolledOn = (entity, dayKey) =>
@@ -150,17 +176,17 @@ export default function Attendance() {
   // exit date (and any earlier absence between leaving and re-enrolling), not "hide them
   // everywhere".
   const roster = useMemo(() => {
-    if (activeTab === 'staff' || !selectedDate) return entities;
-    return entities.filter(e => enrolledOn(e, selectedDate));
+    if (activeTab === 'staff' || !selectedDate) return classEntities;
+    return classEntities.filter(e => enrolledOn(e, selectedDate));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, activeTab, selectedDate]);
+  }, [classEntities, activeTab, selectedDate]);
 
   // Per-entity totals, counting only days the entity was enrolled on: marks left behind
   // for dates after an exit (e.g. an exit recorded late, backdated) must not drag down,
   // or pad, their percentage.
   const reportRows = useMemo(() => {
     const dayKeys = Object.keys(reportDays);
-    return entities
+    return classEntities
       .map(e => {
         const r = { present: 0, absent: 0, late: 0, total: 0 };
         dayKeys.forEach(dk => {
@@ -177,7 +203,7 @@ export default function Attendance() {
       // then drop off; everyone on the rolls is always listed, even with nothing marked.
       .filter(row => row.total > 0 || enrolledOn(row.entity, todayKey));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, reportDays, activeTab, todayKey]);
+  }, [classEntities, reportDays, activeTab, todayKey]);
 
   // Where one person's mark for the selected day lives, or null when it can't be changed.
   const markRef = (entityId) => {
@@ -257,6 +283,12 @@ export default function Attendance() {
   };
 
   const stats = getStatusCounts();
+
+  const emptyMessage = !classFilter
+    ? 'No records found for this category.'
+    : classFilter === NO_CLASS
+      ? 'Every student here is in a class.'
+      : `No students in ${classFilter} yet. Set each student's class on their profile.`;
 
   if (!canViewStaff && !canViewStudents) {
     return (
@@ -364,7 +396,19 @@ export default function Attendance() {
           )}
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto md:justify-end">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto md:justify-end">
+          {activeTab !== 'staff' && (
+            <select
+              value={classFilter}
+              onChange={(e) => pickClass(e.target.value)}
+              aria-label="Class"
+              className="bg-brand-bg border border-brand-card-border rounded-md py-2 md:py-1.5 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary w-full sm:w-auto text-brand-text font-medium"
+            >
+              <option value="">All students</option>
+              {classes.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value={NO_CLASS}>No class</option>
+            </select>
+          )}
           <div className="flex bg-brand-primary/10 rounded-lg p-1 shrink-0">
             <button onClick={() => setMode('mark')} className={`px-3 py-2 md:py-1.5 rounded-md text-sm font-bold flex items-center gap-2 ${mode === 'mark' ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-primary hover:bg-brand-primary/20'}`}>
               <CheckSquare size={16} /> Mark
@@ -415,7 +459,7 @@ export default function Attendance() {
             {loadingEntities ? (
               <div className="py-12 flex justify-center"><Spinner /></div>
             ) : roster.length === 0 ? (
-              <div className="py-12 text-center text-brand-text-dim">No records found for this category.</div>
+              <div className="py-12 text-center text-brand-text-dim">{emptyMessage}</div>
             ) : (
               <>
                 {/* Desktop Table View */}
@@ -505,7 +549,7 @@ export default function Attendance() {
           {loadingReport || loadingEntities ? (
             <div className="py-12 flex justify-center"><Spinner /></div>
           ) : reportRows.length === 0 ? (
-            <div className="py-12 text-center text-brand-text-dim">No records found.</div>
+            <div className="py-12 text-center text-brand-text-dim">{classFilter ? emptyMessage : 'No records found.'}</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left text-brand-text-dim">

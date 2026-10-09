@@ -11,6 +11,7 @@ import { isDiscontinued, getDiscontinuationDate } from '../utils/reportUtils';
 import { calculateNakshatra, TAMIL_NATCHATRAMS, TAMIL_MONTHS } from '../utils/astrologyApi';
 import { phonesIn, hasPortalAccess } from '../../../functions/src/shared/phone.mjs';
 import StudentRemarks from './StudentRemarks';
+import { useReportClasses } from '../utils/useReportClasses';
 
 const setParentPortalAccess = httpsCallable(functions, 'setParentPortalAccess');
 
@@ -74,10 +75,13 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
   const [savingEnrollment, setSavingEnrollment] = useState(false);
   const [discontinueForm, setDiscontinueForm] = useState({ effectiveDate: '', reason: '', notes: '', waiveFinalMonth: false });
   
+  const reportClasses = useReportClasses();
+
   const [editForm, setEditForm] = useState({
     name: '',
     studentType: 'preschool',
     admissionForClass: '',
+    reportClass: '',
     dob: '',
     birthTime: '',
     birthCity: '',
@@ -142,6 +146,7 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
         name: student.name || '',
         studentType: student.studentType || 'preschool',
         admissionForClass: student.admissionForClass || '',
+        reportClass: student.reportClass || '',
         dob: student.dob || '',
         birthTime: student.birthTime || '',
         birthCity: student.birthCity || '',
@@ -225,6 +230,11 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
       setSaving(false);
     }
   };
+
+  // The class list, plus the student's own class if it has since been removed from it.
+  const classOptions = editForm.reportClass && !reportClasses.includes(editForm.reportClass)
+    ? [...reportClasses, editForm.reportClass]
+    : reportClasses;
 
   const studentLeft = isDiscontinued(student);
   const exitDate = getDiscontinuationDate(student);
@@ -503,7 +513,7 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-brand-text-dim uppercase block mb-1">Class / Grade</label>
+                  <label className="text-xs font-bold text-brand-text-dim uppercase block mb-1">Admitted For</label>
                   {editForm.studentType === 'preschool' ? (
                     <select
                       value={editForm.admissionForClass}
@@ -536,6 +546,18 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                     </select>
                   )}
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-bold text-brand-text-dim uppercase block mb-1">Class</label>
+                  <select
+                    value={editForm.reportClass}
+                    onChange={e => setEditForm({ ...editForm, reportClass: e.target.value })}
+                    className={inputClass}
+                  >
+                    <option value="">No class</option>
+                    {classOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <p className="text-xs text-brand-text-dim mt-1">Lets teachers mark attendance one class at a time. Staff only; parents don't see it.</p>
+                </div>
               </div>
             </div>
           ) : (
@@ -557,9 +579,14 @@ export default function StudentProfile({ studentId, studentType, onBack, canEdit
                 <span className="bg-black/5 dark:bg-white/5 text-brand-text-dim px-3 py-1 rounded-full text-xs font-mono">
                   UID: {student.id.slice(-8).toUpperCase()}
                 </span>
+                {student.reportClass && (
+                  <span className="bg-black/5 dark:bg-white/5 text-brand-text-dim px-3 py-1 rounded-full text-xs font-semibold">
+                    Class: {student.reportClass}
+                  </span>
+                )}
                 {student.admissionForClass && (
                   <span className="bg-black/5 dark:bg-white/5 text-brand-text-dim px-3 py-1 rounded-full text-xs font-semibold">
-                    Class: {student.admissionForClass}
+                    Admitted for: {student.admissionForClass}
                   </span>
                 )}
                 {student.appNumber && (

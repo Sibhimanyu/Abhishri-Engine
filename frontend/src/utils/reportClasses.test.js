@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classSlug, reportId, cleanClasses, compareReports, DEFAULT_CLASSES } from './reportClasses';
+import { classSlug, reportId, cleanClasses, compareReports, studentsInClass, NO_CLASS, DEFAULT_CLASSES } from './reportClasses';
 
 describe('reportId', () => {
   it('keeps the plain date for a report with no class', () => {
@@ -45,5 +45,29 @@ describe('compareReports', () => {
       '2026-10-05 Wonder Wings',
       '2026-10-04 Wonder Wings',
     ]);
+  });
+});
+
+describe('studentsInClass', () => {
+  const classes = ['Little Steps 1', 'Wonder Wings'];
+  const students = [
+    { id: 'a', reportClass: 'Little Steps 1' },
+    { id: 'b', reportClass: 'little steps 1' },
+    { id: 'c', reportClass: 'Wonder Wings' },
+    { id: 'd' },
+    { id: 'e', reportClass: 'Old Class' },
+  ];
+  const ids = list => list.map(s => s.id);
+
+  it('shows everyone when no class is picked', () => {
+    expect(ids(studentsInClass(students, '', classes))).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
+
+  it('shows one class, matching by id', () => {
+    expect(ids(studentsInClass(students, 'Little Steps 1', classes))).toEqual(['a', 'b']);
+  });
+
+  it('puts students in no class, or a removed one, under "no class"', () => {
+    expect(ids(studentsInClass(students, NO_CLASS, classes))).toEqual(['d', 'e']);
   });
 });

@@ -39,3 +39,25 @@ export function compareReports(a, b) {
   if (a.date !== b.date) return a.date < b.date ? 1 : -1;
   return String(a.className || '').localeCompare(String(b.className || ''));
 }
+
+// Students can be put in one of these classes too (students.reportClass, set on the
+// profile), so attendance can be marked one class at a time. Staff-only, like the report's
+// class: the parent portal never sends it. Not admissionForClass, the grade they were
+// admitted for, which stays a reference note.
+
+/** Attendance's "class" picker value for students in no class (or one since removed). */
+export const NO_CLASS = '__none__';
+
+/**
+ * The students in one class: '' for everyone, NO_CLASS for those in none of `classes`.
+ * Matched by id, so "little steps 1" still counts as Little Steps 1.
+ */
+export function studentsInClass(students, filter, classes) {
+  if (!filter) return students;
+  if (filter === NO_CLASS) {
+    const known = new Set(classes.map(classSlug));
+    return students.filter(s => !known.has(classSlug(s.reportClass)));
+  }
+  const slug = classSlug(filter);
+  return students.filter(s => classSlug(s.reportClass) === slug);
+}
