@@ -6,7 +6,7 @@ import { NOTIFICATIONS } from '../../../functions/src/shared/notifications.mjs';
  * The bell's entries, in display order, from what App.jsx has loaded. Each is
  * { key, look, title, text, path }.
  */
-export function bellEntries({ pendingLogins = 0, pendingApprovals, myOutcomes = [], unreadWhatsApp = 0, birthdays = [] }) {
+export function bellEntries({ pendingLogins = 0, pendingApprovals, myOutcomes = [], unreadWhatsApp = 0, unreadArattai = 0, birthdays = [] }) {
   const N = NOTIFICATIONS;
   const entries = [];
   if (pendingLogins > 0) {
@@ -26,6 +26,9 @@ export function bellEntries({ pendingLogins = 0, pendingApprovals, myOutcomes = 
   }));
   if (unreadWhatsApp > 0) {
     entries.push({ key: 'whatsapp', look: 'whatsappUnread', title: N.whatsappUnread.title, text: N.whatsappUnread.summary(unreadWhatsApp), path: N.whatsappUnread.path });
+  }
+  if (unreadArattai > 0) {
+    entries.push({ key: 'arattai', look: 'arattaiUnread', title: N.arattaiUnread.title, text: N.arattaiUnread.summary(unreadArattai), path: N.arattaiUnread.path });
   }
   birthdays.forEach(m => entries.push({
     key: `bday-${m.type}-${m.id}`, look: 'tamilBirthday', title: N.tamilBirthday.title, text: N.tamilBirthday.item(m), path: N.tamilBirthday.path(m.type),

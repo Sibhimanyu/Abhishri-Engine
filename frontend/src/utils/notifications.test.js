@@ -22,6 +22,7 @@ describe('notification list', () => {
     expect(NOTIFICATIONS.approvalPending.summary({ menus: 1, reports: 0 })).toBe('1 weekly menu is waiting for your approval.');
     expect(NOTIFICATIONS.approvalPending.summary({ menus: 2, reports: 1 })).toBe('2 weekly menus and 1 daily report are waiting for your approval.');
     expect(NOTIFICATIONS.whatsappUnread.summary(2)).toBe('You have 2 unread messages.');
+    expect(NOTIFICATIONS.arattaiUnread.summary(1)).toBe('You have 1 unread message.');
   });
 });
 

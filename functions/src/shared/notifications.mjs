@@ -54,6 +54,14 @@ export const NOTIFICATIONS = {
     path: '/whatsapp',
     summary: (count) => `You have ${plural(count, 'unread message')}.`,
   },
+  arattaiUnread: {
+    title: 'Arattai Livechat',
+    audience: 'Arattai users',
+    cliq: null,
+    cliqSkipReason: 'Unread counts change with every message, so posting them would flood the channel.',
+    path: '/whatsapp/arattai/chats',
+    summary: (count) => `You have ${plural(count, 'unread message')}.`,
+  },
 };
 
 // How long an approval stays in the teacher's bell after it's approved; a send-back stays

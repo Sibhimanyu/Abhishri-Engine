@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
 import { getDoc } from '../utils/firestoreRead';
 import { httpsCallable } from 'firebase/functions';
+import { Link } from 'react-router-dom';
 import { firestore, functions } from '../firebase';
 import { CheckCircle, AlertCircle, Save, Send, Loader2, Copy, KeyRound } from 'lucide-react';
 import { buttonFunctionCode, formFunctionCode, DEFAULT_BUTTON_FUNCTION, DEFAULT_FORM_FUNCTION } from '../utils/cliqDeluge';
@@ -182,6 +183,11 @@ export default function AdminCliqConfig() {
             <input type="checkbox" checked={config.enabled} onChange={set('enabled')} className="w-4 h-4 accent-brand-primary" />
             Send notifications to Cliq
           </label>
+          <p className="text-xs text-brand-text-dim -mt-3">
+            Moving to Arattai? Turn on staff notifications in{' '}
+            <Link to="/settings/arattai" className="text-brand-primary font-medium hover:underline">Settings › Arattai Config</Link>{' '}
+            first. Both can run at once, and its log shows whether each message reached both, so you can switch Cliq off once you're sure.
+          </p>
 
           <div className="border-t border-brand-card-border pt-6 space-y-6">
             <div>

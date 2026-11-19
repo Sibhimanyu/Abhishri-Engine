@@ -33,6 +33,29 @@ const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
 const MenuAndReport = lazy(() => import('./components/MenuAndReport'));
 const AuthAction = lazy(() => import('./components/AuthAction'));
 
+// Sums unreadCount across a channel's conversations in RTDB. Returns the unsubscribe.
+function watchUnread(path, setCount) {
+  let unsubscribe = () => {};
+  let stopped = false;
+  import('firebase/database').then(({ ref, onValue }) => {
+    if (stopped) return;
+    const dbRef = ref(rtdb, path);
+    unsubscribe = onValue(dbRef, (snapshot) => {
+      let totalUnread = 0;
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        Object.values(data).forEach(convo => {
+          if (convo.metadata?.unreadCount > 0) {
+            totalUnread += convo.metadata.unreadCount;
+          }
+        });
+      }
+      setCount(totalUnread);
+    });
+  });
+  return () => { stopped = true; unsubscribe(); };
+}
+
 const RouteLoader = CenteredSpinner;
 
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
@@ -57,6 +80,7 @@ function App() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [pendingLoginsCount, setPendingLoginsCount] = useState(0);
   const [unreadWhatsAppCount, setUnreadWhatsAppCount] = useState(0);
+  const [unreadArattaiCount, setUnreadArattaiCount] = useState(0);
   const [tamilBirthdayMembers, setTamilBirthdayMembers] = useState([]);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const { currentUser, userData, loading } = useAuth();
@@ -102,6 +126,11 @@ function App() {
     userData?.permissions?.whatsapp_sender?.broadcast || 
     userData?.permissions?.whatsapp_sender?.manage;
 
+  const hasArattaiAccess = isMaster ||
+    userData?.permissions?.arattai_sender?.access ||
+    userData?.permissions?.arattai_sender?.broadcast ||
+    userData?.permissions?.arattai_sender?.manage;
+
   React.useEffect(() => {
     if (!userData?.isAdmin) return;
     
@@ -135,28 +164,16 @@ function App() {
     return () => unsubscribe();
   }, [userData?.isAdmin]);
 
-  // WhatsApp Listener
+  // Unread chat listeners, one per channel the user can see
   React.useEffect(() => {
     if (!hasWaAccess) return;
-
-    let unsubscribe = () => {};
-    import('firebase/database').then(({ ref, onValue }) => {
-      const dbRef = ref(rtdb, 'whatsapp_conversations');
-      unsubscribe = onValue(dbRef, (snapshot) => {
-        let totalUnread = 0;
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          Object.values(data).forEach(convo => {
-            if (convo.metadata?.unreadCount > 0) {
-              totalUnread += convo.metadata.unreadCount;
-            }
-          });
-        }
-        setUnreadWhatsAppCount(totalUnread);
-      });
-    });
-    return () => unsubscribe();
+    return watchUnread('whatsapp_conversations', setUnreadWhatsAppCount);
   }, [hasWaAccess]);
+
+  React.useEffect(() => {
+    if (!hasArattaiAccess) return;
+    return watchUnread('arattai_conversations', setUnreadArattaiCount);
+  }, [hasArattaiAccess]);
 
   // Tamil Birthday Fetcher
   React.useEffect(() => {
@@ -213,7 +230,7 @@ function App() {
     ...(hasStaffAccess ? [{ id: 'staff', label: 'Staff Directory', icon: Briefcase }] : []),
     ...(hasAttendanceAccess ? [{ id: 'attendance', label: 'Attendance', icon: ClipboardCheck }] : []),
     ...(hasSmartCampusAccess ? [{ id: 'smart-campus', label: 'Smart Campus', icon: Cpu }] : []),
-    ...(hasWaAccess ? [{ id: 'whatsapp', label: 'Communications', icon: MessageSquare }] : []),
+    ...(hasWaAccess || hasArattaiAccess ? [{ id: 'whatsapp', label: 'Communications', icon: MessageSquare }] : []),
     ...(hasFeeCollectionAccess ? [{ id: 'fee-collection', label: 'Fee Collection', icon: CreditCard }] : []),
     ...(hasAccountingAccess ? [{ id: 'accounting', label: 'Accounting', icon: Landmark }] : []),
     ...(hasReportsAccess ? [{ id: 'reports', label: 'Reports', icon: BarChart3 }] : []),
@@ -487,6 +504,7 @@ function App() {
               pendingApprovals,
               myOutcomes,
               unreadWhatsApp: unreadWhatsAppCount,
+              unreadArattai: unreadArattaiCount,
               birthdays: tamilBirthdayMembers,
             })} />
             

@@ -3,10 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ref, onValue, push, update, set } from 'firebase/database';
 import { rtdb } from '../firebase';
 import { httpsCallable, getFunctions } from 'firebase/functions';
-import { Search, Send, ArrowLeft, Clock, Check, CheckCheck, MessageSquare } from 'lucide-react';
+import { Search, Send, ArrowLeft, Clock, Check, CheckCheck, MessageSquare, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { CHANNELS } from '../utils/messagingChannels';
 
-export default function WhatsAppChats() {
+export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
   const { currentUser, userData } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
@@ -20,7 +21,7 @@ export default function WhatsAppChats() {
 
   // Fetch Conversations from RTDB
   useEffect(() => {
-    const convosRef = ref(rtdb, 'whatsapp_conversations');
+    const convosRef = ref(rtdb, channel.conversations);
     const unsub = onValue(convosRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
@@ -34,24 +35,24 @@ export default function WhatsAppChats() {
       }
       setInitialLoading(false);
     }, (error) => {
-      console.error("WhatsAppChats RTDB Error:", error);
+      console.error(`${channel.label} chats RTDB error:`, error);
       setInitialLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [channel.conversations, channel.label]);
 
   // Fetch Messages for Active Chat
   useEffect(() => {
     if (!activeChat) return;
     
     const safeKey = activeChat.phoneNumber.replace(/[.#$/[\]]/g, '_');
-    const msgsRef = ref(rtdb, `whatsapp_conversations/${safeKey}/messages`);
+    const msgsRef = ref(rtdb, `${channel.conversations}/${safeKey}/messages`);
     
     setMessagesLoading(true);
     setMessages([]); // clear old messages while loading
 
     // Reset unread count
-    update(ref(rtdb, `whatsapp_conversations/${safeKey}/metadata`), { unreadCount: 0 });
+    update(ref(rtdb, `${channel.conversations}/${safeKey}/metadata`), { unreadCount: 0 });
 
     const unsub = onValue(msgsRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -66,12 +67,12 @@ export default function WhatsAppChats() {
       }
       setMessagesLoading(false);
     }, (error) => {
-      console.error("WhatsAppChats messages RTDB Error:", error);
+      console.error(`${channel.label} messages RTDB error:`, error);
       setMessagesLoading(false);
     });
 
     return () => unsub();
-  }, [activeChat]);
+  }, [activeChat, channel.conversations, channel.label]);
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -83,10 +84,10 @@ export default function WhatsAppChats() {
     
     const safeKey = activeChat.phoneNumber.replace(/[.#$/[\]]/g, '_');
     const functions = getFunctions();
-    const sendWhatsAppMessage = httpsCallable(functions, 'sendWhatsAppMessage');
+    const sendMessage = httpsCallable(functions, channel.fn.send);
 
     try {
-      const msgRef = push(ref(rtdb, `whatsapp_conversations/${safeKey}/messages`));
+      const msgRef = push(ref(rtdb, `${channel.conversations}/${safeKey}/messages`));
       const ts = Date.now();
       await set(msgRef, {
         message: text,
@@ -97,7 +98,7 @@ export default function WhatsAppChats() {
         from: 'system' // placeholder
       });
 
-      await update(ref(rtdb, `whatsapp_conversations/${safeKey}/metadata`), {
+      await update(ref(rtdb, `${channel.conversations}/${safeKey}/metadata`), {
         lastMessage: text,
         timestamp: ts,
         phoneNumber: activeChat.phoneNumber,
@@ -105,10 +106,14 @@ export default function WhatsAppChats() {
       });
 
       // Call Cloud Function
-      const result = await sendWhatsAppMessage({ to: activeChat.phoneNumber, text });
-      const realMessageId = result.data?.messages?.[0]?.id || result.data?.message_id || result.data?.id || 'simulated';
-
-      await update(msgRef, { status: 'sent', messageId: realMessageId });
+      if (channel.passesMessageKey) {
+        // The server records the result (sent, or failed with the reason) on this message.
+        await sendMessage({ to: activeChat.phoneNumber, text, messageKey: msgRef.key });
+      } else {
+        const result = await sendMessage({ to: activeChat.phoneNumber, text });
+        const realMessageId = result.data?.messages?.[0]?.id || result.data?.message_id || result.data?.id || 'simulated';
+        await update(msgRef, { status: 'sent', messageId: realMessageId });
+      }
 
     } catch (err) {
       console.error("Send failed:", err);
@@ -201,7 +206,7 @@ export default function WhatsAppChats() {
               </div>
               <div>
                 <h3 className="font-bold text-brand-text leading-tight">{activeChat.displayName || activeChat.phoneNumber}</h3>
-                <p className="text-xs text-brand-text-dim">{activeChat.phoneNumber}</p>
+                <p className="text-xs text-brand-text-dim">{/^u\d+$/.test(activeChat.phoneNumber) ? 'Number not shared' : activeChat.phoneNumber}</p>
               </div>
             </div>
 
@@ -251,8 +256,11 @@ export default function WhatsAppChats() {
                       <div className="absolute bottom-1 right-2 flex items-center gap-1">
                         <span className="text-[10px] text-gray-500 dark:text-gray-400">{timeStr}</span>
                         {!isInbound && (
-                          <span className={`text-[12px] ${msg.status === 'read' ? 'text-blue-500' : 'text-gray-400'}`}>
-                            {msg.status === 'processing' ? <Clock size={12}/> : msg.status === 'sent' ? <Check size={12}/> : <CheckCheck size={12}/>}
+                          <span
+                            className={`text-[12px] ${msg.status === 'failed' ? 'text-red-500' : msg.status === 'read' ? 'text-blue-500' : 'text-gray-400'}`}
+                            title={msg.status === 'failed' ? `Not sent${msg.error ? `: ${msg.error}` : ''}` : undefined}
+                          >
+                            {msg.status === 'failed' ? <AlertCircle size={12}/> : msg.status === 'processing' ? <Clock size={12}/> : msg.status === 'sent' ? <Check size={12}/> : <CheckCheck size={12}/>}
                           </span>
                         )}
                       </div>

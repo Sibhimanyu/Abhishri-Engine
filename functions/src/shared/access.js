@@ -18,6 +18,7 @@ const FALLBACK = (role) => ({
     exp_own: role !== "teacher", exp_all: false, wallet_view_own: role !== "teacher", wallet_edit_own: false,
   },
   whatsapp_sender: { access: false, broadcast: false, manage: false },
+  arattai_sender: { access: false, broadcast: false, manage: false },
   smart_campus: { view: role === "pro", control: role === "pro", scenes: false, config: false },
 });
 

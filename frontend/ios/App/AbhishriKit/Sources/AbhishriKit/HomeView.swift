@@ -165,6 +165,9 @@ struct HomeView: View {
         if perms.can("whatsapp_sender", "access") {
             out.append(QuickAction(title: "WhatsApp", symbol: "message.fill") { router.openWeb("/whatsapp") })
         }
+        if perms.can("arattai_sender", "access") {
+            out.append(QuickAction(title: "Arattai", symbol: "bubble.left.and.bubble.right.fill") { router.openWeb("/whatsapp/arattai") })
+        }
         return out
     }
 

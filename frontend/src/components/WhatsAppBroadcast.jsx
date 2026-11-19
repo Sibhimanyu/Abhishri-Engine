@@ -8,8 +8,9 @@ import { firestore, storage, rtdb } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Radio, Users, LayoutTemplate, Shield, ShieldCheck, Send, FlaskConical, Eye, UploadCloud, Image as ImageIcon, X } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
+import { CHANNELS } from '../utils/messagingChannels';
 
-export default function WhatsAppBroadcast() {
+export default function WhatsAppBroadcast({ channel = CHANNELS.whatsapp }) {
   const { userData } = useAuth();
   const [lists, setLists] = useState({});
   const [templates, setTemplates] = useState([]);
@@ -35,31 +36,32 @@ export default function WhatsAppBroadcast() {
 
   // Fetch Lists
   useEffect(() => {
-    const unsub = onSnapshot(collection(firestore, 'whatsapp_lists'), (snap) => {
+    const unsub = onSnapshot(collection(firestore, channel.lists), (snap) => {
       const listsData = {};
       snap.forEach(doc => listsData[doc.id] = { id: doc.id, ...doc.data() });
       setLists(listsData);
     });
     return () => unsub();
-  }, []);
+  }, [channel.lists]);
 
   // Fetch Templates
   useEffect(() => {
-    const unsub = onSnapshot(collection(firestore, 'configs', 'whatsapp_main', 'templates'), (snap) => {
+    const unsub = onSnapshot(collection(firestore, 'configs', channel.configDoc, 'templates'), (snap) => {
       const tmpls = [];
       snap.forEach(doc => tmpls.push({ id: doc.id, ...doc.data() }));
       setTemplates(tmpls);
     });
     return () => unsub();
-  }, []);
+  }, [channel.configDoc]);
 
   const activeTemplateObj = templates.find(t => (t.template_name || t.name) === selectedTemplate);
-  const needsImageHeader = activeTemplateObj?.components?.some(c => c.type === 'HEADER' && c.format === 'IMAGE');
+  // Header images are only wired up for channels with a storage folder for them.
+  const needsImageHeader = !!channel.headersFolder && activeTemplateObj?.components?.some(c => c.type === 'HEADER' && c.format === 'IMAGE');
 
   useEffect(() => {
     if (needsImageHeader) {
       setLoadingHeaders(true);
-      const listRef = storageRef(storage, 'whatsapp_headers');
+      const listRef = storageRef(storage, channel.headersFolder);
       listAll(listRef).then(async (res) => {
         const urls = await Promise.all(res.items.map(async (itemRef) => {
           const url = await getDownloadURL(itemRef);
@@ -72,7 +74,7 @@ export default function WhatsAppBroadcast() {
         setLoadingHeaders(false);
       });
     }
-  }, [needsImageHeader]);
+  }, [needsImageHeader, channel.headersFolder]);
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -90,7 +92,7 @@ export default function WhatsAppBroadcast() {
           console.warn('Compression failed, using original', e);
         }
       }
-      const sRef = storageRef(storage, `whatsapp_headers/${Date.now()}_${fileToUpload.name}`);
+      const sRef = storageRef(storage, `${channel.headersFolder}/${Date.now()}_${fileToUpload.name}`);
       await uploadBytes(sRef, fileToUpload, { cacheControl: 'public,max-age=31536000' });
       const url = await getDownloadURL(sRef);
       setHeaderImageUrl(url);
@@ -122,7 +124,7 @@ export default function WhatsAppBroadcast() {
         };
         snap.forEach(processStudent);
       } else {
-        const membersSnap = await getDocs(collection(firestore, 'whatsapp_lists', listId, 'members'));
+        const membersSnap = await getDocs(collection(firestore, channel.lists, listId, 'members'));
         membersSnap.forEach(doc => {
           const rawPhone = doc.data().phone ? String(doc.data().phone).replace(/[^\d]/g, "").slice(-10) : "";
           if (rawPhone.length === 10) tempRecipients.push(rawPhone);
@@ -133,7 +135,7 @@ export default function WhatsAppBroadcast() {
 
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
-      const historySnap = await getDocs(collection(firestore, 'whatsapp_history'));
+      const historySnap = await getDocs(collection(firestore, channel.history));
       const matchingBroadcastIds = [];
       historySnap.forEach(doc => {
         const data = doc.data();
@@ -152,7 +154,7 @@ export default function WhatsAppBroadcast() {
       const normalize = (phone) => String(phone || '').replace(/\D/g, '').slice(-10);
 
       for (const bId of matchingBroadcastIds) {
-        const logsSnap = await rtdbGet(rtdbRef(rtdb, `whatsapp_broadcast_logs/${bId}`));
+        const logsSnap = await rtdbGet(rtdbRef(rtdb, `${channel.broadcastLogs}/${bId}`));
         const logs = logsSnap.val() || {};
         Object.values(logs).forEach(log => {
           const status = (log.status || '').toLowerCase();
@@ -207,7 +209,7 @@ export default function WhatsAppBroadcast() {
       } else {
         listName = listObj?.name || 'Unknown List';
         
-        const membersRef = collection(firestore, 'whatsapp_lists', listId, 'members');
+        const membersRef = collection(firestore, channel.lists, listId, 'members');
         const membersSnap = await getDocs(membersRef);
         
         membersSnap.forEach(doc => {
@@ -243,8 +245,9 @@ export default function WhatsAppBroadcast() {
       
       const activeTemplateObj = templates.find(t => (t.template_name || t.name) === selectedTemplate);
       const category = activeTemplateObj?.category || 'MARKETING';
-      const ratePerMsg = category === 'UTILITY' ? 0.25 : 0.95;
-      const estimatedCost = recipients.length * ratePerMsg;
+      // null when the channel's pricing isn't known.
+      const ratePerMsg = channel.rates ? (channel.rates[category] ?? channel.rates.MARKETING) : null;
+      const estimatedCost = ratePerMsg === null ? null : recipients.length * ratePerMsg;
 
       setPreparedData({
         listName,
@@ -269,12 +272,12 @@ export default function WhatsAppBroadcast() {
     setLoading(true);
 
     const functions = getFunctions();
-    const sendBroadcast = httpsCallable(functions, 'sendWhatsAppBroadcast');
+    const sendBroadcast = httpsCallable(functions, channel.fn.broadcast);
     
     try {
       const { listName, recipients, headerImageUrl } = preparedData;
       
-      const broadcastRef = doc(collection(firestore, 'whatsapp_history'));
+      const broadcastRef = doc(collection(firestore, channel.history));
       const broadcastId = broadcastRef.id;
 
       await setDoc(broadcastRef, {
@@ -314,7 +317,7 @@ export default function WhatsAppBroadcast() {
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to launch broadcast.');
+      alert(`Failed to launch broadcast.${err?.message ? `\n\n${err.message}` : ''}`);
     }
     setLoading(false);
   };
@@ -396,7 +399,7 @@ export default function WhatsAppBroadcast() {
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-brand-text mb-1">Select from Storage (whatsapp_headers/)</label>
+                  <label className="block text-xs font-bold text-brand-text mb-1">Select from Storage ({channel.headersFolder}/)</label>
                   <select
                     className="w-full bg-brand-bg border border-brand-card-border rounded-lg py-2 px-3 focus:border-brand-primary outline-none text-sm"
                     value={headerImageUrl}
@@ -551,12 +554,12 @@ export default function WhatsAppBroadcast() {
               )}
               <div className="flex justify-between border-b border-brand-card-border pb-2">
                 <span className="text-brand-text-dim text-sm">Estimated Cost</span>
-                <span className="text-brand-secondary font-bold text-sm">~₹{preparedData.estimatedCost.toFixed(2)}</span>
+                <span className="text-brand-secondary font-bold text-sm">{preparedData.estimatedCost === null ? 'Not announced' : `~₹${preparedData.estimatedCost.toFixed(2)}`}</span>
               </div>
             </div>
             
             <p className="text-xs text-brand-text-dim mb-6 text-center italic">
-              Note: Final billing is determined by Fast2SMS and may vary based on open 24-hour conversation windows.
+              Note: {channel.billingNote}
             </p>
 
             <div className="flex gap-3">

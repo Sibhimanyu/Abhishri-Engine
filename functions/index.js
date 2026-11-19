@@ -30,6 +30,22 @@ exports.checkWhatsAppWallet = whatsappSend.checkWhatsAppWallet;
 exports.whatsappWebhook = whatsappWebhook.whatsappWebhook;
 exports.pruneWhatsAppDebugLog = whatsappWebhook.pruneWhatsAppDebugLog;
 
+// --- Arattai Module (sandbox until the Arattai Business API is published) ---
+const arattaiSend = require("./src/arattai/send");
+const arattaiWebhook = require("./src/arattai/webhook");
+
+exports.checkArattaiAccount = arattaiSend.checkArattaiAccount;
+exports.syncArattaiTemplates = arattaiSend.syncArattaiTemplates;
+exports.sendArattaiMessage = arattaiSend.sendArattaiMessage;
+exports.sendArattaiBroadcast = arattaiSend.sendArattaiBroadcast;
+exports.simulateArattaiInbound = arattaiSend.simulateArattaiInbound;
+exports.arattaiWebhook = arattaiWebhook.arattaiWebhook;
+exports.pruneArattaiDebugLog = arattaiWebhook.pruneArattaiDebugLog;
+exports.checkArattaiNotify = require("./src/arattai/notify").checkArattaiNotify;
+
+// --- Staff notifications (Cliq and/or Arattai; see src/notify/dispatch.js) ---
+exports.pruneNotificationLog = require("./src/notify/dispatch").pruneNotificationLog;
+
 // --- Fees & Accounting Module ---
 const feeTriggers = require("./src/fees/triggers");
 exports.syncStudentFeeTotals = feeTriggers.syncStudentFeeTotals;

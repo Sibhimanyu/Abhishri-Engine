@@ -27,6 +27,7 @@ function defaultPermissions(role) {
       exp_own: !isTeach, exp_all: false, wallet_view_own: !isTeach, wallet_edit_own: false
     },
     whatsapp_sender: { access: false, broadcast: false, manage: false },
+    arattai_sender: { access: false, broadcast: false, manage: false },
     smart_campus: { view: isPro, control: isPro, scenes: false, config: false }
   };
 }

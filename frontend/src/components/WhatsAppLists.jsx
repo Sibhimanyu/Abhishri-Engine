@@ -4,8 +4,9 @@ import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Users, Plus, Search, Tag, Loader, ChevronRight } from 'lucide-react';
 import WhatsAppListDetail from './WhatsAppListDetail';
+import { CHANNELS } from '../utils/messagingChannels';
 
-export default function WhatsAppLists() {
+export default function WhatsAppLists({ channel = CHANNELS.whatsapp }) {
   const { userData } = useAuth();
   const [lists, setLists] = useState([]);
   const [search, setSearch] = useState('');
@@ -20,7 +21,7 @@ export default function WhatsAppLists() {
   const [selectedList, setSelectedList] = useState(null);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(firestore, 'whatsapp_lists'), (snap) => {
+    const unsub = onSnapshot(collection(firestore, channel.lists), (snap) => {
       const data = [];
       let hasDynamic = false;
       snap.forEach(doc => {
@@ -30,7 +31,7 @@ export default function WhatsAppLists() {
       setLists(data);
 
       if (!hasDynamic && !snap.metadata.hasPendingWrites) {
-        setDoc(doc(firestore, 'whatsapp_lists', 'dynamic_all_parents'), {
+        setDoc(doc(firestore, channel.lists, 'dynamic_all_parents'), {
           name: 'Dynamic: All Parents Directory',
           category: 'MARKETING',
           isDynamic: true,
@@ -41,7 +42,7 @@ export default function WhatsAppLists() {
       }
     });
     return () => unsub();
-  }, []);
+  }, [channel.lists]);
 
 
 
@@ -56,7 +57,7 @@ export default function WhatsAppLists() {
     setSaving(true);
     try {
       const id = Date.now().toString();
-      await setDoc(doc(firestore, 'whatsapp_lists', id), {
+      await setDoc(doc(firestore, channel.lists, id), {
         name: listName,
         category: listCategory,
         count: 0,
@@ -80,6 +81,7 @@ export default function WhatsAppLists() {
   if (selectedList) {
     return (
       <WhatsAppListDetail 
+        channel={channel}
         list={selectedList} 
         onBack={() => setSelectedList(null)} 
         onListDeleted={() => setSelectedList(null)}

@@ -12,6 +12,7 @@ const LOOK = {
   approved: { icon: CheckCircle, iconClass: 'text-green-500', titleClass: 'text-green-600 dark:text-green-400' },
   returned: { icon: RotateCcw, iconClass: 'text-amber-500', titleClass: 'text-amber-600 dark:text-amber-400' },
   whatsappUnread: { icon: MessageCircle, iconClass: 'text-green-500', titleClass: 'text-green-600 dark:text-green-400' },
+  arattaiUnread: { icon: MessageCircle, iconClass: 'text-sky-500', titleClass: 'text-sky-600 dark:text-sky-400' },
   tamilBirthday: { icon: Cake, iconClass: 'text-pink-500', titleClass: 'text-pink-600 dark:text-pink-400' },
 };
 

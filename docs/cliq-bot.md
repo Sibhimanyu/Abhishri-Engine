@@ -12,6 +12,8 @@ The app posts to Zoho Cliq whenever something is waiting on someone. Cliq and th
 
 To add a notification, add it to `notifications.mjs` first, then show it in `frontend/src/utils/bellEntries.js` and send it from `functions/src/cliq/triggers.js`. `frontend/src/utils/notifications.test.js` checks that the two say the same thing.
 
+The same notifications can also go to **Arattai**, alongside Cliq or instead of it. Every send goes through `functions/src/notify/dispatch.js` to each channel that's switched on, and is recorded in `notification_log`. See [arattai.md](arattai.md#staff-notifications-moving-off-cliq).
+
 Each message has a button that opens the right screen in the app. Once the two Cliq functions below are set up, requests also get **Approve** and **Send back** buttons, so admins can decide without leaving Cliq. Send back asks for a note. Every decision, in the app or in Cliq, is noted in the channel and DMed to the teacher.
 
 ## Setup (once, in Cliq)

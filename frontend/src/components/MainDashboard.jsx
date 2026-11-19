@@ -5,6 +5,7 @@ import { firestore, rtdb } from '../firebase';
 import { classifyIncomeTx, localKey, isOnRolls } from '../utils/reportUtils';
 import { SkeletonBar } from './AppSkeleton';
 import { useAuth } from '../context/AuthContext';
+import { communicationsPath } from '../utils/messagingChannels';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Users, CreditCard, ClipboardCheck, Briefcase, 
@@ -53,7 +54,7 @@ export default function MainDashboard() {
   const showQuickAddStudent = isMaster || perms.student_directory?.manage;
   const showQuickMarkRoster = isMaster || perms.attendance?.mark;
   const showQuickLogExpense = isMaster || perms.fees_accounting?.exp_own || perms.fees_accounting?.exp_all;
-  const showQuickComms = isMaster || perms.whatsapp_sender?.access;
+  const showQuickComms = isMaster || perms.whatsapp_sender?.access || perms.arattai_sender?.access;
   const showSmartCampusStatus = isMaster || perms.smart_campus?.view;
   
   // Dynamic Stats
@@ -506,7 +507,7 @@ export default function MainDashboard() {
 
               {showQuickComms && (
                 <button 
-                  onClick={() => navigate('/whatsapp')}
+                  onClick={() => navigate(communicationsPath(userData))}
                   className="flex flex-col items-center justify-center p-4 border border-brand-card-border hover:border-purple-500/40 hover:bg-purple-500/5 rounded-xl transition-all group"
                 >
                   <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 mb-2 group-hover:scale-110 transition-transform"><MessageSquare size={18} /></div>

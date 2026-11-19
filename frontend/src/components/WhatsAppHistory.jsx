@@ -3,8 +3,9 @@ import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestor
 import { ref, onValue } from 'firebase/database';
 import { firestore, rtdb } from '../firebase';
 import { History, CheckCircle2, CheckCheck, XCircle, Clock, ArrowLeft, Loader, Search } from 'lucide-react';
+import { CHANNELS } from '../utils/messagingChannels';
 
-function BroadcastDetailView({ log, onBack }) {
+function BroadcastDetailView({ channel, log, onBack }) {
   const [recipients, setRecipients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,12 +27,12 @@ function BroadcastDetailView({ log, onBack }) {
   useEffect(() => {
     if (log?.template) {
       import('firebase/firestore').then(({ doc, getDoc }) => {
-        getDoc(doc(firestore, 'configs', 'whatsapp_main', 'templates', log.template)).then(snap => {
+        getDoc(doc(firestore, 'configs', channel.configDoc, 'templates', log.template)).then(snap => {
           if (snap.exists()) setTemplateCategory(snap.data().category);
         }).catch(e => console.warn("Failed to fetch template for cost estimation:", e));
       });
     }
-  }, [log]);
+  }, [log, channel.configDoc]);
 
   useEffect(() => {
     if (!log?.broadcastId) {
@@ -39,7 +40,7 @@ function BroadcastDetailView({ log, onBack }) {
       return;
     }
 
-    const logsRef = ref(rtdb, `whatsapp_broadcast_logs/${log.broadcastId}`);
+    const logsRef = ref(rtdb, `${channel.broadcastLogs}/${log.broadcastId}`);
     const unsubscribe = onValue(logsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -71,7 +72,7 @@ function BroadcastDetailView({ log, onBack }) {
         ) {
           lastSyncedRef.current = { sentCount: sent, deliveredCount: delivered, readCount: read, failedCount: failed, recipientsCount: total };
           import('firebase/firestore').then(({ doc, updateDoc }) => {
-            const docRef = doc(firestore, 'whatsapp_history', log.id);
+            const docRef = doc(firestore, channel.history, log.id);
             updateDoc(docRef, {
               sentCount: sent,
               deliveredCount: delivered,
@@ -95,7 +96,7 @@ function BroadcastDetailView({ log, onBack }) {
     });
 
     return () => unsubscribe();
-  }, [log]);
+  }, [log, channel.broadcastLogs, channel.history]);
 
   return (
     <div className="flex h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm flex-col">
@@ -133,8 +134,9 @@ function BroadcastDetailView({ log, onBack }) {
               });
               const totalSent = sent + delivered + read;
               
-              const ratePerMsg = templateCategory === 'UTILITY' ? 0.25 : 0.95;
-              const estimatedCost = (log.processedNumbersCount || recipients.length) * ratePerMsg;
+              // No estimate for a channel whose pricing isn't known.
+              const ratePerMsg = channel.rates ? (channel.rates[templateCategory] ?? channel.rates.MARKETING) : null;
+              const estimatedCost = ratePerMsg === null ? null : (log.processedNumbersCount || recipients.length) * ratePerMsg;
               
               const costDisplay = log.actualCost !== undefined ? log.actualCost : estimatedCost;
               const costLabel = log.actualCost !== undefined ? "COST" : "EST. COST";
@@ -159,7 +161,7 @@ function BroadcastDetailView({ log, onBack }) {
                   </div>
                   <div className="bg-brand-secondary/5 rounded-lg p-4 border border-brand-secondary/20">
                     <div className="text-xs text-brand-secondary mb-1 font-bold">{costLabel}</div>
-                    <div className="text-2xl font-bold text-brand-secondary">₹{costDisplay.toFixed(2)}</div>
+                    <div className="text-2xl font-bold text-brand-secondary">{costDisplay === null ? '—' : `₹${costDisplay.toFixed(2)}`}</div>
                   </div>
                 </div>
               );
@@ -242,13 +244,13 @@ function BroadcastDetailView({ log, onBack }) {
   );
 }
 
-export default function WhatsAppHistory() {
+export default function WhatsAppHistory({ channel = CHANNELS.whatsapp }) {
   const [historyLogs, setHistoryLogs] = useState([]);
   const [selectedLog, setSelectedLog] = useState(null);
 
   useEffect(() => {
     const q = query(
-      collection(firestore, 'whatsapp_history'),
+      collection(firestore, channel.history),
       orderBy('timestamp', 'desc'),
       limit(50)
     );
@@ -258,10 +260,10 @@ export default function WhatsAppHistory() {
       setHistoryLogs(logs);
     });
     return () => unsub();
-  }, []);
+  }, [channel.history]);
 
   if (selectedLog) {
-    return <BroadcastDetailView log={selectedLog} onBack={() => setSelectedLog(null)} />;
+    return <BroadcastDetailView channel={channel} log={selectedLog} onBack={() => setSelectedLog(null)} />;
   }
 
   return (

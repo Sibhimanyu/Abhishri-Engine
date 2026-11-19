@@ -99,6 +99,7 @@ service cloud.firestore {
         'attendance': {'view': true, 'mark': isTeach || isPro, 'edit': isPro},
         'fees_accounting': {'view': false, 'view_dashboard': false, 'config': false, 'ledger': false, 'trans_add': false, 'trans_delete': false, 'exp_own': !isTeach, 'exp_all': false, 'wallet_view_own': !isTeach, 'wallet_edit_own': false},
         'whatsapp_sender': {'access': false, 'broadcast': false, 'manage': false},
+        'arattai_sender': {'access': false, 'broadcast': false, 'manage': false},
         'smart_campus': {'view': isPro, 'control': isPro, 'scenes': false, 'config': false}
       }.get(module, {}).get(action, false) == true;
     }
@@ -175,12 +176,20 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         configId == 'whatsapp_main'
           ? (isAdmin() || getPerm('whatsapp_sender', 'manage'))
+          : configId == 'arattai_main'
+            ? (isAdmin() || getPerm('arattai_sender', 'manage'))
           : configId == 'daily_report'
             ? (isAdmin() || isInternalStaff())
             : isAdmin()
       );
-      allow write: if isAdmin() || (
+      allow write: if (isAdmin() || (
         configId == 'whatsapp_main' && getPerm('whatsapp_sender', 'manage')
+      ) || (
+        configId == 'arattai_main' && getPerm('arattai_sender', 'manage')
+      )) && (
+        // Arattai's provider switch: anything but these two would silently mean sandbox.
+        configId != 'arattai_main' || request.resource == null ||
+        request.resource.data.get('mode', 'sandbox') in ['sandbox', 'live']
       );
     }
     
@@ -451,6 +460,43 @@ service cloud.firestore {
     match /configs/whatsapp_main/templates/{templateId} {
       allow read: if isAuthenticated() && (isAdmin() || getPerm('whatsapp_sender', 'access') || getPerm('whatsapp_sender', 'manage') || getPerm('whatsapp_sender', 'broadcast'));
       allow write: if isAdmin() || getPerm('whatsapp_sender', 'manage');
+    }
+
+    // --- Arattai messaging (functions/src/arattai) ---
+    // access = live chats, broadcast = send broadcasts, manage = lists, history, settings.
+    function arattaiPerm(action) {
+      return isAuthenticated() && (isAdmin() || getPerm('arattai_sender', action));
+    }
+
+    // Written only by syncArattaiTemplates (Admin SDK).
+    match /configs/arattai_main/templates/{templateId} {
+      allow read: if arattaiPerm('access') || arattaiPerm('broadcast') || arattaiPerm('manage');
+      allow write: if false;
+    }
+
+    match /arattai_lists/{listId} {
+      allow read: if arattaiPerm('broadcast') || arattaiPerm('manage');
+      allow write: if arattaiPerm('manage');
+      match /members/{memberId} {
+        allow read: if arattaiPerm('broadcast') || arattaiPerm('manage');
+        allow write: if arattaiPerm('manage');
+      }
+    }
+
+    match /arattai_history/{broadcastId} {
+      allow read: if arattaiPerm('broadcast') || arattaiPerm('manage');
+      // dispatchStarted is the server's claim that stops a broadcast being sent twice,
+      // so a client may never set it (or pre-stop a broadcast) when creating one.
+      allow create: if arattaiPerm('broadcast') &&
+        request.resource.data.status == 'dispatching' &&
+        !request.resource.data.keys().hasAny(['dispatchStarted', 'dispatchStartedAt', 'stopRequested']);
+      // The History screen re-syncs counts from the delivery logs and can ask to stop.
+      allow update: if (arattaiPerm('broadcast') || arattaiPerm('manage')) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'sentCount', 'deliveredCount', 'readCount', 'failedCount', 'excludedCount',
+          'processingCount', 'queuedCount', 'processedNumbersCount', 'recipientsCount', 'stopRequested'
+        ]);
+      allow delete: if isAdmin();
     }
 
     // --- Audit Logs (System Wide) ---
