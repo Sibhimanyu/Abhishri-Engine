@@ -347,7 +347,7 @@ export default function WeeklyMenu() {
     if (!previewRef.current || !canExport) return;
     setExporting(true);
     try {
-      await exportPosterPng(previewRef.current, `${fileSlug(weekRangeLabel(menu.startDate, menu.endDate), 'weekly-menu')}.png`);
+      await exportPosterPng(previewRef.current, `${fileSlug(weekRangeLabel(menu.startDate, menu.endDate), 'weekly-menu')}.png`, { maxRatio: 5 / 4 });
 
       logAudit({
         action: 'WEEKLY_MENU_EXPORTED',

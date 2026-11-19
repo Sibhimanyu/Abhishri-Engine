@@ -6,8 +6,9 @@ import { useAuth } from '../context/AuthContext';
 import { logAudit } from '../utils/auditLog';
 import { Users, Upload, Edit, Trash2, ArrowLeft, UserPlus, Search, X, Loader, Phone, Download } from 'lucide-react';
 import Papa from 'papaparse';
+import { CHANNELS } from '../utils/messagingChannels';
 
-export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
+export default function WhatsAppListDetail({ channel = CHANNELS.whatsapp, list, onBack, onListDeleted }) {
   const { currentUser } = useAuth();
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
@@ -49,24 +50,24 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
       return;
     }
 
-    const unsub = onSnapshot(collection(firestore, 'whatsapp_lists', list.id, 'members'), (snap) => {
+    const unsub = onSnapshot(collection(firestore, channel.lists, list.id, 'members'), (snap) => {
       const data = [];
       snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
       setMembers(data);
       setLoading(false);
     });
     return () => unsub();
-  }, [list]);
+  }, [list, channel.lists]);
 
   const handleDeleteList = async () => {
     if (list.isDynamic) return alert('Cannot delete the dynamic system list.');
     if (!window.confirm("Are you sure you want to delete this list? All contacts within it will be removed.")) return;
     setSaving(true);
     try {
-      await deleteDoc(doc(firestore, 'whatsapp_lists', list.id));
+      await deleteDoc(doc(firestore, channel.lists, list.id));
       logAudit({
-        action: 'WHATSAPP_LIST_DELETED',
-        module: 'whatsapp_sender',
+        action: `${channel.auditPrefix}_LIST_DELETED`,
+        module: channel.permKey,
         targetId: list.id,
         targetName: list.name,
         performedBy: currentUser?.email,
@@ -84,7 +85,7 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
     if (!editName.trim()) return alert("List name required");
     setSaving(true);
     try {
-      await setDoc(doc(firestore, 'whatsapp_lists', list.id), {
+      await setDoc(doc(firestore, channel.lists, list.id), {
         name: editName,
         category: editCategory
       }, { merge: true });
@@ -110,11 +111,11 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
     setSaving(true);
     try {
       const memberId = Date.now().toString();
-      await setDoc(doc(firestore, 'whatsapp_lists', list.id, 'members', memberId), {
+      await setDoc(doc(firestore, channel.lists, list.id, 'members', memberId), {
         name: newContactName,
         phone: phone
       });
-      await setDoc(doc(firestore, 'whatsapp_lists', list.id), {
+      await setDoc(doc(firestore, channel.lists, list.id), {
         count: Math.max(0, list.count) + 1
       }, { merge: true });
       
@@ -133,14 +134,14 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
     if (!window.confirm("Remove this member from the list?")) return;
     const member = members.find(m => m.id === memberId);
     try {
-      await deleteDoc(doc(firestore, 'whatsapp_lists', list.id, 'members', memberId));
-      await setDoc(doc(firestore, 'whatsapp_lists', list.id), {
+      await deleteDoc(doc(firestore, channel.lists, list.id, 'members', memberId));
+      await setDoc(doc(firestore, channel.lists, list.id), {
         count: Math.max(0, members.length - 1)
       }, { merge: true });
 
       logAudit({
-        action: 'WHATSAPP_CONTACT_REMOVED',
-        module: 'whatsapp_sender',
+        action: `${channel.auditPrefix}_CONTACT_REMOVED`,
+        module: channel.permKey,
         targetId: memberId,
         targetName: member?.name || member?.phone || memberId,
         performedBy: currentUser?.email,
@@ -174,20 +175,20 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
             if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
             
             const memberId = Date.now().toString() + Math.random().toString(36).substring(7);
-            const ref = doc(firestore, 'whatsapp_lists', list.id, 'members', memberId);
+            const ref = doc(firestore, channel.lists, list.id, 'members', memberId);
             batch.set(ref, { name, phone });
             count++;
           });
           
           if (count > 0) {
             await batch.commit();
-            await setDoc(doc(firestore, 'whatsapp_lists', list.id), {
+            await setDoc(doc(firestore, channel.lists, list.id), {
               count: members.length + count
             }, { merge: true });
 
             logAudit({
-              action: 'WHATSAPP_CONTACTS_IMPORTED',
-              module: 'whatsapp_sender',
+              action: `${channel.auditPrefix}_CONTACTS_IMPORTED`,
+              module: channel.permKey,
               targetId: list.id,
               targetName: list.name,
               performedBy: currentUser?.email,
@@ -413,7 +414,7 @@ export default function WhatsAppListDetail({ list, onBack, onListDeleted }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-bold text-brand-text mb-1.5">WhatsApp Number *</label>
+                <label className="block text-sm font-bold text-brand-text mb-1.5">{channel.numberLabel} *</label>
                 <input
                   type="text"
                   required

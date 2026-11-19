@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { Users, Search, ChevronRight, UserPlus } from 'lucide-react';
 import { isDiscontinued, isOnRolls, getDiscontinuationDate } from '../utils/reportUtils';
+import { studentsInClass, NO_CLASS } from '../utils/reportClasses';
+import { useReportClasses } from '../utils/useReportClasses';
 import StudentProfile from './StudentProfile';
 import StudentAdmissionForm from './StudentAdmissionForm';
 
@@ -19,6 +21,8 @@ export default function StudentDirectory() {
   // Discontinued students are kept on record, so the directory defaults to the active
   // roll and keeps them one click away rather than mixing them into everyday lists.
   const [statusFilter, setStatusFilter] = useState('active');
+  const [classFilter, setClassFilter] = useState('');
+  const classes = useReportClasses();
   const [addingStudentType, setAddingStudentType] = useState(null);
   const location = useLocation();
 
@@ -105,7 +109,7 @@ export default function StudentDirectory() {
   const activeCount = students.filter(s => isOnRolls(s)).length;
   const discontinuedCount = students.length - activeCount;
 
-  const filteredStudents = students.filter(s => {
+  const filteredStudents = studentsInClass(students, classFilter, classes).filter(s => {
     if (statusFilter === 'active' && !isOnRolls(s)) return false;
     if (statusFilter === 'discontinued' && isOnRolls(s)) return false;
     return (s.name || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -137,6 +141,18 @@ export default function StudentDirectory() {
                 </button>
               ))}
             </div>
+            {wingFilter === 'preschool' && (
+              <select
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+                aria-label="Filter by class"
+                className="bg-brand-bg border border-brand-card-border rounded-md py-2 sm:py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary text-brand-text"
+              >
+                <option value="">All classes</option>
+                {classes.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value={NO_CLASS}>No class</option>
+              </select>
+            )}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={16} />
               <input 
@@ -193,6 +209,11 @@ export default function StudentDirectory() {
                         }`}>
                           {wingFilter}
                         </span>
+                        {student.reportClass && (
+                          <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full bg-brand-primary/10 text-brand-primary">
+                            {student.reportClass}
+                          </span>
+                        )}
                         {isDiscontinued(student) && (
                           <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
                             {isOnRolls(student) && getDiscontinuationDate(student)

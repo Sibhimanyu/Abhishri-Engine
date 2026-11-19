@@ -8,8 +8,10 @@
 // These match the web app's bell: both follow shared/notifications.mjs. What counts as an
 // event, and the Cliq wording, is in shared/cliqMessages.mjs.
 //
-// Notifications are best-effort: a Cliq failure is logged, never retried or thrown,
-// so it can't hold up or repeat the save that caused it.
+// Sending goes through ../notify/dispatch.js, which delivers to Cliq, Arattai or both,
+// whichever are switched on (the function names still say "cliq" so deploys don't
+// recreate them). Notifications are best-effort: a failure is logged, never retried or
+// thrown, so it can't hold up or repeat the save that caused it.
 const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -17,19 +19,18 @@ const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 const { resolveAccess } = require("../shared/access");
 const { loadCliqConfig, missingSetting, postToChannel, postToUsers, displayNameOf } = require("./client");
+const { loadNotifyConfig } = require("../arattai/notify");
+const { notifyStaff } = require("../notify/dispatch");
 
 const messages = () => import("../shared/cliqMessages.mjs");
 
-/** The config when Cliq is switched on and complete, else null (with a log line saying why). */
-async function readyConfig(what) {
-  const cfg = await loadCliqConfig();
-  if (!cfg.enabled) return null;
-  const missing = missingSetting(cfg);
-  if (missing) {
-    logger.warn(`Cliq: skipped ${what}, the ${missing} isn't set in configs/cliq.`);
-    return null;
-  }
-  return cfg;
+/**
+ * The Cliq config (its appUrl and buttons shape every message, whichever channel sends
+ * it) when any notification channel is on, else null so there's no work to do.
+ */
+async function readyConfig() {
+  const [cfg, arattai] = await Promise.all([loadCliqConfig(), loadNotifyConfig()]);
+  return cfg.enabled || arattai.enabled ? cfg : null;
 }
 
 function approvalTrigger(collection) {
@@ -41,28 +42,27 @@ function approvalTrigger(collection) {
     if (!kind) return;
 
     const id = event.params.docId;
-    const cfg = await readyConfig(`${kind} ${collection}/${id}`);
+    const cfg = await readyConfig();
     if (!cfg) return;
 
     const { approval } = after;
-    try {
-      if (kind === "requested") {
-        const requesterName = await displayNameOf(approval.requestedBy);
-        await postToChannel(cfg, requestMessage({ collection, id, data: after, requesterName, appUrl: cfg.appUrl, cliq: cfg }));
-      } else {
-        const [reviewerName, requesterName] = await Promise.all([displayNameOf(approval.reviewedBy), displayNameOf(approval.requestedBy)]);
-        const sends = [postToChannel(cfg, decidedMessage({ collection, id, data: after, event: kind, reviewerName, requesterName }))];
-        if (approval.requestedBy !== approval.reviewedBy) {
-          sends.push(postToUsers(cfg, [approval.requestedBy], outcomeMessage({ collection, id, data: after, event: kind, reviewerName, appUrl: cfg.appUrl })));
-        }
-        // One failing (e.g. the teacher isn't subscribed to the bot) mustn't stop the other.
-        const failed = (await Promise.allSettled(sends)).filter((r) => r.status === "rejected");
-        if (failed.length) throw new Error(failed.map((r) => r.reason?.message).join("; "));
-      }
-      logger.info(`Cliq: sent ${kind} for ${collection}/${id}`);
-    } catch (err) {
-      logger.error(`Cliq: failed to send ${kind} for ${collection}/${id}`, err.message);
+    const what = `${kind} ${collection}/${id}`;
+    if (kind === "requested") {
+      const requesterName = await displayNameOf(approval.requestedBy);
+      await notifyStaff({ kind: what, audience: { channel: true }, cliq: cfg,
+        message: requestMessage({ collection, id, data: after, requesterName, appUrl: cfg.appUrl, cliq: cfg }) });
+      return;
     }
+    const [reviewerName, requesterName] = await Promise.all([displayNameOf(approval.reviewedBy), displayNameOf(approval.requestedBy)]);
+    // Each is sent on its own, so one failing (e.g. the teacher isn't subscribed to the
+    // Cliq bot) doesn't stop the other.
+    const sends = [notifyStaff({ kind: what, audience: { channel: true }, cliq: cfg,
+      message: decidedMessage({ collection, id, data: after, event: kind, reviewerName, requesterName }) })];
+    if (approval.requestedBy !== approval.reviewedBy) {
+      sends.push(notifyStaff({ kind: `${what} (to the teacher)`, audience: { users: [approval.requestedBy] }, cliq: cfg,
+        message: outcomeMessage({ collection, id, data: after, event: kind, reviewerName, appUrl: cfg.appUrl }) }));
+    }
+    await Promise.all(sends);
   });
 }
 
@@ -78,15 +78,11 @@ exports.cliqOnAccessRequest = onDocumentCreated("unauthorized_logins/{email}", a
   // Same filter as the bell: someone already given access isn't a request.
   const allowed = await admin.firestore().collection("allowed_users").doc(email).get();
   if (allowed.exists) return;
-  const cfg = await readyConfig(`access request ${email}`);
+  const cfg = await readyConfig();
   if (!cfg) return;
   const { accessRequestMessage } = await messages();
-  try {
-    await postToChannel(cfg, accessRequestMessage({ data: { ...data, email }, appUrl: cfg.appUrl }));
-    logger.info(`Cliq: sent access request for ${email}`);
-  } catch (err) {
-    logger.error(`Cliq: failed to send access request for ${email}`, err.message);
-  }
+  await notifyStaff({ kind: `access request ${email}`, audience: { channel: true }, cliq: cfg,
+    message: accessRequestMessage({ data: { ...data, email }, appUrl: cfg.appUrl }) });
 });
 
 /** Today's Tamil month and day in Chennai, the same way the web app works it out. */
@@ -101,7 +97,7 @@ async function tamilDateToday() {
 // One post each morning with the day's Tamil birthdays, the digest of the bell's per-person
 // entries. Nothing is posted on a day without any.
 exports.cliqTamilBirthdays = onSchedule({ schedule: "30 7 * * *", timeZone: "Asia/Kolkata" }, async () => {
-  const cfg = await readyConfig("Tamil birthdays");
+  const cfg = await readyConfig();
   if (!cfg) return;
   const today = await tamilDateToday();
   const db = admin.firestore();
@@ -116,12 +112,7 @@ exports.cliqTamilBirthdays = onSchedule({ schedule: "30 7 * * *", timeZone: "Asi
     logger.info(`Cliq: no Tamil birthdays on ${today.tamilMonth} ${today.tamilDay}`);
     return;
   }
-  try {
-    await postToChannel(cfg, message);
-    logger.info(`Cliq: sent ${members.length} Tamil birthday(s) for ${today.tamilMonth} ${today.tamilDay}`);
-  } catch (err) {
-    logger.error("Cliq: failed to send Tamil birthdays", err.message);
-  }
+  await notifyStaff({ kind: `Tamil birthdays ${today.tamilMonth} ${today.tamilDay}`, audience: { channel: true }, cliq: cfg, message });
 });
 
 /**

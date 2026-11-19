@@ -36,6 +36,34 @@
       ".read": false,
       ".write": false
     },
+    "arattai_debug_webhooks": {
+      ".read": "auth != null && root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true",
+      ".write": false,
+      ".indexOn": ["timestamp"]
+    },
+    "arattai_conversations": {
+      ".read": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('arattai_sender').child('access').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('arattai_sender').child('broadcast').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('arattai_sender').child('manage').val() === true)",
+      ".write": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('arattai_sender').child('access').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('arattai_sender').child('broadcast').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('arattai_sender').child('manage').val() === true)",
+      "$recipientId": {
+        "metadata": {
+          ".indexOn": ["timestamp"]
+        },
+        "messages": {
+          ".indexOn": ["messageId", "timestamp"]
+        }
+      }
+    },
+    "arattai_broadcast_logs": {
+      ".read": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('arattai_sender').child('manage').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('arattai_sender').child('broadcast').val() === true)",
+      ".write": false,
+      "$broadcastId": {
+        ".indexOn": ["messageId", "timestamp"]
+      }
+    },
+    "arattai_message_map": {
+      ".read": false,
+      ".write": false
+    },
     "modules": {
       "smart_campus": {
         ".read": "auth != null && (root.child('rtdb_permissions').child(auth.uid).child('isAdmin').val() === true || root.child('rtdb_permissions').child(auth.uid).child('permissions').child('smart_campus').child('view').val() === true)",
