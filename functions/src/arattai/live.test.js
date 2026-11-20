@@ -167,3 +167,22 @@ test("sendNotification uses the picked template and refuses groups", async () =>
   assert.strictEqual(body.phone_number, "91-9800000001");
   assert.deepStrictEqual(body.variables, { title: "Approval needed", details: "Menu for Monday\nOpen: https://a" });
 });
+
+test("parseArattai: real sent, delivered (entity.messages[]) and failed payloads become receipts", async () => {
+  const sent = await parseArattai({ event: "chat.message.sent", entity: { ack_key: "abd9ae", user: { id: "20032121615" } } });
+  assert.deepStrictEqual(sent.statuses.map((s) => [s.messageId, s.status]), [["abd9ae", "sent"]]);
+
+  const delivered = await parseArattai({ event: "chat.message.delivered", entity: { messages: [{ ack_key: "abd9ae" }], user: { id: "20032121615" } } });
+  assert.deepStrictEqual(delivered.statuses.map((s) => [s.messageId, s.status]), [["abd9ae", "delivered"]]);
+
+  const many = await parseArattai({ event: "chat.message.delivered", entity: { messages: [{ ack_key: "a1" }, { ack_key: "a2" }] } });
+  assert.deepStrictEqual(many.statuses.map((s) => s.messageId), ["a1", "a2"]);
+
+  const failed = await parseArattai({ event: "chat.message.failed", entity: { messages: [{ ack_key: "f1" }], reason: "blocked" } });
+  assert.strictEqual(failed.statuses[0].status, "failed");
+  assert.strictEqual(failed.statuses[0].error, "blocked");
+
+  const received = await parseArattai({ event: "chat.message.received", entity: { ack_key: "258666117_1", content: "Hello", type: "text", user: { id: "970", name: "Asha", language: "en" } } });
+  assert.strictEqual(received.statuses.length, 0);
+  assert.strictEqual(received.incoming[0].text, "Hello");
+});

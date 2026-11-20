@@ -9,12 +9,77 @@ const crypto = require("crypto");
 
 const sanitizeKey = (key) => key ? String(key).replace(/[.#$/[\]]/g, "_") : key;
 
+const STATUS_RANK = { queued: 1, processing: 2, sent: 3, delivered: 4, read: 5, failed: 6, error: 6 };
+
+/** Whether a receipt should change a message's status: only forward moves; failed always applies. */
+function shouldApplyStatus(current, next) {
+  const n = String(next || "").toLowerCase();
+  if (n === "failed" || n === "error") return true;
+  return (STATUS_RANK[n] || 0) > (STATUS_RANK[String(current || "").toLowerCase()] || 0);
+}
+
+/** The error text of a failed receipt (Meta `errors[]` or Fast2SMS `status_description`). */
+function receiptError(report, status) {
+  if (status !== "failed" && status !== "error") return null;
+  let errMsg = report.status_description || null;
+  if (Array.isArray(report.errors) && report.errors.length > 0) {
+    const e = report.errors[0];
+    errMsg = (e.error_data && e.error_data.details) || e.message || e.title || errMsg || "Unknown error";
+  }
+  return errMsg;
+}
+
+/**
+ * Find the live-chat message a receipt is about: first by key (send.js files replies under
+ * the sanitized wamid), then by its messageId field. Returns a snapshot or null.
+ */
+async function findConversationMessage(messagesRef, wamid) {
+  if (!wamid) return null;
+  const byKey = await messagesRef.child(sanitizeKey(wamid)).once("value");
+  if (byKey.exists()) return byKey;
+  const q = await messagesRef.orderByChild("messageId").equalTo(wamid).once("value");
+  let found = null;
+  q.forEach((c) => { if (!found) found = c; });
+  return found;
+}
+
+/**
+ * Apply a receipt to the conversation message it belongs to (live-chat replies, which the
+ * broadcast lookups never see). `applied` holds ref paths already updated by the broadcast
+ * branch so one receipt isn't recorded twice.
+ */
+async function updateConversationMessage(db, { wamid, recipient, status, timestamp, errMsg }, applied = new Set()) {
+  const conversationId = String(recipient || "").replace(/[^\d]/g, "");
+  if (!wamid || !conversationId) return false;
+  const snap = await findConversationMessage(db.ref(`whatsapp_conversations/${conversationId}/messages`), wamid);
+  if (!snap) return false;
+  const path = snap.ref.toString();
+  if (applied.has(path)) return false;
+  applied.add(path);
+
+  const entry = { status, timestamp, serverTime: Date.now() };
+  if (errMsg) entry.error = errMsg;
+  const writes = [snap.ref.child("statusHistory").push(entry)];
+  if (shouldApplyStatus(snap.val().status, status)) {
+    const upd = { status, error: errMsg || null };
+    if (status === "sent") upd.sentAt = timestamp;
+    if (status === "delivered") upd.deliveredAt = timestamp;
+    if (status === "read") upd.readAt = timestamp;
+    writes.push(snap.ref.update(upd));
+  }
+  await Promise.all(writes);
+  return true;
+}
+
 /**
  * Common Logic for processing Incoming Messages
  */
 async function processIncoming(db, report) {
   const messageId = report.message_id || report.id;
   const from = report.from;
+  // A copy of the business's own outgoing message is not an incoming one. Its record already
+  // exists (send.js files it); never file it as a customer message.
+  if (report.from_me === true || report.direction === "outbound") return;
   const type = report.message_type || report.type || "text";
   const timestamp = (report.timestamp > 10000000000 ? report.timestamp : report.timestamp * 1000);
   const conversationId = String(from).replace(/[^\d]/g, "");
@@ -80,13 +145,14 @@ async function processStatus(db, fs, report) {
   // 3. The webhook's 'fast2sms_request_id' is the one we use to find the batch.
   
   const batchId = report.fast2sms_request_id || report.request_id || report.message_id || report.id;
-  const metaMessageId = report.request_id; // The wamid
+  const metaMessageId = report.request_id || report.id; // The wamid (Meta items carry it as `id`)
   const status = (report.status || "").toLowerCase();
   const timestamp = (report.timestamp > 10000000000 ? parseInt(report.timestamp) : (parseInt(report.timestamp) * 1000 || Date.now()));
   const recipientPhone = report.recipient_id || report.mobileNo || report.to || report.from || report.phone;
 
   // New efficient lookup:
   // 1. Find the broadcastId from the batchId (Fast2SMS request ID)
+  const appliedConvoPaths = new Set();
   let broadcastId = null;
   const batchMapSnap = await db.ref(`whatsapp_batch_map/${batchId}`).once("value");
   if (batchMapSnap.exists()) {
@@ -193,6 +259,7 @@ async function processStatus(db, fs, report) {
             convoSnap.forEach(m => {
               const mData = m.val();
               if (mData.messageId === batchId || mData.messageId === metaMessageId) {
+                appliedConvoPaths.add(m.ref.toString());
                 msgPromises.push(m.ref.child("statusHistory").push(statusEntry));
                 const mUpdate = { status, error: errMsg || null };
                 if (metaMessageId) mUpdate.metaMessageId = metaMessageId;
@@ -256,6 +323,12 @@ async function processStatus(db, fs, report) {
       await Promise.all(updates);
     }
   }
+
+  // Live-chat replies (and anything else filed under the conversation) are matched by wamid
+  // whether or not a broadcast claimed the receipt.
+  await updateConversationMessage(db, {
+    wamid: metaMessageId, recipient: recipientPhone, status, timestamp, errMsg: receiptError(report, status),
+  }, appliedConvoPaths);
 }
 
 /**
@@ -284,6 +357,11 @@ const tokenMatches = (presented, expected) => {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 };
 
+exports.shouldApplyStatus = shouldApplyStatus;
+exports.receiptError = receiptError;
+exports.updateConversationMessage = updateConversationMessage;
+exports.processStatus = processStatus;
+exports.processIncoming = processIncoming;
 exports.whatsappWebhook = onRequest(async (request, response) => {
   let token;
   try {

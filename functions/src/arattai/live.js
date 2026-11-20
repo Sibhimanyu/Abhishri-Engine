@@ -379,13 +379,13 @@ async function parseArattai(body) {
   const e = body?.entity || {};
   const ts = Number(body?.event_time) || Date.now();
 
-  if (STATUS_EVENT[body?.event] && e.ack_key) {
-    statuses.push({
-      messageId: String(e.ack_key),
-      status: STATUS_EVENT[body.event],
-      error: body.event === "chat.message.failed" ? String(e.reason || e.message || e.code || "Arattai couldn't deliver this message").slice(0, 500) : null,
-      timestamp: ts,
-    });
+  if (STATUS_EVENT[body?.event]) {
+    // "sent" and "failed" carry entity.ack_key; "delivered" carries entity.messages[].ack_key.
+    const keys = new Set();
+    if (e.ack_key) keys.add(String(e.ack_key));
+    if (Array.isArray(e.messages)) for (const m of e.messages) if (m?.ack_key) keys.add(String(m.ack_key));
+    const error = body.event === "chat.message.failed" ? String(e.reason || e.message || e.code || "Arattai couldn't deliver this message").slice(0, 500) : null;
+    for (const messageId of keys) statuses.push({ messageId, status: STATUS_EVENT[body.event], error, timestamp: ts });
   } else if (body?.event === "chat.message.received" && e.user?.id) {
     const userId = String(e.user.id);
     const name = e.user.name ? String(e.user.name).slice(0, 100) : null;

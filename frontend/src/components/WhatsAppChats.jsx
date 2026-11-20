@@ -1,11 +1,26 @@
 import { Spinner } from './Spinner';
 import React, { useState, useEffect, useRef } from 'react';
-import { ref, onValue, push, update, set } from 'firebase/database';
+import { ref, onValue, push, update, set, remove } from 'firebase/database';
 import { rtdb } from '../firebase';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import { Search, Send, ArrowLeft, Clock, Check, CheckCheck, MessageSquare, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CHANNELS } from '../utils/messagingChannels';
+
+const STATUS_RANK = { queued: 1, processing: 2, sent: 3, delivered: 4, read: 5, failed: 6, error: 6 };
+
+/** Collapse records that share a messageId, keeping the one furthest along (ties: the later key). */
+export function dedupeByMessageId(list) {
+  const best = new Map();
+  for (const m of list) {
+    if (!m.messageId) continue;
+    const cur = best.get(m.messageId);
+    const r = STATUS_RANK[String(m.status || '').toLowerCase()] || 0;
+    if (!cur || r >= cur.r) best.set(m.messageId, { m, r });
+  }
+  const keep = new Set([...best.values()].map((b) => b.m));
+  return list.filter((m) => !m.messageId || keep.has(m));
+}
 
 export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
   const { currentUser, userData } = useAuth();
@@ -60,7 +75,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
         const msgsList = Object.entries(data)
           .map(([key, val]) => ({ id: key, ...val }))
           .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-        setMessages(msgsList);
+        setMessages(dedupeByMessageId(msgsList));
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
       } else {
         setMessages([]);
@@ -112,7 +127,14 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
       } else {
         const result = await sendMessage({ to: activeChat.phoneNumber, text });
         const realMessageId = result.data?.messages?.[0]?.id || result.data?.message_id || result.data?.id || 'simulated';
-        await update(msgRef, { status: 'sent', messageId: realMessageId });
+        const serverKey = String(activeChat.phoneNumber).replace(/[^\d]/g, '');
+        if (realMessageId !== 'simulated' && serverKey === safeKey) {
+          // The send function files its own record of this message (keyed by the message ID,
+          // updated by delivery receipts), so this optimistic copy would show it twice.
+          await remove(msgRef);
+        } else {
+          await update(msgRef, { status: 'sent', messageId: realMessageId });
+        }
       }
 
     } catch (err) {
