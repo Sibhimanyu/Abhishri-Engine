@@ -151,7 +151,7 @@ const ReportPoster = forwardRef(function ReportPoster({ cal, highlights }, ref) 
                 <IconCircle color={POSTER.teal} size={48}><School size={22} /></IconCircle>
                 {h.home?.trim() && <div style={{ flex: 1, width: 8, minHeight: 24, marginTop: 5, marginBottom: -13, ...dots(POSTER.deepTeal, false) }} />}
               </div>
-              <div style={{ fontSize: 20, lineHeight: 1.55, paddingTop: 8 }}>
+              <div style={{ fontSize: 20, lineHeight: 1.55, paddingTop: 8, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
                 {h.activity?.trim() && <span style={{ fontWeight: 800 }}>{h.activity.trim()}</span>}
                 {h.activity?.trim() && h.classroom?.trim() && ' — '}
                 {h.classroom?.trim()}
@@ -159,7 +159,7 @@ const ReportPoster = forwardRef(function ReportPoster({ cal, highlights }, ref) 
               {h.home?.trim() && (
                 <>
                   <IconCircle color={POSTER.coral} size={48}><HouseHeart size={22} /></IconCircle>
-                  <div style={{ background: HOME_PILL, borderRadius: 14, padding: '11px 20px', fontSize: 20, lineHeight: 1.45 }}>{h.home.trim()}</div>
+                  <div style={{ background: HOME_PILL, borderRadius: 14, padding: '11px 20px', fontSize: 20, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{h.home.trim()}</div>
                 </>
               )}
             </div>
