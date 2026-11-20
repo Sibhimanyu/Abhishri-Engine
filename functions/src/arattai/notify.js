@@ -51,18 +51,28 @@ async function loadNotifyConfig() {
   };
 }
 
-/** A staff member's mobile for Arattai, or null. */
-async function phoneFor(cfg, email) {
+/**
+ * A person's mobile for Arattai and where it came from:
+ * { phone|null, source: 'override'|'staff record'|'user account'|null, staffName }.
+ */
+async function resolvePhone(cfg, email) {
   const e = String(email || "").trim().toLowerCase();
-  if (!e) return null;
-  if (cfg.phoneMap[e]) return cfg.phoneMap[e];
+  if (!e) return { phone: null, source: null, staffName: "" };
   const db = admin.firestore();
   const staff = await db.collection("staff").where("email", "==", e).limit(1).get();
-  const fromStaff = staff.empty ? "" : normalizePhone(staff.docs[0].data().phone);
-  if (fromStaff.length >= 10) return fromStaff;
+  const staffData = staff.empty ? {} : staff.docs[0].data();
+  const staffName = String(staffData.name || "").trim();
+  if (cfg.phoneMap[e]) return { phone: cfg.phoneMap[e], source: "override", staffName };
+  const fromStaff = normalizePhone(staffData.phone);
+  if (fromStaff.length >= 10) return { phone: fromStaff, source: "staff record", staffName };
   const user = await db.collection("allowed_users").doc(e).get();
   const fromUser = user.exists ? normalizePhone(user.data().phone) : "";
-  return fromUser.length >= 10 ? fromUser : null;
+  return fromUser.length >= 10 ? { phone: fromUser, source: "user account", staffName } : { phone: null, source: null, staffName };
+}
+
+/** A staff member's mobile for Arattai, or null. */
+async function phoneFor(cfg, email) {
+  return (await resolvePhone(cfg, email)).phone;
 }
 
 /** App emails of everyone who is an admin. */
@@ -139,4 +149,44 @@ const checkArattaiNotify = onCall(async (request) => {
   return { enabled: cfg.enabled, mode: cfg.provider.mode, admins, me };
 });
 
-module.exports = { loadNotifyConfig, recipientsFor, sendArattaiNotification, checkArattaiNotify };
+const ADMIN_GETS = ["Approval requested", "Approval decided", "Access requests", "Tamil birthdays", "Test message"];
+const EVERYONE_GETS = ["Your approvals (approved or sent back)"];
+
+/** Every app user with their resolved Arattai phone and what they get; admins first, then A-Z. */
+async function listRecipients(cfg) {
+  const snap = await admin.firestore().collection("allowed_users").get();
+  const seen = new Set();
+  const users = [];
+  snap.docs.forEach((d) => {
+    const data = d.data();
+    const email = String(data.email || (d.id.includes("@") ? d.id : "")).trim().toLowerCase();
+    if (!email || seen.has(email)) return;
+    seen.add(email);
+    users.push({ email, data });
+  });
+  const rows = await Promise.all(users.map(async ({ email, data }) => {
+    const r = await resolvePhone(cfg, email);
+    const isAdmin = data.isAdmin === true || data.role === "admin";
+    return {
+      email,
+      name: r.staffName || String(data.displayName || data.name || "").trim(),
+      role: String(data.role || (isAdmin ? "admin" : "staff")),
+      isAdmin,
+      phone: r.phone,
+      phoneSource: r.source,
+      gets: isAdmin ? [...ADMIN_GETS, ...EVERYONE_GETS] : [...EVERYONE_GETS],
+    };
+  }));
+  rows.sort((a, b) => (b.isAdmin - a.isAdmin) || (a.name || a.email).localeCompare(b.name || b.email, undefined, { sensitivity: "base" }));
+  return rows;
+}
+
+/** Admin-only: the table in Settings > Staff Notifications > Recipients. */
+const listStaffNotificationRecipients = onCall(async (request) => {
+  const access = await resolveAccess(request.auth);
+  if (!access?.isAdmin) throw new HttpsError("permission-denied", "Only admins can see staff notification recipients.");
+  const cfg = await loadNotifyConfig();
+  return { recipients: await listRecipients(cfg), mode: cfg.provider.mode };
+});
+
+module.exports = { listStaffNotificationRecipients, listRecipients, resolvePhone, loadNotifyConfig, recipientsFor, sendArattaiNotification, checkArattaiNotify };
