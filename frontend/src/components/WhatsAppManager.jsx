@@ -28,10 +28,12 @@ export default function WhatsAppManager() {
     );
   }
 
-  const available = [wa.any && CHANNELS.whatsapp, ar.any && CHANNELS.arattai].filter(Boolean);
+  const available = [ar.any && CHANNELS.arattai, wa.any && CHANNELS.whatsapp].filter(Boolean);
 
   return (
     <Routes>
+      {/* Plain /whatsapp (the Communications link) opens Arattai first when the user has it. */}
+      <Route index element={<Navigate to={ar.any ? 'arattai/chats' : 'chats'} replace />} />
       <Route
         path="arattai/*"
         element={ar.any ? <ChannelView channel={CHANNELS.arattai} perms={ar} available={available} /> : <Navigate to="/whatsapp" replace />}
@@ -67,7 +69,7 @@ function ChannelView({ channel, perms, available }) {
               {available.map(c => (
                 <Link
                   key={c.id}
-                  to={c.basePath}
+                  to={`${c.basePath}/chats`}
                   role="tab"
                   aria-selected={c.id === channel.id}
                   className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${c.id === channel.id ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-text-dim hover:text-brand-text'}`}
