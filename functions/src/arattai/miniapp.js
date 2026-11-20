@@ -14,7 +14,9 @@ const { getMiniAppSession, closeMiniAppSession, asHttps } = require("./live");
  * phone-code parent (see isPhoneSession in shared/access.js and firestore.rules).
  */
 
-const KEY_PATTERN = /^[A-Za-z0-9._~-]{8,200}$/;
+// Arattai's key format isn't documented (base64-style keys may contain + / =), so accept any
+// printable, non-space key; it is URL-encoded when we call Arattai.
+const KEY_PATTERN = /^[\x21-\x7e]{8,512}$/;
 
 /** Arattai's "91-9999999911" as E.164 ("+919999999911"), or null. */
 async function toE164(arattaiPhone) {
@@ -28,7 +30,9 @@ exports.toE164 = toE164;
 
 exports.startArattaiMiniApp = onCall(async (request) => {
   const key = request.data?.key;
+  logger.info("Arattai mini app: start", { keyLen: typeof key === "string" ? key.length : null });
   if (typeof key !== "string" || !KEY_PATTERN.test(key)) {
+    logger.warn("Arattai mini app: rejected key format", { keyLen: typeof key === "string" ? key.length : null });
     throw new HttpsError("invalid-argument", "Missing or invalid link.");
   }
 
