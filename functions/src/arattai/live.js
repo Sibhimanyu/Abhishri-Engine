@@ -439,13 +439,15 @@ function parseReceived(e, { userId, phone, name, ts }) {
     mimeType: null,
     timestamp: ts,
   };
-  const rawUrl = String(obj[t]?.url || obj.url || "");
+  // Files (photos, documents, voice notes) come as content.download_url; gifs as content.url.
+  const rawUrl = String(obj[t]?.url || obj.url || obj.download_url || obj[t]?.download_url || "");
   // Only web links: anything else (javascript:, data:) would end up in a staff member's href.
   const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : "";
   const mime = String(obj.type || obj[t]?.type || "");
   if (t === "file" && url) {
     out.type = mime.startsWith("image/") ? "image" : mime.startsWith("audio/") ? "audio" : mime.startsWith("video/") ? "video" : "document";
-    out.text = String(obj.comment || obj.file_name || "");
+    // A photo's file name ("image_5827c.PNG") isn't a caption; documents keep theirs.
+    out.text = String(obj.comment || (out.type === "document" ? obj.file_name || "" : ""));
     out.mediaUrl = url;
     out.mimeType = mime || null;
     if (obj.file_name) out.fileName = String(obj.file_name);
@@ -516,4 +518,4 @@ async function parseArattai(body) {
   return { incoming, statuses, templates };
 }
 
-module.exports = { live, call, asHttps, getMiniAppSession, closeMiniAppSession, verifySignature, parseArattai, parseTemplateEvent, parseTemplate, createTemplate, submitTemplate, updateTemplate, deleteTemplate, getTemplate, renumber, arattaiPhone, missingSettings, SCOPES };
+module.exports = { parseReceived, live, call, asHttps, getMiniAppSession, closeMiniAppSession, verifySignature, parseArattai, parseTemplateEvent, parseTemplate, createTemplate, submitTemplate, updateTemplate, deleteTemplate, getTemplate, renumber, arattaiPhone, missingSettings, SCOPES };
