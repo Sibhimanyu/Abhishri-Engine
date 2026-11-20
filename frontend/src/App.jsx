@@ -32,6 +32,8 @@ const StaffDirectory = lazy(() => import('./components/StaffDirectory'));
 const SchoolCalendar = lazy(() => import('./components/SchoolCalendar'));
 const MenuAndReport = lazy(() => import('./components/MenuAndReport'));
 const ArattaiApp = lazy(() => import('./components/ArattaiApp'));
+const PrivacyPolicy = lazy(() => import('./components/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('./components/TermsOfService'));
 const AuthAction = lazy(() => import('./components/AuthAction'));
 
 // Sums unreadCount across a channel's conversations in RTDB. Returns the unsubscribe.
@@ -256,6 +258,15 @@ function App() {
     return (
       <ErrorBoundary>
         <Suspense fallback={<RouteLoader />}><ArattaiApp /></Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  if (location.pathname === '/privacy' || location.pathname === '/terms') {
+    const Page = location.pathname === '/privacy' ? PrivacyPolicy : TermsOfService;
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<RouteLoader />}><Page /></Suspense>
       </ErrorBoundary>
     );
   }
