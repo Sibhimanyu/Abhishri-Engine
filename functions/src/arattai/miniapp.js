@@ -57,7 +57,10 @@ exports.startArattaiMiniApp = onCall(async (request) => {
   const phone = await toE164(session.phone);
   if (!phone) {
     await closeMiniAppSession(config, key);
-    throw new HttpsError("failed-precondition", "Arattai didn't share a usable phone number.");
+    // Arattai sometimes sends the session without name or phone (consent not given yet, or a
+    // setting on its side); the page then offers the usual text-code sign-in instead.
+    logger.info("Arattai mini app: session without a phone");
+    return { ok: false, reason: "no-phone" };
   }
   const last4 = phone.slice(-4);
 
