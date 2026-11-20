@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Arattai sign-in code</title>
+<style>body{font:16px system-ui,sans-serif;max-width:560px;margin:48px auto;padding:0 16px;color:#222}code{display:block;word-break:break-all;background:#f3f3f3;padding:12px;border-radius:8px;margin:12px 0}</style></head>
+<body><h1>Arattai sign-in code</h1>
+<p>Used by an admin when connecting Abhishri Engine to Arattai. The code works once and expires in about a minute.</p>
+<code id="c">No code in this link.</code>
+<script>
+// Static page (not the app), so the code stays readable. Nothing is sent anywhere.
+var p=new URLSearchParams(location.search);var c=p.get('code');var e=p.get('error');
+document.getElementById('c').textContent=c||(e?('Error: '+e):'No code in this link.');
+</script></body></html>
