@@ -1,7 +1,7 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { signInWithCustomToken } from 'firebase/auth';
-import { AlertCircle, MessageCircle, Globe, Phone, Sparkles, RefreshCw } from 'lucide-react';
+import { AlertCircle, MessageCircle, Globe, Phone, Sparkles, RefreshCw, Copy, Check } from 'lucide-react';
 import { auth, functions } from '../firebase';
 
 const ParentPortal = lazy(() => import('./ParentPortal'));
@@ -101,6 +101,38 @@ const SCHOOL = { site: 'https://abhishriacademy.in', phone: '+919500400459', pho
 // Arattai's in-app browser ignores new-tab links, so open the site (and the dialler) in place.
 const go = (url) => (e) => { e.preventDefault(); window.location.assign(url); };
 
+/**
+ * Arattai's in-app browser won't open the dialler from a tel: link, so show the number big
+ * (selectable) with a Copy button; a plain tel: link stays for webviews that do allow it.
+ */
+function CallCard() {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    const text = SCHOOL.phoneLabel.replace(/\s+/g, ' ');
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const t = document.createElement('textarea');
+      t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); } finally { t.remove(); }
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="rounded-2xl border border-brand-card-border p-3 flex items-center gap-3">
+      <a href={`tel:${SCHOOL.phone}`} className="flex-1 min-w-0 flex items-center gap-2">
+        <Phone size={18} className="text-brand-primary shrink-0" />
+        <span className="selectable font-bold text-lg tracking-wide">{SCHOOL.phoneLabel}</span>
+      </a>
+      <button type="button" onClick={copy} className="min-h-11 px-3 rounded-xl bg-brand-primary/10 text-brand-primary font-bold flex items-center gap-1.5 active:scale-[0.97] transition-transform">
+        {copied ? <><Check size={16} /> Copied</> : <><Copy size={16} /> Copy</>}
+      </button>
+    </div>
+  );
+}
+
 function Welcome({ name }) {
   return (
     <Screen>
@@ -117,9 +149,7 @@ function Welcome({ name }) {
           <a href={SCHOOL.site} onClick={go(SCHOOL.site)} className="min-h-12 flex items-center justify-center gap-2 rounded-2xl bg-brand-primary text-white font-bold active:scale-[0.97] transition-transform">
             <Globe size={18} /> Visit our website
           </a>
-          <a href={`tel:${SCHOOL.phone}`} onClick={go(`tel:${SCHOOL.phone}`)} className="min-h-12 flex items-center justify-center gap-2 rounded-2xl border border-brand-card-border font-bold active:scale-[0.97] transition-transform">
-            <Phone size={18} /> Call {SCHOOL.phoneLabel}
-          </a>
+          <CallCard />
         </div>
       </section>
       <p className="mt-6 text-xs text-brand-text-dim selectable">
