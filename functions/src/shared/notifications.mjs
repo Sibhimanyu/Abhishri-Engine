@@ -51,7 +51,7 @@ export const NOTIFICATIONS = {
     audience: 'WhatsApp users',
     staff: null,
     staffSkipReason: 'Unread counts change with every message, so posting them would flood the phones of staff.',
-    path: '/whatsapp',
+    path: '/whatsapp/chats',
     summary: (count) => `You have ${plural(count, 'unread message')}.`,
   },
   arattaiUnread: {
