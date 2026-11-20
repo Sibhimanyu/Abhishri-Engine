@@ -29,9 +29,12 @@ test("curly placeholders become {{snake_case}} and are listed once with samples"
   const m = await load();
   const p = m.buildTemplatePayload("approvalOutcomeReturned", { title: "{Kind} sent back", body: "{reviewer} sent back {itemTitle}.\n{noteLine}\nEdit it: {link}\n{reviewer}" });
   assert.strictEqual(p.message.title, "{{kind_cap}} sent back");
-  assert.strictEqual(p.message.body, "{{reviewer}} sent back {{item_title}}.\n{{note_line}}\nEdit it: {{link}}\n{{reviewer}}");
-  assert.deepStrictEqual(p.place_holders.map((x) => x.name), ["kind_cap", "reviewer", "item_title", "note_line", "link"]);
-  assert.strictEqual(p.place_holders.find((x) => x.name === "note_line").sample_value, "Note: Add photos");
+  // {link} is fixed template text (Arattai rejects links as samples), so it isn't a placeholder.
+  assert.strictEqual(p.message.body, "{{reviewer}} sent back {{item_title}}.\n{{note_line}}\nEdit it: https://abhishri-academy.web.app/menu-report\n{{reviewer}}");
+  assert.deepStrictEqual(p.place_holders.map((x) => x.name), ["kind_cap", "reviewer", "item_title", "note_line"]);
+  // Arattai accepts only type "string" and samples of letters, digits, spaces, commas and full stops.
+  assert.ok(p.place_holders.every((x) => x.type === "string" && /^[A-Za-z0-9 ,.]+$/.test(x.sample_value)));
+  assert.strictEqual(p.place_holders.find((x) => x.name === "note_line").sample_value, "Note Add photos");
 });
 
 test("a fixed title is allowed, a bad placeholder or empty body is refused", async () => {
