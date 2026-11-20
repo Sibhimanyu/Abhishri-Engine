@@ -57,44 +57,49 @@ function ChannelView({ channel, perms, available }) {
   ];
 
   return (
-    <div className="h-full flex flex-col -mx-4 md:-mx-8 bg-brand-bg relative">
-      {/* Module Navigation */}
-      <div className="flex items-center scroll-tabs edge-fade border-b border-brand-card-border bg-brand-sidebar px-2 sm:px-6 sticky top-0 z-10 shrink-0">
-        {available.length > 1 && (
-          <div className="flex shrink-0 bg-brand-bg rounded-lg p-0.5 border border-brand-card-border mr-2 sm:mr-4" role="tablist" aria-label="Channel">
-            {available.map(c => (
-              <Link
-                key={c.id}
-                to={c.basePath}
-                role="tab"
-                aria-selected={c.id === channel.id}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${c.id === channel.id ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-text-dim hover:text-brand-text'}`}
-              >
-                {c.label}
-              </Link>
-            ))}
-          </div>
-        )}
-        {tabs.filter(t => t.show).map(tab => (
-          <Link
-            key={tab.id}
-            to={`${channel.basePath}/${tab.id}`}
-            className={`flex items-center gap-2 px-3 sm:px-4 py-3.5 sm:py-4 font-medium text-sm transition-colors border-b-2 ${
-              activeView === tab.id
-                ? 'border-brand-primary text-brand-primary'
-                : 'border-transparent text-brand-text-dim hover:text-brand-text hover:border-brand-card-border'
-            }`}
-          >
-            <tab.icon size={16} />
-            {tab.label}
-          </Link>
-        ))}
+    <div className="h-full flex-1 min-h-0 flex flex-col bg-brand-bg">
+      {/* Header: title, channel switch and tabs. Never scrolls. */}
+      <div className="shrink-0 border-b border-brand-card-border bg-brand-sidebar">
+        <div className="flex items-center gap-3 px-4 md:px-8 pt-3">
+          <h2 className="text-xl font-bold text-brand-text">Communications</h2>
+          {available.length > 1 && (
+            <div className="flex shrink-0 bg-brand-bg rounded-lg p-0.5 border border-brand-card-border" role="tablist" aria-label="Channel">
+              {available.map(c => (
+                <Link
+                  key={c.id}
+                  to={c.basePath}
+                  role="tab"
+                  aria-selected={c.id === channel.id}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${c.id === channel.id ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-text-dim hover:text-brand-text'}`}
+                >
+                  {c.label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center scroll-tabs edge-fade px-2 md:px-6">
+          {tabs.filter(t => t.show).map(tab => (
+            <Link
+              key={tab.id}
+              to={`${channel.basePath}/${tab.id}`}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
+                activeView === tab.id
+                  ? 'border-brand-primary text-brand-primary'
+                  : 'border-transparent text-brand-text-dim hover:text-brand-text hover:border-brand-card-border'
+              }`}
+            >
+              <tab.icon size={16} />
+              {tab.label}
+            </Link>
+          ))}
+        </div>
       </div>
 
       {channel.id === 'arattai' && <ArattaiModeBanner />}
 
       {/* Sub-Views Container */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex-1 min-h-0 relative">
         <Routes>
           <Route path="/" element={<Navigate to="chats" replace />} />
           <Route path="chats" element={<WhatsAppChats key={channel.id} channel={channel} />} />
@@ -108,7 +113,7 @@ function ChannelView({ channel, perms, available }) {
   );
 }
 
-// Arattai runs in sandbox until its Business API is published; say so wherever it's used,
+// Arattai may run in sandbox mode; say so wherever it's used,
 // so nobody thinks parents were actually messaged.
 function ArattaiModeBanner() {
   const [account, setAccount] = useState(null);
@@ -123,7 +128,7 @@ function ArattaiModeBanner() {
     return (
       <div className="flex items-start gap-2 px-4 sm:px-6 py-2.5 text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400 border-b border-amber-500/20 shrink-0">
         <FlaskConical size={14} className="shrink-0 mt-0.5" />
-        <span><span className="font-bold">Sandbox:</span> Arattai's Business API isn't released yet, so nothing here is really sent. Messages and delivery receipts are simulated.</span>
+        <span><span className="font-bold">Sandbox mode:</span> nothing here is really sent. Messages and delivery receipts are simulated.</span>
       </div>
     );
   }

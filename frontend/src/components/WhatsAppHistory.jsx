@@ -99,7 +99,8 @@ function BroadcastDetailView({ channel, log, onBack }) {
   }, [log, channel.broadcastLogs, channel.history]);
 
   return (
-    <div className="flex h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm flex-col">
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+    <div className="flex min-h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border shadow-sm flex-col">
       <div className="p-6 border-b border-brand-card-border bg-brand-card shrink-0 flex items-center gap-4">
         <button onClick={onBack} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors border border-brand-card-border">
           <ArrowLeft size={20} className="text-brand-text" />
@@ -241,6 +242,7 @@ function BroadcastDetailView({ channel, log, onBack }) {
         )}
       </div>
     </div>
+    </div>
   );
 }
 
@@ -267,7 +269,8 @@ export default function WhatsAppHistory({ channel = CHANNELS.whatsapp }) {
   }
 
   return (
-    <div className="flex h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm flex-col">
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+    <div className="flex min-h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border shadow-sm flex-col">
       <div className="p-6 border-b border-brand-card-border bg-brand-card shrink-0">
         <h2 className="text-xl font-bold text-brand-text flex items-center gap-2"><History size={20} className="text-brand-primary" /> Broadcast History</h2>
         <p className="text-sm text-brand-text-dim">Analytics and logs for past campaigns.</p>
@@ -345,6 +348,7 @@ export default function WhatsAppHistory({ channel = CHANNELS.whatsapp }) {
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 }

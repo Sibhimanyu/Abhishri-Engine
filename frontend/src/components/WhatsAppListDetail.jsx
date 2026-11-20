@@ -233,7 +233,8 @@ export default function WhatsAppListDetail({ channel = CHANNELS.whatsapp, list, 
   );
 
   return (
-    <div className="flex h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm flex-col animate-in fade-in zoom-in-95 duration-200">
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+    <div className="flex min-h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border shadow-sm flex-col animate-in fade-in zoom-in-95 duration-200">
       
       {/* Header Actions */}
       <div className="p-4 border-b border-brand-card-border bg-brand-card flex items-center justify-between shrink-0">
@@ -503,6 +504,7 @@ export default function WhatsAppListDetail({ channel = CHANNELS.whatsapp, list, 
         </div>
       )}
 
+    </div>
     </div>
   );
 }

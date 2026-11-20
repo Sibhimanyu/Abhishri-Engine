@@ -63,6 +63,8 @@ import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 function App() {
   const location = useLocation();
   const activeTab = location.pathname === '/' ? 'dashboard' : location.pathname.split('/')[1];
+  // Communications manages its own header and scrolling.
+  const fullBleed = location.pathname.startsWith('/whatsapp');
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined' && window.matchMedia) {
       return window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -562,8 +564,8 @@ function App() {
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 relative">
-          {activeTab !== 'dashboard' && (
+        <div className={fullBleed ? 'flex-1 min-h-0 overflow-hidden flex flex-col relative' : 'flex-1 overflow-y-auto p-4 md:p-8 relative'}>
+          {activeTab !== 'dashboard' && !fullBleed && (
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-brand-text">
