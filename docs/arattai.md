@@ -145,11 +145,11 @@ When a parent taps it, Arattai appends `?user_data_key=<key>` (single use, valid
 The `startArattaiMiniApp` function (functions/src/arattai/miniapp.js) exchanges the key for the
 parent's name and phone (`GET /api/v1/miniappsessions/{key}`), closes the session (`DELETE`), and
 if that number is a parent on a student record, returns a Firebase custom token. The page signs in
-with it and shows the normal parent portal, with no SMS code. A number not on any student gets a
+with it and shows the normal parent portal. This is the only parent sign-in; SMS sign-in is off. A number not on any student gets a
 "not linked, contact the school" screen and no token.
 
 - The session is uid `arattai_<digits>` with claims `portalPhone` and `via: "arattai"`. It has no
-  email and is treated exactly like a phone-code parent (never as staff) by the rules, the
+  email and is treated as a parent (never as staff) by the rules, the
   callables and the app.
 - **Scopes:** `ArattaiBusiness.customerdata.READ` and `ArattaiBusiness.miniapps.CREATE` were added.
   The refresh token must be re-issued with them (repeat step 2 of Going live and paste the new

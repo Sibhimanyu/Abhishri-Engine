@@ -378,8 +378,8 @@ function App() {
   const isAuthorizedAdminOrStaff = userData?.isAdmin || authorizedRoles.includes(userData?.role) || Object.keys(userData?.permissions || {}).length > 0;
   if (userData?.role === 'staff-phone') {
     return <AccessCheckFailedScreen
-      title="Staff sign in with email"
-      message="Phone sign-in is for parents. Sign out, then choose Staff and sign in with Google or your email and password."
+      title="Phone sign-in is switched off"
+      message="Parents: open the Abhishri Academy mini app in Arattai. Staff: sign out, then sign in with Google or your email and password."
       canRetry={false}
     />;
   }

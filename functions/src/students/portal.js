@@ -6,8 +6,9 @@ const { FieldValue } = require("firebase-admin/firestore");
 const { resolveAccess } = require("../shared/access");
 
 /**
- * The parent portal. Parents sign in with an SMS code (Firebase phone auth) and see
- * their child's attendance, fees, payments and receipts, and nothing else.
+ * The parent portal. Parents sign in only through the Arattai mini app and see
+ * their child's attendance (plus the school calendar and menu), and nothing else.
+ * Fees, payments and receipts are never read or returned here.
  *
  * Why the portal reads through these callables instead of straight from Firestore:
  * rules can only allow or deny a whole document, and a student document carries
@@ -36,13 +37,11 @@ function localDay(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const toMillis = (v) => (v && typeof v.toMillis === "function") ? v.toMillis() : (typeof v === "number" ? v : null);
-
 function studentName(s) {
   return s.name || `${s.firstName || ""} ${s.lastName || ""}`.trim() || "Student";
 }
 
-/** The signed-in parent's number, or an error for anyone who didn't sign in by phone. */
+/** The signed-in parent's number, or an error for anyone who didn't come through the Arattai mini app. */
 function callerPhone(auth) {
   if (!auth) throw new HttpsError("unauthenticated", "Sign in first.");
   const provider = auth.token?.firebase?.sign_in_provider;
@@ -50,11 +49,7 @@ function callerPhone(auth) {
   if (provider === "custom" && auth.token?.via === "arattai" && auth.token?.portalPhone) {
     return auth.token.portalPhone;
   }
-  const phone = auth.token?.phone_number;
-  if (!phone || provider !== "phone") {
-    throw new HttpsError("permission-denied", "The parent portal is for parents signed in with their phone number.");
-  }
-  return phone;
+  throw new HttpsError("permission-denied", "Open the Abhishri Academy mini app in Arattai to see your child's details.");
 }
 
 /** Students this number may see, re-checked against each record (see the header). */
@@ -66,62 +61,14 @@ async function childrenFor(phone) {
     .sort((a, b) => studentName(a.data()).localeCompare(studentName(b.data())));
 }
 
-/**
- * Plan totals the way the portal always showed them: the full year for an active
- * student, only through the exit month for one who has left, and the dues engine's
- * own balance (functions/src/fees/triggers.js) whenever it has computed one.
- */
-function feeSummary(plan, student, billingSchedule) {
-  if (!plan || !Array.isArray(plan.components)) return null;
-  const monthsCharged = billingSchedule(plan, student).chargeable.length;
-  const isMonthly = c => c.frequency === "monthly";
-  const sumOf = (pred, pick) => plan.components.filter(pred).reduce((a, c) => a + (Number(pick(c)) || 0), 0);
-  const base = c => c.baseAmount !== undefined ? c.baseAmount : c.amount;
-  const annualNetFee = sumOf(c => !isMonthly(c), c => c.amount) + sumOf(isMonthly, c => c.amount) * monthsCharged;
-  const paid = Number(plan.paid) || 0;
-  const discounted = Number(plan.discounted) || 0;
-  const summary = student.financialSummary || {};
-  return {
-    components: plan.components
-      .filter(c => Number(c.amount) > 0)
-      .map(c => ({ uid: c.uid || null, name: c.name || "Fee", amount: Number(c.amount) || 0, frequency: c.frequency || "onetime" })),
-    monthsCharged,
-    totalAnnual: sumOf(c => !isMonthly(c), base) + sumOf(isMonthly, base) * monthsCharged,
-    paid,
-    due: typeof summary.annualRemaining === "number" ? summary.annualRemaining : Math.max(0, annualNetFee - paid - discounted),
-  };
-}
-
-/** Standing payments only: no concessions, voids, or payments that were voided. */
-function payments(txDocs, classifyIncomeTx) {
-  return txDocs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(t => classifyIncomeTx(t) === "incoming" && !t.isVoided && Number(t.amount) > 0)
-    .map(t => ({
-      id: t.id,
-      amount: Number(t.amount),
-      method: t.method || "Cash",
-      description: t.description || "Fee Payment",
-      timestamp: toMillis(t.timestamp),
-      breakdown: t.breakdown || null,
-      breakdownNames: t.breakdownNames || null,
-    }))
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-}
-
 /** Everything the portal shows for each of the caller's children, apart from attendance. */
 exports.getParentPortal = onCall(async (request) => {
   const phone = callerPhone(request.auth);
-  const { billingSchedule, isDiscontinued, getDiscontinuationDate, isOnRolls } = await import("../shared/enrollment.mjs");
-  const { classifyIncomeTx } = await import("../shared/feeTx.mjs");
+  const { isDiscontinued, getDiscontinuationDate, isOnRolls } = await import("../shared/enrollment.mjs");
 
   const docs = await childrenFor(phone);
-  const children = await Promise.all(docs.map(async (d) => {
+  const children = docs.map((d) => {
     const s = d.data();
-    const [planSnap, txSnap] = await Promise.all([
-      d.ref.collection("fee_ledger").doc("plan_details").get(),
-      d.ref.collection("transactions").get(),
-    ]);
     const exit = getDiscontinuationDate(s);
     return {
       id: d.id,
@@ -132,10 +79,8 @@ exports.getParentPortal = onCall(async (request) => {
       enrollment: isDiscontinued(s)
         ? { status: isOnRolls(s) ? "leaving" : "left", exitDate: exit ? localDay(exit) : null }
         : { status: "active", exitDate: null },
-      fees: feeSummary(planSnap.exists ? planSnap.data() : null, s, billingSchedule),
-      payments: payments(txSnap.docs, classifyIncomeTx),
     };
-  }));
+  });
 
   logger.info("getParentPortal", { phoneTail: phone.slice(-4), children: children.length });
   return { phone, today: istDay(new Date()), children };
