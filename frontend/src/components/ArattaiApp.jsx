@@ -48,7 +48,7 @@ function begin() {
       if (code === 'functions/not-found') return { state: 'expired', why: 'key-not-found' };
       if (code === 'functions/invalid-argument') return { state: 'expired', why: `bad-key (${key.length})` };
       console.error('Arattai mini app failed', err);
-      return { state: 'error', why: code || String(err?.message || 'unknown') };
+      return { state: 'error', why: [code, err?.message].filter(Boolean).join(': ') || 'unknown' };
     }
   })();
   return startup;
