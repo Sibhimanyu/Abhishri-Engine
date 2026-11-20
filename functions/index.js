@@ -44,7 +44,7 @@ exports.pruneArattaiDebugLog = arattaiWebhook.pruneArattaiDebugLog;
 exports.checkArattaiNotify = require("./src/arattai/notify").checkArattaiNotify;
 exports.startArattaiMiniApp = require("./src/arattai/miniapp").startArattaiMiniApp;
 
-// --- Staff notifications (Cliq and/or Arattai; see src/notify/dispatch.js) ---
+// --- Staff notifications (see src/notify/dispatch.js) ---
 exports.pruneNotificationLog = require("./src/notify/dispatch").pruneNotificationLog;
 
 // --- Fees & Accounting Module ---
@@ -102,13 +102,12 @@ exports.getParentAttendance = parentPortal.getParentAttendance;
 exports.setParentPortalAccess = parentPortal.setParentPortalAccess;
 exports.syncStudentPortalPhones = parentPortal.syncStudentPortalPhones;
 
-// --- Zoho Cliq notifications (approvals, access requests, birthdays) ---
-const cliq = require("./src/cliq/triggers");
-exports.cliqOnMenuApproval = cliq.cliqOnMenuApproval;
-exports.cliqOnReportApproval = cliq.cliqOnReportApproval;
-exports.cliqOnAccessRequest = cliq.cliqOnAccessRequest;
-exports.cliqTamilBirthdays = cliq.cliqTamilBirthdays;
-exports.sendCliqTest = cliq.sendCliqTest;
-exports.cliqAction = require("./src/cliq/actions").cliqAction;
+// --- Staff notifications (approvals, access requests, birthdays; Arattai) ---
+const notify = require("./src/notify/triggers");
+exports.notifyOnMenuApproval = notify.notifyOnMenuApproval;
+exports.notifyOnReportApproval = notify.notifyOnReportApproval;
+exports.notifyOnAccessRequest = notify.notifyOnAccessRequest;
+exports.notifyTamilBirthdays = notify.notifyTamilBirthdays;
+exports.sendStaffNotificationTest = notify.sendStaffNotificationTest;
 
 // Migration functions removed

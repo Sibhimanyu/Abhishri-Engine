@@ -1,5 +1,5 @@
 // The web app bell's entries, from functions/src/shared/notifications.mjs: the same titles,
-// wording and links the Cliq bot uses. components/NotificationBell.jsx renders them.
+// links the staff notifications use. components/NotificationBell.jsx renders them.
 import { NOTIFICATIONS } from '../../../functions/src/shared/notifications.mjs';
 
 /**

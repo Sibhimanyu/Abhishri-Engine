@@ -6,11 +6,11 @@ import AdminUserPermissions from './AdminUserPermissions';
 import AdminAttendanceSetup from './AdminAttendanceSetup';
 import AdminWhatsAppConfig from './AdminWhatsAppConfig';
 import AdminArattaiConfig from './AdminArattaiConfig';
-import AdminCliqConfig from './AdminCliqConfig';
+import AdminStaffNotifications from './AdminStaffNotifications';
 import AdminEntities from './AdminEntities';
 import AdminAuditLog from './AdminAuditLog';
 
-// /settings/* doesn't declare per-tab sub-routes, so a deep link like /settings/cliq
+// /settings/* doesn't declare per-tab sub-routes, so a deep link like /settings/arattai
 // needs to be read here directly rather than always falling back to the default tab.
 const tabFromPath = (pathname) => pathname.split('/')[2] || 'users';
 
@@ -43,7 +43,7 @@ export default function SettingsAdmin() {
     { id: 'attendance', label: 'Attendance Setup', icon: MapPin, show: isMaster },
     { id: 'whatsapp', label: 'WhatsApp Config', icon: MessageCircle, show: isMaster },
     { id: 'arattai', label: 'Arattai Config', icon: MessagesSquare, show: isMaster },
-    { id: 'cliq', label: 'Cliq Bot', icon: BellRing, show: isMaster },
+    { id: 'staff-notifications', label: 'Staff Notifications', icon: BellRing, show: isMaster },
     { id: 'audit', label: 'Audit Log', icon: ScrollText, show: isMaster },
   ];
   const tabs = allTabs.filter(t => t.show);
@@ -79,7 +79,7 @@ export default function SettingsAdmin() {
         {activeTab === 'attendance' && isMaster && <AdminAttendanceSetup />}
         {activeTab === 'whatsapp' && isMaster && <AdminWhatsAppConfig />}
         {activeTab === 'arattai' && isMaster && <AdminArattaiConfig />}
-        {activeTab === 'cliq' && isMaster && <AdminCliqConfig />}
+        {activeTab === 'staff-notifications' && isMaster && <AdminStaffNotifications />}
         {activeTab === 'audit' && isMaster && <AdminAuditLog />}
       </div>
     </div>
