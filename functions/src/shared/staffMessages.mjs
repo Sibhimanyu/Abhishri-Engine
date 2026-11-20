@@ -381,29 +381,47 @@ const neverEmpty = (v) => {
   return s || '-';
 };
 
+/** This event's link as fixed template text: its sample link without the query string. */
+export function templateLink(eventKey) {
+  return String(EVENTS[eventKey]?.sample?.link || DEFAULT_APP_URL).split('?')[0];
+}
+
+/** A sample value Arattai accepts: only letters, digits, spaces, commas and full stops. */
+export function arattaiSample(v) {
+  // Long samples are refused too (about 110 characters failed, 54 passed), so keep it short.
+  let s = String(v ?? '').replace(/[^A-Za-z0-9 ,.]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (s.length > 50) s = s.slice(0, 50).replace(/\s+\S*$/, '').trim();
+  return s || 'Sample';
+}
+
 /** The Arattai create/update body for an event's wording. Throws if the wording can't be a template. */
 export function buildTemplatePayload(eventKey, wording) {
   const problems = templateProblems(eventKey, wording);
   if (problems.length) throw new Error(problems[0]);
   const ev = EVENTS[eventKey];
   const title = String(wording.title || '').trim();
-  const names = [...new Set([...placeholdersIn(title), ...placeholdersIn(wording.body)])];
-  const message = { body: toDouble(String(wording.body).trim()) };
-  if (title) message.title = toDouble(title);
+  // Arattai rejects web links as placeholder samples, so {link} is written into the template
+  // as this event's fixed link (it doesn't change per message), and isn't a placeholder.
+  const fixedLink = (t) => t.replace(/\{link\}/g, templateLink(eventKey));
+  const names = [...new Set([...placeholdersIn(title), ...placeholdersIn(wording.body)])].filter((n) => n !== 'link');
+  const message = { body: toDouble(fixedLink(String(wording.body).trim())) };
+  if (title) message.title = toDouble(fixedLink(title));
   return {
     type: 'transaction',
     language: 'en',
     name: templateName(eventKey),
     description: templateDescription(eventKey),
     message,
-    place_holders: names.map((n) => ({ name: arattaiName(n), type: 'text', sample_value: neverEmpty(ev.sample[n]) })),
+    // Arattai's rules (found by trying its API; not in its docs): type must be "string", and a
+    // sample may only hold letters, digits, spaces, commas and full stops, and must be short.
+    place_holders: names.map((n) => ({ name: arattaiName(n), type: 'string', sample_value: arattaiSample(ev.sample[n]) })),
   };
 }
 
 /** { snake_name: value } for the placeholders in the given wording, from the render values. */
 export function templateValues(wording, vars = {}) {
   const out = {};
-  for (const n of [...placeholdersIn(wording.title), ...placeholdersIn(wording.body)]) {
+  for (const n of [...placeholdersIn(wording.title), ...placeholdersIn(wording.body)].filter((x) => x !== 'link')) {
     out[arattaiName(n)] = neverEmpty(String(vars[n] ?? '').replace(/\s*\n\s*/g, ' / ')).slice(0, 1000);
   }
   return out;
