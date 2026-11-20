@@ -536,4 +536,9 @@ async function parseArattai(body) {
   return { incoming, statuses, templates };
 }
 
-module.exports = { parseReceived, live, call, asHttps, getMiniAppSession, closeMiniAppSession, verifySignature, parseArattai, parseTemplateEvent, parseTemplate, createTemplate, submitTemplate, updateTemplate, deleteTemplate, getTemplate, renumber, arattaiPhone, missingSettings, SCOPES };
+/** Headers for an authenticated Arattai request (used to fetch media files). */
+async function authHeaders(config) {
+  return { Authorization: `Bearer ${await accessToken(config)}`, "Arattai-CompanyId": String(config.companyId).trim() };
+}
+
+module.exports = { authHeaders, parseReceived, live, call, asHttps, getMiniAppSession, closeMiniAppSession, verifySignature, parseArattai, parseTemplateEvent, parseTemplate, createTemplate, submitTemplate, updateTemplate, deleteTemplate, getTemplate, renumber, arattaiPhone, missingSettings, SCOPES };

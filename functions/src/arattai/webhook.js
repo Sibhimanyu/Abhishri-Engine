@@ -7,6 +7,8 @@ const crypto = require("crypto");
 const { getProvider } = require("./provider");
 const { verifySignature } = require("./live");
 const { P, applyIncoming, applyStatus } = require("./store");
+const { mirrorMedia } = require("./media");
+const { authHeaders } = require("./live");
 const { applyTemplateApproval } = require("./staffTemplates");
 
 const tokenMatches = (presented, expected) => {
@@ -58,7 +60,13 @@ exports.arattaiWebhook = onRequest(async (request, response) => {
     const body = request.body || {};
     await admin.database().ref(P.debug).push({ timestamp: ServerValue.TIMESTAMP, payload: body });
     const { incoming, statuses, templates = [] } = await getProvider(config).parseWebhook(body);
-    for (const inc of incoming) await applyIncoming(inc);
+    for (const inc of incoming) {
+      // Arattai's file links expire quickly, so keep our own copy before saving the message.
+      const msg = config.mode === "live" && inc.mediaUrl
+        ? await mirrorMedia(inc, { conversationId: inc.from, authHeaders: () => authHeaders(config) }).catch(() => inc)
+        : inc;
+      await applyIncoming(msg);
+    }
     for (const t of templates) await applyTemplateApproval(t);
     let unmatched = 0;
     for (const st of statuses) if (!(await applyStatus(st))) unmatched++;
