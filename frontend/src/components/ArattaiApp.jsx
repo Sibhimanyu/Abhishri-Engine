@@ -40,6 +40,13 @@ function begin() {
     }
     try {
       const res = (await startMiniApp({ key })).data;
+      if (!res.ok && res.reason === 'no-phone') {
+        // Arattai didn't share the number. A parent already signed in by text code can go straight in.
+        await auth.authStateReady();
+        const t = auth.currentUser ? await auth.currentUser.getIdTokenResult() : null;
+        const parent = t && (t.signInProvider === 'phone' || t.claims.via === 'arattai');
+        return parent ? { state: 'portal' } : { state: 'sign-in' };
+      }
       if (!res.ok) return { state: 'not-registered', name: res.name || '' };
       await signInWithCustomToken(auth, res.token);
       return { state: 'portal' };
@@ -119,6 +126,22 @@ export default function ArattaiApp() {
   }
   if (result.state === 'portal') {
     return <Suspense fallback={<div className="h-dvh flex items-center justify-center bg-brand-bg"><Spinner /></div>}><ParentPortal /></Suspense>;
+  }
+  if (result.state === 'sign-in') {
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-brand-bg text-brand-text px-6 py-10 text-center">
+        <img src="/logo-coral.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 block dark:hidden" />
+        <img src="/logo-white.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 hidden dark:block" />
+        <Phone className="text-brand-primary mb-4" size={44} />
+        <h1 className="text-xl font-bold mb-2">Sign in with your phone</h1>
+        <p className="text-brand-text-dim max-w-sm text-base leading-relaxed">
+          Arattai didn't share your number with us, so sign in once with the number you gave the school. We'll text you a 6-digit code.
+        </p>
+        <a href="/" className="mt-8 w-full max-w-sm flex items-center justify-center gap-2 rounded-xl bg-brand-primary text-white font-bold py-3">
+          Continue
+        </a>
+      </div>
+    );
   }
   if (result.state === 'not-registered') {
     return (
