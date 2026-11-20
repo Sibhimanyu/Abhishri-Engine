@@ -57,6 +57,7 @@ export function channelPerms(channel, userData) {
 
 /** Where the Communications link should land for this user: the first channel they can use. */
 export function communicationsPath(userData) {
-  const first = Object.values(CHANNELS).find(c => channelPerms(c, userData).any);
+  // Arattai first: it's the school's main channel; WhatsApp is the fallback.
+  const first = [CHANNELS.arattai, CHANNELS.whatsapp].find(c => channelPerms(c, userData).any);
   return first ? first.basePath : CHANNELS.whatsapp.basePath;
 }
