@@ -107,8 +107,24 @@ async function applyIncoming(inc) {
   };
   if (inc.mediaUrl) {
     msg.imageData = { url: inc.mediaUrl, mimeType: inc.mimeType || "" };
-    preview = inc.type === "image" ? (inc.text ? `📷 ${inc.text}` : "📷 Photo")
-      : inc.type === "audio" ? "🎤 Voice Message" : "📎 Attachment";
+    if (inc.type === "document") {
+      msg.message = "";
+      msg.imageData.fileName = inc.fileName || inc.text || "";
+      if (inc.size) msg.imageData.size = inc.size;
+    }
+    const cap = inc.text ? ` ${inc.text}` : "";
+    preview = inc.isGif ? "🎞️ GIF"
+      : inc.type === "image" ? (inc.text ? `📷 ${inc.text}` : "📷 Photo")
+      : inc.type === "sticker" ? "🏷️ Sticker"
+      : inc.type === "video" ? `🎥 Video${cap}`
+      : inc.type === "audio" ? "🎤 Voice message"
+      : `📄 Document: ${inc.fileName || inc.text || "file"}`;
+  } else if (inc.location) {
+    msg.location = inc.location;
+    preview = "📍 Location";
+  } else if (inc.contact) {
+    msg.contact = inc.contact;
+    preview = `👤 Contact${inc.contact.name ? `: ${inc.contact.name}` : ""}`;
   }
   await convo.child("messages").push(msg);
   await convo.child("metadata").transaction((cur) => {

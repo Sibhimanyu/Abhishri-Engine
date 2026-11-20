@@ -269,10 +269,27 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
                           {msg.type === 'document' && msg.imageData?.url && (
                             <a href={msg.imageData.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-lg hover:bg-black/10 transition-colors">
                               <span className="text-xl">📄</span>
-                              <span className="text-sm font-medium underline truncate text-brand-primary">View Document</span>
+                              <span className="min-w-0 flex flex-col">
+                                <span className="text-sm font-medium underline truncate text-brand-primary">{msg.imageData.fileName || 'View Document'}</span>
+                                {msg.imageData.size > 0 && <span className="text-[11px] text-gray-500">{msg.imageData.size >= 1048576 ? `${(msg.imageData.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(msg.imageData.size / 1024))} KB`}</span>}
+                              </span>
                             </a>
                           )}
-                          {msg.message && <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>}
+                          {msg.location?.url && (
+                            <a href={msg.location.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-lg hover:bg-black/10 transition-colors">
+                              <span className="text-sm font-medium underline truncate text-brand-primary">📍 {msg.location.name || 'Location'}</span>
+                            </a>
+                          )}
+                          {msg.contact && (
+                            <div className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-lg">
+                              <span className="text-xl">👤</span>
+                              <span className="min-w-0 flex flex-col">
+                                <span className="text-sm font-medium truncate">{msg.contact.name || 'Contact'}</span>
+                                {(msg.contact.phones || []).map(p => <span key={p} className="text-xs text-gray-500">{p}</span>)}
+                              </span>
+                            </div>
+                          )}
+                          {msg.message && !msg.location && !msg.contact && <p className="text-sm whitespace-pre-wrap break-words">{msg.message}</p>}
                           {msg.imageData?.caption && <p className="text-sm whitespace-pre-wrap break-words">{msg.imageData.caption}</p>}
                         </div>
                       )}
