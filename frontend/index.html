@@ -15,6 +15,16 @@
           var vp = document.querySelector('meta[name="viewport"]');
           if (vp) vp.setAttribute('content', vp.getAttribute('content') + ', viewport-fit=cover');
         }
+        if (window.location.pathname.indexOf('/arattai-app') === 0) {
+          // The Arattai mini app: native-feeling webview. No zoom, edge-to-edge, chrome colour matches the page.
+          var avp = document.querySelector('meta[name="viewport"]');
+          if (avp) avp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
+          root.classList.add('miniapp');
+          var dk = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var tc = document.createElement('meta');
+          tc.name = 'theme-color'; tc.content = dk ? '#0d1117' : '#F8FAFC';
+          document.head.appendChild(tc);
+        }
         if (window.location.pathname === '/public-calendar') {
           root.classList.remove('dark');
           root.style.colorScheme = 'light';
@@ -56,6 +66,10 @@
       .sk-hide-dark, .sk-hide-light { display:none; }
       html:not(.dark) .sk-hide-dark { display:block; }
       html.dark .sk-hide-light { display:block; }
+      html.miniapp, html.miniapp body { position:fixed; inset:0; width:100%; overflow:hidden; overscroll-behavior:none; }
+      .sk-mini { height:100dvh; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--sk-bg); }
+      .sk-mini img { height:72px; width:auto; animation:sk-pulse 1.8s ease-in-out infinite; }
+      @media (prefers-reduced-motion:reduce) { .sk-mini img { animation:none; } }
       @keyframes sk-pulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
     </style>
   </head>
@@ -68,6 +82,10 @@
         var logo = '<img class="sk-hide-dark" src="/logo-coral.png" alt="" /><img class="sk-hide-light" src="/logo-white.png" alt="" />';
         var bars = function (n, w) { var s = ''; for (var i = 0; i < n; i++) s += '<div class="sk-bar" style="width:' + w[i % w.length] + '"></div>'; return s; };
         var card = function () { return '<div class="sk-card"><div class="sk-bar" style="width:45%"></div><div class="sk-bar lg" style="width:55%;margin:14px 0 12px"></div><div class="sk-bar" style="width:70%"></div></div>'; };
+        if (window.location.pathname.indexOf('/arattai-app') === 0) {
+          root.innerHTML = '<div class="sk-mini" aria-hidden="true">' + logo + '</div>';
+          return;
+        }
         var shell = '';
         try { shell = localStorage.getItem('aa:session') || ''; } catch (e) {}
         if (shell === 'shell') {

@@ -35,6 +35,18 @@
     60% { transform: rotate(-7deg); }
     75% { transform: rotate(3deg); }
   }
+  /* Parent mini app: tab content arrives, the splash breathes. */
+  --animate-portal-in: portal-in 160ms ease-out both;
+  @keyframes portal-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  --animate-splash: splash 1.8s ease-in-out infinite;
+  @keyframes splash {
+    0%, 100% { opacity: 0.55; transform: scale(0.97); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+
   --animate-bell-label-in: bell-label-in 0.45s ease-out;
   @keyframes bell-label-in {
     from { max-width: 0; opacity: 0; }
@@ -192,4 +204,26 @@ html.native body::before {
 }
 html.native header.sticky.top-0 {
   top: env(safe-area-inset-top);
+}
+
+
+/* The Arattai mini app (html.miniapp is set in index.html for /arattai-app only):
+   behave like an app, not a page. Content text stays selectable via .selectable. */
+html.miniapp {
+  position: fixed; inset: 0; width: 100%; overflow: hidden; overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+}
+html.miniapp body { position: fixed; inset: 0; width: 100%; overflow: hidden; overscroll-behavior: none; user-select: none; -webkit-user-select: none; }
+html.miniapp * { -webkit-tap-highlight-color: transparent; }
+html.miniapp button, html.miniapp [role="tab"], html.miniapp a { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+html.miniapp a { text-decoration: none; }
+html.miniapp :focus:not(:focus-visible) { outline: none; }
+html.miniapp .selectable { user-select: text; -webkit-user-select: text; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-portal-in { animation: portal-fade 120ms linear both; }
+  .animate-splash { animation: none; }
+  @keyframes portal-fade { from { opacity: 0; } to { opacity: 1; } }
 }
