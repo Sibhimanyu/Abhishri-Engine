@@ -128,7 +128,8 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
   );
 
   return (
-    <div className="flex h-[calc(100%-3rem)] min-h-0 bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm">
+    <div className="h-full min-h-0 p-4 md:p-6">
+    <div className="flex h-full min-h-0 bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border shadow-sm">
       
       {/* Sidebar: Conversations */}
       <div className={`w-full md:w-[320px] min-h-0 bg-brand-card flex flex-col border-r border-brand-card-border ${activeChat ? 'hidden md:flex' : 'flex'}`}>
@@ -295,6 +296,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
           </>
         )}
       </div>
+    </div>
     </div>
   );
 }

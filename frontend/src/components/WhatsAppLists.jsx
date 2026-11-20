@@ -90,7 +90,8 @@ export default function WhatsAppLists({ channel = CHANNELS.whatsapp }) {
   }
 
   return (
-    <div className="flex h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm flex-col">
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+    <div className="flex min-h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border shadow-sm flex-col">
       <div className="p-6 border-b border-brand-card-border bg-brand-card flex justify-between items-center shrink-0">
         <div>
           <h2 className="text-xl font-bold text-brand-text flex items-center gap-2"><Users size={20} className="text-brand-primary" /> Audience Lists</h2>
@@ -211,6 +212,7 @@ export default function WhatsAppLists({ channel = CHANNELS.whatsapp }) {
         </div>
       )}
 
+    </div>
     </div>
   );
 }

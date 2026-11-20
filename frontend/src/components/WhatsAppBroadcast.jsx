@@ -334,7 +334,8 @@ export default function WhatsAppBroadcast({ channel = CHANNELS.whatsapp }) {
   });
 
   return (
-    <div className="flex h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm">
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+    <div className="flex min-h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border shadow-sm">
       
       {/* Left: Configuration Form */}
       <div className="w-full md:w-1/2 bg-brand-card border-r border-brand-card-border flex flex-col relative">
@@ -652,6 +653,7 @@ export default function WhatsAppBroadcast({ channel = CHANNELS.whatsapp }) {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
