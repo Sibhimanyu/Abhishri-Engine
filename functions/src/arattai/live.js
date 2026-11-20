@@ -27,6 +27,8 @@ const SCOPES = [
   "ArattaiBusiness.messages.CREATE",
   "ArattaiBusiness.messagetemplates.READ",
   "ArattaiBusiness.phonenumbers.READ",
+  "ArattaiBusiness.customerdata.READ",
+  "ArattaiBusiness.miniapps.CREATE",
 ].join(",");
 
 const SEND_PATH = { transaction: "/api/v1/transactions", promotion: "/api/v1/promotions", authentication: "/api/v1/authentications" };
@@ -137,6 +139,28 @@ async function call(config, method, path, { body, query, number = false } = {}) 
     throw new ArattaiError(res.status, data.code, data.message);
   }
   throw new ArattaiError(401, "invalid_oauthtoken");
+}
+
+// ---------------------------------------------------------------- Mini app
+
+/**
+ * Exchange the single-use `user_data_key` Arattai adds to the mini app URL (valid one
+ * minute) for who opened it: { name, phone ("91-9999999911"), businessNumberId, source }.
+ * Fields may sit under `data`.
+ */
+async function getMiniAppSession(config, key) {
+  const res = await call(config, "GET", `/api/v1/miniappsessions/${encodeURIComponent(key)}`);
+  const d = res?.data && typeof res.data === "object" ? res.data : res || {};
+  return { name: d.name || "", phone: d.phone || "", businessNumberId: d.businessnumber_id || "", source: d.source || "" };
+}
+
+/** Close the session once we've read it. Best effort: the key is single-use anyway. */
+async function closeMiniAppSession(config, key) {
+  try {
+    await call(config, "DELETE", `/api/v1/miniappsessions/${encodeURIComponent(key)}`);
+  } catch (err) {
+    logger.warn("Arattai: could not close mini app session", err.message);
+  }
 }
 
 const asHttps = (err) => {
@@ -383,4 +407,4 @@ async function parseArattai(body) {
   return { incoming, statuses };
 }
 
-module.exports = { live, verifySignature, parseArattai, renumber, arattaiPhone, missingSettings, SCOPES };
+module.exports = { live, call, asHttps, getMiniAppSession, closeMiniAppSession, verifySignature, parseArattai, renumber, arattaiPhone, missingSettings, SCOPES };

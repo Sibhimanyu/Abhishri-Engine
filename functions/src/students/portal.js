@@ -45,8 +45,13 @@ function studentName(s) {
 /** The signed-in parent's number, or an error for anyone who didn't sign in by phone. */
 function callerPhone(auth) {
   if (!auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  const provider = auth.token?.firebase?.sign_in_provider;
+  // Arattai mini app sessions are custom tokens minted by startArattaiMiniApp.
+  if (provider === "custom" && auth.token?.via === "arattai" && auth.token?.portalPhone) {
+    return auth.token.portalPhone;
+  }
   const phone = auth.token?.phone_number;
-  if (!phone || auth.token?.firebase?.sign_in_provider !== "phone") {
+  if (!phone || provider !== "phone") {
     throw new HttpsError("permission-denied", "The parent portal is for parents signed in with their phone number.");
   }
   return phone;
@@ -222,3 +227,7 @@ exports.syncStudentPortalPhones = onDocumentWritten("students/{studentId}", asyn
   if (JSON.stringify(phones) === JSON.stringify(after.portalPhones || [])) return;
   await event.data.after.ref.update({ portalPhones: phones });
 });
+
+// Shared with the Arattai mini app (functions/src/arattai/miniapp.js) and tests.
+exports.callerPhone = callerPhone;
+exports.childrenFor = childrenFor;

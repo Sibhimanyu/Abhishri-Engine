@@ -35,9 +35,14 @@ function verifiedEmail(auth) {
   return email && auth.token.email_verified === true ? String(email).toLowerCase() : "";
 }
 
-/** Phone sign-in is for parents only; a phone session never counts as staff. */
+/**
+ * Phone sign-in is for parents only; a phone session never counts as staff. The same goes
+ * for the Arattai mini app's custom-token sessions (see functions/src/arattai/miniapp.js).
+ */
 function isPhoneSession(auth) {
-  return auth?.token?.firebase?.sign_in_provider === "phone";
+  const t = auth?.token;
+  return t?.firebase?.sign_in_provider === "phone"
+    || (t?.firebase?.sign_in_provider === "custom" && t?.via === "arattai");
 }
 
 async function loadUser(auth) {

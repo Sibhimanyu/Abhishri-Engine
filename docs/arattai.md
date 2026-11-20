@@ -110,7 +110,8 @@ sets: ask for it when applying, or write to support@arattaibusiness.in.
 2. **OAuth client.** At https://api-console.arattai.in create a client (Self Client is the
    simplest, if offered; otherwise Server-based with any redirect URI). Get a grant code for
    these scopes, with `access_type=offline`:
-   `ArattaiBusiness.messages.CREATE,ArattaiBusiness.messagetemplates.READ,ArattaiBusiness.phonenumbers.READ`
+   `ArattaiBusiness.messages.CREATE,ArattaiBusiness.messagetemplates.READ,ArattaiBusiness.phonenumbers.READ,ArattaiBusiness.customerdata.READ,ArattaiBusiness.miniapps.CREATE`
+   (the last two are for the [parent mini app](#parent-mini-app))
    (URL: `https://accounts.arattai.in/oauth/v2/auth?response_type=code&client_id=…&scope=…&redirect_uri=…&access_type=offline&prompt=consent&tenant=ArattaiBusiness`).
    The code lasts one minute; exchange it straight away:
    `curl -X POST "https://accounts.arattai.in/oauth/v2/token?grant_type=authorization_code&code=…&client_id=…&client_secret=…&redirect_uri=…"`
@@ -125,3 +126,22 @@ sets: ask for it when applying, or write to support@arattaibusiness.in.
 6. **Templates.** Create and get Transactional templates approved in the Platform, then
    click Sync Message Templates. Syncing removes the sandbox templates.
 7. **Test** with a test recipient before broadcasting to parents.
+
+## Parent mini app
+
+Arattai can open a web page inside a chat. Ours is `https://abhishri-academy.web.app/arattai-app`.
+When a parent taps it, Arattai appends `?user_data_key=<key>` (single use, valid one minute).
+The `startArattaiMiniApp` function (functions/src/arattai/miniapp.js) exchanges the key for the
+parent's name and phone (`GET /api/v1/miniappsessions/{key}`), closes the session (`DELETE`), and
+if that number is a parent on a student record, returns a Firebase custom token. The page signs in
+with it and shows the normal parent portal, with no SMS code. A number not on any student gets a
+"not linked, contact the school" screen and no token.
+
+- The session is uid `arattai_<digits>` with claims `portalPhone` and `via: "arattai"`. It has no
+  email and is treated exactly like a phone-code parent (never as staff) by the rules, the
+  callables and the app.
+- **Scopes:** `ArattaiBusiness.customerdata.READ` and `ArattaiBusiness.miniapps.CREATE` were added.
+  The refresh token must be re-issued with them (repeat step 2 of Going live and paste the new
+  Refresh Token in Settings → Arattai Config), otherwise the exchange fails.
+- **How parents open it:** add a URL button pointing at the page to a template, or register it as
+  the mini app on the pinned business number so it appears in the chat.

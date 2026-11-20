@@ -179,10 +179,30 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      stopLookup = watchAccessRecord(user, (next) => {
+      const startLookup = () => watchAccessRecord(user, (next) => {
         setUserData(next);
         setLoading(false);
       });
+
+      // Parents who opened the Arattai mini app signed in with a custom token minted by
+      // the server (startArattaiMiniApp): no email, no phone number, claim via=arattai.
+      // They are parents exactly like a phone-code sign-in, and never staff.
+      if (!user.email && user.uid.startsWith('arattai_')) {
+        let cancelled = false;
+        stopLookup = () => { cancelled = true; };
+        user.getIdTokenResult().then((t) => {
+          if (cancelled) return;
+          if (t.claims.via === 'arattai' && t.claims.portalPhone) {
+            setUserData({ role: 'parent', dashboardType: 'parent', phoneNumber: t.claims.portalPhone, permissions: {} });
+            setLoading(false);
+          } else {
+            stopLookup = startLookup();
+          }
+        }).catch(() => { if (!cancelled) stopLookup = startLookup(); });
+        return;
+      }
+
+      stopLookup = startLookup();
     });
 
     return () => {
