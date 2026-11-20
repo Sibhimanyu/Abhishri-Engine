@@ -1,7 +1,7 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { AlertCircle, XCircle, MessageCircle } from 'lucide-react';
+import { AlertCircle, MessageCircle, Globe, Phone, Sparkles } from 'lucide-react';
 import { auth, functions } from '../firebase';
 import { Spinner } from './Spinner';
 
@@ -67,6 +67,38 @@ function Message({ icon: Icon, tone = 'text-red-500', title, code, children }) {
   );
 }
 
+// Shown to anyone whose Arattai number isn't a parent's: a warm welcome and a way into admissions.
+const SCHOOL = { site: 'https://abhishriacademy.in', phone: '+919566562440', phoneLabel: '+91 95665 62440' };
+
+function Welcome({ name }) {
+  return (
+    <div className="min-h-dvh flex flex-col items-center justify-center bg-brand-bg text-brand-text px-6 py-10 text-center">
+      <img src="/logo-coral.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 block dark:hidden" />
+      <img src="/logo-white.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 hidden dark:block" />
+      <Sparkles className="text-brand-primary mb-4" size={44} />
+      <h1 className="text-2xl font-bold mb-2">{name ? `Welcome, ${name}!` : 'Welcome!'}</h1>
+      <p className="text-brand-text-dim max-w-sm text-base leading-relaxed">
+        This is the parent portal for families at Abhishri Academy. Once your child is enrolled, you'll see their attendance, fees, school calendar and weekly menu right here.
+      </p>
+      <div className="mt-8 w-full max-w-sm rounded-2xl border border-brand-card-border bg-brand-card p-5 text-left">
+        <p className="font-bold">Planning admissions?</p>
+        <p className="text-sm text-brand-text-dim mt-1">Tamil Nadu's first neuroeducation-based preschool, in Dharapuram. Come and see us.</p>
+        <div className="mt-4 flex flex-col gap-2">
+          <a href={SCHOOL.site} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 rounded-xl bg-brand-primary text-white font-bold py-3">
+            <Globe size={18} /> Visit our website
+          </a>
+          <a href={`tel:${SCHOOL.phone}`} className="flex items-center justify-center gap-2 rounded-xl border border-brand-card-border font-bold py-3">
+            <Phone size={18} /> Call {SCHOOL.phoneLabel}
+          </a>
+        </div>
+      </div>
+      <p className="mt-6 text-xs text-brand-text-dim max-w-sm">
+        Already enrolled? Your Arattai number may differ from the one the school has. Message us in this chat and we'll update it.
+      </p>
+    </div>
+  );
+}
+
 export default function ArattaiApp() {
   const [result, setResult] = useState(null);
 
@@ -90,9 +122,7 @@ export default function ArattaiApp() {
   }
   if (result.state === 'not-registered') {
     return (
-      <Message icon={XCircle} title={result.name ? `Hi ${result.name}` : 'Hi'}>
-        This Arattai number isn't linked to a student at Abhishri Academy. Please contact the school.
-      </Message>
+      <Welcome name={result.name} />
     );
   }
   if (result.state === 'expired') {
