@@ -128,10 +128,10 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
   );
 
   return (
-    <div className="flex h-full bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm">
+    <div className="flex h-[calc(100%-3rem)] min-h-0 bg-brand-bg rounded-xl overflow-hidden border border-brand-card-border m-6 shadow-sm">
       
       {/* Sidebar: Conversations */}
-      <div className={`w-full md:w-[320px] bg-brand-card flex flex-col border-r border-brand-card-border ${activeChat ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`w-full md:w-[320px] min-h-0 bg-brand-card flex flex-col border-r border-brand-card-border ${activeChat ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-4 border-b border-brand-card-border">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={16} />
@@ -145,7 +145,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {initialLoading ? (
             <div className="p-8 flex justify-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-primary"></div></div>
           ) : filteredConvos.length === 0 ? (
@@ -188,7 +188,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
       </div>
 
       {/* Main Chat Area */}
-      <div className={`flex-1 flex flex-col bg-[#efeae2] dark:bg-[#0b141a] ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`flex-1 min-w-0 min-h-0 flex flex-col bg-[#efeae2] dark:bg-[#0b141a] ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
         {!activeChat ? (
           <div className="flex-1 flex flex-col items-center justify-center text-brand-text-dim opacity-50">
             <MessageSquare size={64} className="mb-4" />
@@ -211,7 +211,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
             </div>
 
             {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 relative" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundSize: 'contain', backgroundBlendMode: 'multiply' }}>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 relative bg-[#efeae2] dark:bg-[#0b141a] bg-contain bg-blend-multiply dark:bg-none bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
               {messagesLoading ? (
                 <div className="flex justify-center items-center h-full">
                   <Spinner />
@@ -222,13 +222,13 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
                 
                 return (
                   <div key={msg.id} className={`flex ${isInbound ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-[75%] rounded-lg p-2 relative shadow-sm ${isInbound ? 'bg-white dark:bg-[#202c33] text-black dark:text-[#e9edef]' : 'bg-[#d9fdd3] dark:bg-[#005c4b] text-black dark:text-[#e9edef]'}`}>
+                    <div className={`max-w-[75%] min-w-0 rounded-lg px-3 py-2 shadow-sm ${isInbound ? 'bg-white dark:bg-[#202c33] text-black dark:text-[#e9edef]' : 'bg-[#d9fdd3] dark:bg-[#005c4b] text-black dark:text-[#e9edef]'}`}>
                       {msg.type === 'revoke' ? (
-                        <p className="text-sm italic text-gray-500 pb-3 flex items-center gap-1">
+                        <p className="text-sm italic text-gray-500 flex items-center gap-1">
                           <span className="text-xs">🚫</span> This message was deleted
                         </p>
                       ) : (
-                        <div className="flex flex-col gap-2 pb-3">
+                        <div className="flex flex-col gap-2">
                           {(msg.type === 'image' || msg.type === 'photo') && msg.imageData?.url && (
                             <a href={msg.imageData.url} target="_blank" rel="noreferrer">
                               <img src={msg.imageData.url} alt="Attachment" className="max-w-full rounded-md max-h-64 object-cover hover:opacity-90 transition-opacity" loading="lazy" />
@@ -253,8 +253,8 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
                           {msg.imageData?.caption && <p className="text-sm whitespace-pre-wrap break-words">{msg.imageData.caption}</p>}
                         </div>
                       )}
-                      <div className="absolute bottom-1 right-2 flex items-center gap-1">
-                        <span className="text-[10px] text-gray-500 dark:text-gray-400">{timeStr}</span>
+                      <div className="mt-1 flex items-center justify-end gap-1 whitespace-nowrap">
+                        <span className="text-[11px] leading-none text-gray-500 dark:text-gray-400">{timeStr}</span>
                         {!isInbound && (
                           <span
                             className={`text-[12px] ${msg.status === 'failed' ? 'text-red-500' : msg.status === 'read' ? 'text-blue-500' : 'text-gray-400'}`}
@@ -272,7 +272,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
             </div>
 
             {/* Input Area */}
-            <form onSubmit={handleSend} className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center px-4 gap-3 shrink-0">
+            <form onSubmit={handleSend} className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center pl-4 pr-4 md:pr-28 gap-3 shrink-0">
               <input 
                 type="text" 
                 value={inputMsg}
