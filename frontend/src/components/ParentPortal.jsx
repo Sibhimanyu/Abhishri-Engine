@@ -6,19 +6,16 @@ import { getDocs } from '../utils/firestoreRead';
 import { functions, auth, firestore } from '../firebase';
 import { Spinner } from './Spinner';
 import SchoolCalendar from './SchoolCalendar';
-import PaymentReceipt from './PaymentReceipt';
-import { INR } from '../utils/reportUtils';
 import { pickMenuFor, todayIST, weekRangeLabel } from '../utils/menuImport';
-import { LogOut, Moon, Sun, CheckCircle, XCircle, Clock, MinusCircle, Wallet, ChevronLeft, ChevronRight, Receipt, CalendarDays, Utensils, CalendarCheck, AlertCircle, RefreshCw } from 'lucide-react';
+import { LogOut, Moon, Sun, CheckCircle, XCircle, Clock, MinusCircle, ChevronLeft, ChevronRight, CalendarDays, Utensils, CalendarCheck, AlertCircle, RefreshCw } from 'lucide-react';
 
 /**
- * The parent portal: what a parent sees after signing in with their phone number.
+ * The parent portal: what a parent sees after opening the Arattai mini app.
  *
  * Everything about the child comes from the getParentPortal / getParentAttendance
  * callables (functions/src/students/portal.js), which check the signed-in number
  * against the record on every request and return only what the school chose to
- * show parents: name, programme and joining date, attendance, fees, payments and
- * receipts. The school calendar and the weekly menu are school-wide and are read
+ * show parents: name, programme and joining date, attendance. Fees are never sent to parents. The school calendar and the weekly menu are school-wide and are read
  * directly, as every signed-in user may.
  */
 
@@ -34,7 +31,6 @@ const STATUS = {
 
 const TABS = [
   { key: 'attendance', label: 'Attendance', icon: CalendarCheck },
-  { key: 'fees', label: 'Fees', icon: Wallet },
   { key: 'calendar', label: 'Calendar', icon: CalendarDays },
   { key: 'menu', label: 'Menu', icon: Utensils },
 ];
@@ -162,69 +158,6 @@ function AttendanceMonth({ child, today, cache, loadMonth }) {
   );
 }
 
-function FeesView({ child, onReceipt }) {
-  const { fees, payments } = child;
-  return (
-    <>
-      {fees ? (
-        <Card title="Fee plan this year">
-          <div className="space-y-3 mb-5">
-            {fees.components.map((c, i) => (
-              <div key={i} className="flex justify-between items-center border-b border-brand-card-border pb-3 last:border-0 last:pb-0">
-                <span className="text-sm font-semibold text-brand-text">{c.name}</span>
-                <div className="text-right">
-                  <span className="text-sm font-bold text-brand-text">{INR(c.amount * (c.frequency === 'monthly' ? fees.monthsCharged : 1))}</span>
-                  <p className="text-[10px] text-brand-text-dim">{c.frequency === 'monthly' ? `${INR(c.amount)}/month × ${fees.monthsCharged}` : 'One-time'}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="bg-black/5 dark:bg-white/5 rounded-xl p-4 space-y-2">
-            <div className="flex justify-between text-sm"><span className="text-brand-text-dim font-semibold">Total for the year</span><span className="font-bold text-brand-text">{INR(fees.totalAnnual)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-brand-text-dim font-semibold">Paid so far</span><span className="font-bold text-green-600 dark:text-green-400">{INR(fees.paid)}</span></div>
-            <div className="flex justify-between items-center pt-2 border-t border-brand-card-border">
-              <span className="font-bold text-brand-text">Balance</span>
-              <span className={`font-black text-xl ${fees.due > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{fees.due > 0 ? INR(fees.due) : 'Cleared'}</span>
-            </div>
-          </div>
-        </Card>
-      ) : (
-        <Card title="Fee plan this year">
-          <p className="text-sm text-brand-text-dim">The school hasn't set up a fee plan for {child.name} yet.</p>
-        </Card>
-      )}
-
-      <Card title="Payments">
-        {payments.length === 0 ? (
-          <p className="text-sm text-brand-text-dim">No payments recorded yet.</p>
-        ) : (
-          <ul className="divide-y divide-brand-card-border">
-            {payments.map(p => (
-              <li key={p.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-brand-text truncate">{p.description}</p>
-                  <p className="text-xs text-brand-text-dim">
-                    {p.timestamp ? new Date(p.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date not recorded'} · {p.method}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="font-black text-brand-text">{INR(p.amount)}</span>
-                  <button
-                    onClick={() => onReceipt(p)}
-                    className="flex items-center gap-1 text-xs font-bold text-brand-primary bg-brand-primary/10 hover:bg-brand-primary/20 px-3 py-1.5 rounded-lg"
-                  >
-                    <Receipt size={14} /> Receipt
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </>
-  );
-}
-
 // The school-wide menu for today: the one whose dates cover today, else the next one
 // posted (e.g. at the weekend). Menus that haven't ended yet are few, so pick among them here.
 function MenuView() {
@@ -288,7 +221,6 @@ export default function ParentPortal() {
   const [selectedId, setSelectedId] = useState(null);
   const [tab, setTab] = useState('attendance');
   const [attendance, setAttendance] = useState({});
-  const [receipt, setReceipt] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
@@ -343,7 +275,7 @@ export default function ParentPortal() {
         <h2 className="text-2xl font-bold mb-2">{loadError === 'denied' ? 'Please sign in again' : "Couldn't load your child's details"}</h2>
         <p className="text-brand-text-dim max-w-md mb-8">
           {loadError === 'denied'
-            ? 'The parent portal opens with the mobile number the school has on file. Sign out and choose "Parent" on the sign-in screen.'
+            ? "Open the Abhishri Academy mini app in Arattai to see your child's details."
             : 'Check your internet connection and try again.'}
         </p>
         <div className="flex gap-3">
@@ -428,32 +360,22 @@ export default function ParentPortal() {
           {child.enrollment.status !== 'active' && (
             <p className="mt-4 text-sm font-semibold text-amber-700 dark:text-amber-400">
               {child.enrollment.status === 'leaving'
-                ? `Enrollment ends${child.enrollment.exitDate ? ` on ${formatDay(child.enrollment.exitDate)}` : ''}. Fees are charged up to that month only.`
-                : `Enrollment ended${child.enrollment.exitDate ? ` on ${formatDay(child.enrollment.exitDate)}` : ''}. Fees are no longer being charged.`}
+                ? `Enrollment ends${child.enrollment.exitDate ? ` on ${formatDay(child.enrollment.exitDate)}` : ''}.`
+                : `Enrollment ended${child.enrollment.exitDate ? ` on ${formatDay(child.enrollment.exitDate)}` : ''}.`}
             </p>
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <button onClick={() => setTab('attendance')} className={`text-left border ${todayStatus.tile} p-5 rounded-3xl shadow-sm`}>
             <div className="text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-3">Today</div>
             <div className={`flex items-center gap-2 text-xl font-black ${todayStatus.color}`}>
               <TodayIcon size={24} className="shrink-0" /> {todayStatus.label}
             </div>
           </button>
-          <button onClick={() => setTab('fees')} className={`text-left border ${child.fees && child.fees.due > 0 ? 'bg-red-500/5 border-red-500/20' : 'bg-green-500/5 border-green-500/20'} p-5 rounded-3xl shadow-sm`}>
-            <div className="text-xs font-bold text-brand-text-dim uppercase tracking-wider mb-3 flex items-center gap-2"><Wallet size={14} /> Fee balance</div>
-            {child.fees ? (
-              <div className={`text-xl font-black ${child.fees.due > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                {child.fees.due > 0 ? INR(child.fees.due) : 'Cleared'}
-              </div>
-            ) : (
-              <div className="text-lg font-bold text-brand-text-dim">No plan yet</div>
-            )}
-          </button>
         </div>
 
-        <nav className="grid grid-cols-4 bg-black/5 dark:bg-white/5 p-1 rounded-2xl border border-brand-card-border/40" role="tablist">
+        <nav className="grid grid-cols-3 bg-black/5 dark:bg-white/5 p-1 rounded-2xl border border-brand-card-border/40" role="tablist">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -468,19 +390,10 @@ export default function ParentPortal() {
         </nav>
 
         {tab === 'attendance' && <AttendanceMonth key={child.id} child={child} today={data.today} cache={attendance} loadMonth={loadMonth} />}
-        {tab === 'fees' && <FeesView child={child} onReceipt={setReceipt} />}
         {tab === 'calendar' && <div className="bg-brand-card border border-brand-card-border p-6 rounded-3xl shadow-sm"><SchoolCalendar /></div>}
         {tab === 'menu' && <MenuView />}
       </main>
 
-      {receipt && (
-        <PaymentReceipt
-          receiptTransaction={receipt}
-          student={{ id: child.id, name: child.name }}
-          components={child.fees?.components}
-          onClose={() => setReceipt(null)}
-        />
-      )}
     </div>
   );
 }

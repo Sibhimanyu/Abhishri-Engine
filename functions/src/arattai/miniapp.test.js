@@ -22,8 +22,8 @@ test("toE164 rejects junk", async () => {
 
 const tok = (token) => ({ uid: "u", token });
 
-test("callerPhone accepts phone sign-in", () => {
-  assert.strictEqual(callerPhone(tok({ phone_number: "+919999999911", firebase: { sign_in_provider: "phone" } })), "+919999999911");
+test("callerPhone refuses phone sign-in", () => {
+  assert.throws(() => callerPhone(tok({ phone_number: "+919999999911", firebase: { sign_in_provider: "phone" } })), { code: "permission-denied" });
 });
 
 test("callerPhone accepts an Arattai custom token", () => {

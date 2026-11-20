@@ -12,7 +12,7 @@ const startMiniApp = httpsCallable(functions, 'startArattaiMiniApp');
  * The parent mini app: Arattai opens /arattai-app inside a chat with ?user_data_key=<key>
  * (single use, valid one minute). The server swaps the key for a Firebase custom token for
  * that parent's number (functions/src/arattai/miniapp.js), and the normal parent portal
- * shows with no SMS code. Runs in Arattai's in-app webview, so everything is mobile-first.
+ * shows. This is the only way parents sign in. Runs in Arattai's in-app webview, so everything is mobile-first.
  */
 
 // The key is read and removed from the address bar once per page load, outside React, so
@@ -40,13 +40,7 @@ function begin() {
     }
     try {
       const res = (await startMiniApp({ key })).data;
-      if (!res.ok && res.reason === 'no-phone') {
-        // Arattai didn't share the number. A parent already signed in by text code can go straight in.
-        await auth.authStateReady();
-        const t = auth.currentUser ? await auth.currentUser.getIdTokenResult() : null;
-        const parent = t && (t.signInProvider === 'phone' || t.claims.via === 'arattai');
-        return parent ? { state: 'portal' } : { state: 'sign-in' };
-      }
+      if (!res.ok && res.reason === 'no-phone') return { state: 'no-phone' };
       if (!res.ok) return { state: 'not-registered', name: res.name || '' };
       await signInWithCustomToken(auth, res.token);
       return { state: 'portal' };
@@ -85,7 +79,7 @@ function Welcome({ name }) {
       <Sparkles className="text-brand-primary mb-4" size={44} />
       <h1 className="text-2xl font-bold mb-2">{name ? `Welcome, ${name}!` : 'Welcome!'}</h1>
       <p className="text-brand-text-dim max-w-sm text-base leading-relaxed">
-        This is the parent portal for families at Abhishri Academy. Once your child is enrolled, you'll see their attendance, fees, school calendar and weekly menu right here.
+        This is the parent portal for families at Abhishri Academy. Once your child is enrolled, you'll see their attendance, school calendar and weekly menu right here.
       </p>
       <div className="mt-8 w-full max-w-sm rounded-2xl border border-brand-card-border bg-brand-card p-5 text-left">
         <p className="font-bold">Planning admissions?</p>
@@ -127,20 +121,11 @@ export default function ArattaiApp() {
   if (result.state === 'portal') {
     return <Suspense fallback={<div className="h-dvh flex items-center justify-center bg-brand-bg"><Spinner /></div>}><ParentPortal /></Suspense>;
   }
-  if (result.state === 'sign-in') {
+  if (result.state === 'no-phone') {
     return (
-      <div className="min-h-dvh flex flex-col items-center justify-center bg-brand-bg text-brand-text px-6 py-10 text-center">
-        <img src="/logo-coral.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 block dark:hidden" />
-        <img src="/logo-white.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 hidden dark:block" />
-        <Phone className="text-brand-primary mb-4" size={44} />
-        <h1 className="text-xl font-bold mb-2">Sign in with your phone</h1>
-        <p className="text-brand-text-dim max-w-sm text-base leading-relaxed">
-          Arattai didn't share your number with us, so sign in once with the number you gave the school. We'll text you a 6-digit code.
-        </p>
-        <a href="/" className="mt-8 w-full max-w-sm flex items-center justify-center gap-2 rounded-xl bg-brand-primary text-white font-bold py-3">
-          Continue
-        </a>
-      </div>
+      <Message icon={Phone} tone="text-brand-primary" title="We need your phone number">
+        Arattai didn't share your phone number. Close the app, open it again and allow Abhishri Academy to see your number.
+      </Message>
     );
   }
   if (result.state === 'not-registered') {

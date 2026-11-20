@@ -68,8 +68,7 @@ async function resolvePermissions(data) {
 // a late answer replaces it.
 //
 // Two sign-ins never get as far as the record, matching what the security rules allow:
-// staff who signed in by phone (phone sign-in is for parents; the record must be reached
-// through the email) get 'staff-phone', and email/password accounts that haven't proven
+// anyone who signed in by phone (parents use the Arattai mini app; staff must use email) get 'staff-phone', and email/password accounts that haven't proven
 // they own the inbox get 'unverified' (anyone can create one for any address).
 function watchAccessRecord(user, onResult) {
   const snaps = { uid: null, email: null };
@@ -170,15 +169,6 @@ export function AuthProvider({ children }) {
       setUserData(null);
       setCurrentUser(user);
 
-      // Parents sign in with their phone number and have no staff record. Which
-      // children they may see is checked by the server on every request
-      // (functions/src/students/portal.js), so there is nothing to look up here.
-      if (!user.email && user.phoneNumber) {
-        setUserData({ role: 'parent', dashboardType: 'parent', phoneNumber: user.phoneNumber, permissions: {} });
-        setLoading(false);
-        return;
-      }
-
       const startLookup = () => watchAccessRecord(user, (next) => {
         setUserData(next);
         setLoading(false);
@@ -186,7 +176,7 @@ export function AuthProvider({ children }) {
 
       // Parents who opened the Arattai mini app signed in with a custom token minted by
       // the server (startArattaiMiniApp): no email, no phone number, claim via=arattai.
-      // They are parents exactly like a phone-code sign-in, and never staff.
+      // They are parents, and never staff. Phone-code sessions are not parents any more.
       if (!user.email && user.uid.startsWith('arattai_')) {
         let cancelled = false;
         stopLookup = () => { cancelled = true; };

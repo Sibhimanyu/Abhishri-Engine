@@ -1,14 +1,9 @@
 import React, { useState } from 'react';
 import { auth, googleProvider, functions, emailLinkSettings } from '../firebase';
-import { signInWithEmailAndPassword, signInWithPopup, signInWithCredential, GoogleAuthProvider, signInWithPhoneNumber, sendPasswordResetEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, signInWithCredential, GoogleAuthProvider, sendPasswordResetEmail } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { isNative } from '../utils/native';
-import PhoneCodeForm from './PhoneCodeForm';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
-
-// Phone sign-in is for parents only; the server decides which children a number may see
-// (getParentPortal). Staff sign in with their email (Google or password).
-const phoneSignIn = (e164, verifier) => signInWithPhoneNumber(auth, e164, verifier);
 
 // Firebase's email/password errors, in words staff can act on. Firebase reports a wrong
 // password, an unknown email and an account with no password alike as invalid-credential,
@@ -28,8 +23,6 @@ function passwordErrorMessage(err) {
 }
 
 export default function Login() {
-  // Parents are the many; staff are few and know where to look. The iOS app is staff-only.
-  const [mode, setMode] = useState(isNative ? 'staff' : 'parent');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -106,31 +99,11 @@ export default function Login() {
           </div>
           <h2 className="text-2xl font-bold">Welcome to Abhishri</h2>
           <p className="text-brand-text-dim mt-2 text-sm">
-            {mode === 'parent' ? "Sign in to see your child's attendance and fees" : 'Sign in to your school workspace'}
+            Sign in to your school workspace
           </p>
         </div>
 
-        {!isNative && (
-          <div role="tablist" className="flex bg-black/5 dark:bg-white/5 p-1 rounded-xl mb-6">
-            {[['parent', 'Parent'], ['staff', 'Staff']].map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={mode === key}
-                onClick={() => { setMode(key); setError(null); }}
-                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${mode === key ? 'bg-brand-card text-brand-primary shadow-sm' : 'text-brand-text-dim hover:text-brand-text'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {mode === 'parent' ? (
-          <PhoneCodeForm key="parent" idPrefix="parent" start={phoneSignIn} hint="Use the number you gave the school. We'll text you a 6-digit code." />
-        ) : (
-          <>
+        <>
             {error && (
               <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm flex items-start gap-3 border border-red-100 dark:border-red-800/50">
                 <AlertCircle size={18} className="shrink-0 mt-0.5" />
@@ -209,8 +182,8 @@ export default function Login() {
               </svg>
               Google
             </button>
-          </>
-        )}
+          <p className="mt-6 text-center text-xs text-brand-text-dim">Parents: open the Abhishri Academy mini app in Arattai.</p>
+        </>
       </div>
     </div>
   );
