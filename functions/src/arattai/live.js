@@ -154,7 +154,16 @@ async function call(config, method, path, { body, query, number = false } = {}) 
 async function getMiniAppSession(config, key) {
   const res = await call(config, "GET", `/api/v1/miniappsessions/${encodeURIComponent(key)}`);
   const d = res?.data && typeof res.data === "object" ? res.data : res || {};
-  return { name: d.name || "", phone: d.phone || "", businessNumberId: d.businessnumber_id || "", source: d.source || "" };
+  // The docs say { name, phone }; webhooks use user.{name, phone_number}. Accept any of these.
+  const u = (d.user && typeof d.user === "object" ? d.user : null) || (d.customer && typeof d.customer === "object" ? d.customer : null) || (d.user_data && typeof d.user_data === "object" ? d.user_data : null) || {};
+  const phone = d.phone || d.phone_number || d.mobile || u.phone_number || u.phone || u.mobile || "";
+  const name = d.name || u.name || "";
+  if (!phone) {
+    // Field names only (never values), so the shape can be fixed without logging personal data.
+    const shape = (o) => Object.entries(o || {}).map(([k, v]) => (v && typeof v === "object" && !Array.isArray(v) ? `${k}{${Object.keys(v).join(",")}}` : k)).join(",");
+    logger.warn("Arattai mini app: no phone in session", { fields: shape(d), top: shape(res) });
+  }
+  return { name, phone: String(phone), businessNumberId: d.businessnumber_id || "", source: d.source || "" };
 }
 
 /** Close the session once we've read it. Best effort: the key is single-use anyway. */
