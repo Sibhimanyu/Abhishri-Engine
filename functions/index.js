@@ -42,6 +42,7 @@ exports.simulateArattaiInbound = arattaiSend.simulateArattaiInbound;
 exports.arattaiWebhook = arattaiWebhook.arattaiWebhook;
 exports.pruneArattaiDebugLog = arattaiWebhook.pruneArattaiDebugLog;
 exports.checkArattaiNotify = require("./src/arattai/notify").checkArattaiNotify;
+exports.startArattaiMiniApp = require("./src/arattai/miniapp").startArattaiMiniApp;
 
 // --- Staff notifications (Cliq and/or Arattai; see src/notify/dispatch.js) ---
 exports.pruneNotificationLog = require("./src/notify/dispatch").pruneNotificationLog;

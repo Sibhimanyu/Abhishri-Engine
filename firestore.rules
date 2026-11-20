@@ -26,7 +26,9 @@ service cloud.firestore {
     }
 
     function isPhoneSession() {
-      return request.auth.token.firebase.sign_in_provider == 'phone';
+      return request.auth.token.firebase.sign_in_provider == 'phone'
+        || (request.auth.token.firebase.sign_in_provider == 'custom'
+            && request.auth.token.get('via', null) == 'arattai');
     }
 
     // Firestore stops evaluating a request after 1000 expressions, and helpers are

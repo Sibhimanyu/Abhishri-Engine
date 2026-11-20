@@ -340,7 +340,7 @@ export default function ParentPortal() {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center bg-brand-bg text-brand-text p-6 text-center">
         <AlertCircle className="text-red-500 mb-4" size={56} />
-        <h2 className="text-2xl font-bold mb-2">{loadError === 'denied' ? 'Please sign in with your phone' : "Couldn't load your child's details"}</h2>
+        <h2 className="text-2xl font-bold mb-2">{loadError === 'denied' ? 'Please sign in again' : "Couldn't load your child's details"}</h2>
         <p className="text-brand-text-dim max-w-md mb-8">
           {loadError === 'denied'
             ? 'The parent portal opens with the mobile number the school has on file. Sign out and choose "Parent" on the sign-in screen.'
