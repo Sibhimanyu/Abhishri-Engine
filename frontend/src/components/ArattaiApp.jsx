@@ -21,9 +21,10 @@ let startup = null;
 function begin() {
   if (startup) return startup;
   const url = new URL(window.location.href);
-  // Arattai documents ?user_data_key=; also accept it after a # or under a near name, in case.
+  // Read the session key from ? or #, under the name Arattai uses or a near one.
   const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
-  const NAMES = ['user_data_key', 'userDataKey', 'user_data', 'key'];
+  // Arattai actually sends ?miniappsession_id= (its docs say user_data_key).
+  const NAMES = ['miniappsession_id', 'user_data_key', 'userDataKey', 'user_data', 'key'];
   const found = NAMES.map((n) => url.searchParams.get(n) || hash.get(n)).find(Boolean) || '';
   const key = found.trim();
   // Only the parameter names (never values) go on the error screen, to diagnose a bad link.
