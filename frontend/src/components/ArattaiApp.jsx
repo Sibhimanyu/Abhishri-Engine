@@ -21,17 +21,21 @@ let startup = null;
 function begin() {
   if (startup) return startup;
   const url = new URL(window.location.href);
-  const key = url.searchParams.get('user_data_key');
-  if (url.searchParams.has('user_data_key')) {
-    url.searchParams.delete('user_data_key');
-    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
-  }
+  // Arattai documents ?user_data_key=; also accept it after a # or under a near name, in case.
+  const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
+  const NAMES = ['user_data_key', 'userDataKey', 'user_data', 'key'];
+  const found = NAMES.map((n) => url.searchParams.get(n) || hash.get(n)).find(Boolean) || '';
+  const key = found.trim();
+  // Only the parameter names (never values) go on the error screen, to diagnose a bad link.
+  const seen = [...url.searchParams.keys(), ...hash.keys()];
+  if (seen.length) window.history.replaceState(window.history.state, '', url.pathname);
   startup = (async () => {
     if (!key) {
       await auth.authStateReady();
-      if (!auth.currentUser) return { state: 'expired' };
+      const why = `no-key${seen.length ? ` (${seen.join(', ')})` : ''}`;
+      if (!auth.currentUser) return { state: 'expired', why };
       const claims = (await auth.currentUser.getIdTokenResult()).claims;
-      return claims.via === 'arattai' ? { state: 'portal' } : { state: 'expired' };
+      return claims.via === 'arattai' ? { state: 'portal' } : { state: 'expired', why };
     }
     try {
       const res = (await startMiniApp({ key })).data;
@@ -40,15 +44,16 @@ function begin() {
       return { state: 'portal' };
     } catch (err) {
       const code = err?.code || '';
-      if (code === 'functions/not-found' || code === 'functions/invalid-argument') return { state: 'expired' };
+      if (code === 'functions/not-found') return { state: 'expired', why: 'key-not-found' };
+      if (code === 'functions/invalid-argument') return { state: 'expired', why: `bad-key (${key.length})` };
       console.error('Arattai mini app failed', err);
-      return { state: 'error' };
+      return { state: 'error', why: code || String(err?.message || 'unknown') };
     }
   })();
   return startup;
 }
 
-function Message({ icon: Icon, tone = 'text-red-500', title, children }) {
+function Message({ icon: Icon, tone = 'text-red-500', title, code, children }) {
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center bg-brand-bg text-brand-text px-6 py-10 text-center">
       <img src="/logo-coral.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 block dark:hidden" />
@@ -56,6 +61,7 @@ function Message({ icon: Icon, tone = 'text-red-500', title, children }) {
       <Icon className={`${tone} mb-4`} size={52} />
       <h1 className="text-xl font-bold mb-2">{title}</h1>
       <p className="text-brand-text-dim max-w-sm text-base leading-relaxed">{children}</p>
+      {code && <p className="mt-6 text-[11px] text-brand-text-dim/70 font-mono">Code: {code}</p>}
     </div>
   );
 }
@@ -90,13 +96,13 @@ export default function ArattaiApp() {
   }
   if (result.state === 'expired') {
     return (
-      <Message icon={MessageCircle} tone="text-brand-primary" title="This link has expired">
+      <Message icon={MessageCircle} tone="text-brand-primary" title="This link has expired" code={result.why}>
         Please open the app again from the Abhishri Academy chat in Arattai.
       </Message>
     );
   }
   return (
-    <Message icon={AlertCircle} title="Something went wrong">
+    <Message icon={AlertCircle} title="Something went wrong" code={result.why}>
       We couldn't open your details. Check your internet connection, then open the app again from the Abhishri Academy chat in Arattai.
     </Message>
   );
