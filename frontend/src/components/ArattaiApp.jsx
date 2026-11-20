@@ -1,9 +1,8 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { AlertCircle, MessageCircle, Globe, Phone, Sparkles } from 'lucide-react';
+import { signInWithCustomToken } from 'firebase/auth';
+import { AlertCircle, MessageCircle, Globe, Phone, Sparkles, RefreshCw } from 'lucide-react';
 import { auth, functions } from '../firebase';
-import { Spinner } from './Spinner';
 
 const ParentPortal = lazy(() => import('./ParentPortal'));
 const startMiniApp = httpsCallable(functions, 'startArattaiMiniApp');
@@ -55,16 +54,44 @@ function begin() {
   return startup;
 }
 
+function Logo({ className = 'h-10' }) {
+  return (
+    <>
+      <img src="/logo-coral.png" alt="Abhishri Academy" className={`${className} w-auto object-contain block dark:hidden`} />
+      <img src="/logo-white.png" alt="Abhishri Academy" className={`${className} w-auto object-contain hidden dark:block`} />
+    </>
+  );
+}
+
+// Branded splash: the same frame as the inline one in index.html, so the hand-off is invisible.
+function Splash() {
+  return (
+    <div className="h-dvh flex items-center justify-center bg-brand-bg" aria-busy="true" aria-label="Opening">
+      <div className="animate-splash"><Logo className="h-[72px]" /></div>
+    </div>
+  );
+}
+
+function Screen({ children }) {
+  return (
+    <div className="h-dvh overflow-y-auto overscroll-contain bg-brand-bg text-brand-text px-6 pt-[calc(env(safe-area-inset-top)+2rem)] pb-[calc(env(safe-area-inset-bottom)+2rem)]">
+      <div className="min-h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto animate-portal-in">{children}</div>
+    </div>
+  );
+}
+
 function Message({ icon: Icon, tone = 'text-red-500', title, code, children }) {
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-brand-bg text-brand-text px-6 py-10 text-center">
-      <img src="/logo-coral.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 block dark:hidden" />
-      <img src="/logo-white.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 hidden dark:block" />
-      <Icon className={`${tone} mb-4`} size={52} />
-      <h1 className="text-xl font-bold mb-2">{title}</h1>
-      <p className="text-brand-text-dim max-w-sm text-base leading-relaxed">{children}</p>
-      {code && <p className="mt-6 text-[11px] text-brand-text-dim/70 font-mono">Code: {code}</p>}
-    </div>
+    <Screen>
+      <Logo className="h-10 mb-8" />
+      <div className="size-16 rounded-full bg-brand-card border border-brand-card-border flex items-center justify-center mb-5 shadow-sm"><Icon className={tone} size={30} /></div>
+      <h1 className="text-xl font-bold mb-2 tracking-tight">{title}</h1>
+      <p className="text-brand-text-dim text-base leading-relaxed selectable">{children}</p>
+      <button onClick={() => window.location.reload()} className="mt-8 min-h-12 px-6 rounded-full bg-brand-primary text-white font-bold flex items-center gap-2 active:scale-95 transition-transform">
+        <RefreshCw size={18} /> Try again
+      </button>
+      {code && <p className="mt-6 text-[11px] text-brand-text-dim/70 font-mono selectable">Code: {code}</p>}
+    </Screen>
   );
 }
 
@@ -73,30 +100,29 @@ const SCHOOL = { site: 'https://abhishriacademy.in', phone: '+919566562440', pho
 
 function Welcome({ name }) {
   return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-brand-bg text-brand-text px-6 py-10 text-center">
-      <img src="/logo-coral.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 block dark:hidden" />
-      <img src="/logo-white.png" alt="Abhishri Academy" className="h-12 object-contain mb-8 hidden dark:block" />
-      <Sparkles className="text-brand-primary mb-4" size={44} />
-      <h1 className="text-2xl font-bold mb-2">{name ? `Welcome, ${name}!` : 'Welcome!'}</h1>
-      <p className="text-brand-text-dim max-w-sm text-base leading-relaxed">
+    <Screen>
+      <Logo className="h-10 mb-8" />
+      <div className="size-16 rounded-full bg-brand-primary/10 flex items-center justify-center mb-5"><Sparkles className="text-brand-primary" size={30} /></div>
+      <h1 className="text-2xl font-black tracking-tight mb-2">{name ? `Welcome, ${name}!` : 'Welcome!'}</h1>
+      <p className="text-brand-text-dim text-base leading-relaxed selectable">
         This is the parent portal for families at Abhishri Academy. Once your child is enrolled, you'll see their attendance, school calendar and weekly menu right here.
       </p>
-      <div className="mt-8 w-full max-w-sm rounded-2xl border border-brand-card-border bg-brand-card p-5 text-left">
-        <p className="font-bold">Planning admissions?</p>
-        <p className="text-sm text-brand-text-dim mt-1">Tamil Nadu's first neuroeducation-based preschool, in Dharapuram. Come and see us.</p>
+      <section className="mt-8 w-full rounded-3xl border border-brand-card-border bg-brand-card p-5 text-left shadow-sm">
+        <h2 className="font-bold">Planning admissions?</h2>
+        <p className="text-sm text-brand-text-dim mt-1 selectable">Tamil Nadu's first neuroeducation-based preschool, in Dharapuram. Come and see us.</p>
         <div className="mt-4 flex flex-col gap-2">
-          <a href={SCHOOL.site} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 rounded-xl bg-brand-primary text-white font-bold py-3">
+          <a href={SCHOOL.site} target="_blank" rel="noreferrer" className="min-h-12 flex items-center justify-center gap-2 rounded-2xl bg-brand-primary text-white font-bold active:scale-[0.97] transition-transform">
             <Globe size={18} /> Visit our website
           </a>
-          <a href={`tel:${SCHOOL.phone}`} className="flex items-center justify-center gap-2 rounded-xl border border-brand-card-border font-bold py-3">
+          <a href={`tel:${SCHOOL.phone}`} className="min-h-12 flex items-center justify-center gap-2 rounded-2xl border border-brand-card-border font-bold active:scale-[0.97] transition-transform">
             <Phone size={18} /> Call {SCHOOL.phoneLabel}
           </a>
         </div>
-      </div>
-      <p className="mt-6 text-xs text-brand-text-dim max-w-sm">
+      </section>
+      <p className="mt-6 text-xs text-brand-text-dim selectable">
         Already enrolled? Your Arattai number may differ from the one the school has. Message us in this chat and we'll update it.
       </p>
-    </div>
+    </Screen>
   );
 }
 
@@ -109,17 +135,23 @@ export default function ArattaiApp() {
     return () => { live = false; };
   }, []);
 
-  // Signing out of the portal returns to the "open it again from Arattai" screen.
+  // Follow the phone's light/dark setting live; there is no in-app toggle.
   useEffect(() => {
-    if (result?.state !== 'portal') return undefined;
-    return onAuthStateChanged(auth, (user) => { if (!user) setResult({ state: 'expired' }); });
-  }, [result?.state]);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      document.documentElement.classList.toggle('dark', mq.matches);
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', mq.matches ? '#0d1117' : '#F8FAFC');
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   if (!result) {
-    return <div className="h-dvh flex items-center justify-center bg-brand-bg"><Spinner /></div>;
+    return <Splash />;
   }
   if (result.state === 'portal') {
-    return <Suspense fallback={<div className="h-dvh flex items-center justify-center bg-brand-bg"><Spinner /></div>}><ParentPortal /></Suspense>;
+    return <Suspense fallback={<Splash />}><ParentPortal /></Suspense>;
   }
   if (result.state === 'no-phone') {
     return (
