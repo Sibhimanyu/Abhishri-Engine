@@ -96,7 +96,10 @@ function Message({ icon: Icon, tone = 'text-red-500', title, code, children }) {
 }
 
 // Shown to anyone whose Arattai number isn't a parent's: a warm welcome and a way into admissions.
-const SCHOOL = { site: 'https://abhishriacademy.in', phone: '+919566562440', phoneLabel: '+91 95665 62440' };
+const SCHOOL = { site: 'https://abhishriacademy.in', phone: '+919500400459', phoneLabel: '+91 95004 00459' };
+
+// Arattai's in-app browser ignores new-tab links, so open the site (and the dialler) in place.
+const go = (url) => (e) => { e.preventDefault(); window.location.assign(url); };
 
 function Welcome({ name }) {
   return (
@@ -111,10 +114,10 @@ function Welcome({ name }) {
         <h2 className="font-bold">Planning admissions?</h2>
         <p className="text-sm text-brand-text-dim mt-1 selectable">Tamil Nadu's first neuroeducation-based preschool, in Dharapuram. Come and see us.</p>
         <div className="mt-4 flex flex-col gap-2">
-          <a href={SCHOOL.site} target="_blank" rel="noreferrer" className="min-h-12 flex items-center justify-center gap-2 rounded-2xl bg-brand-primary text-white font-bold active:scale-[0.97] transition-transform">
+          <a href={SCHOOL.site} onClick={go(SCHOOL.site)} className="min-h-12 flex items-center justify-center gap-2 rounded-2xl bg-brand-primary text-white font-bold active:scale-[0.97] transition-transform">
             <Globe size={18} /> Visit our website
           </a>
-          <a href={`tel:${SCHOOL.phone}`} className="min-h-12 flex items-center justify-center gap-2 rounded-2xl border border-brand-card-border font-bold active:scale-[0.97] transition-transform">
+          <a href={`tel:${SCHOOL.phone}`} onClick={go(`tel:${SCHOOL.phone}`)} className="min-h-12 flex items-center justify-center gap-2 rounded-2xl border border-brand-card-border font-bold active:scale-[0.97] transition-transform">
             <Phone size={18} /> Call {SCHOOL.phoneLabel}
           </a>
         </div>
