@@ -40,7 +40,7 @@ async function notifyStaff({ kind, audience, message, config, force }) {
     if (result.status === "failed" || result.status === "partial") {
       logger.error(`Notify: Arattai ${result.status} for ${kind}`, result.error || JSON.stringify(result.failed));
     } else if (result.status === "skipped") {
-      logger.warn(`Notify: Arattai skipped ${kind}`, result.error || `no phone for ${(result.skipped || []).join(", ")}`);
+      logger.warn(`Notify: Arattai skipped ${kind}`, result.reason || result.error || `no phone for ${(result.skipped || []).join(", ")}`);
     } else {
       logger.info(`Notify: Arattai sent ${kind}`);
     }

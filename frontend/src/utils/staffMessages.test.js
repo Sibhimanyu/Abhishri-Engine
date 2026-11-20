@@ -47,28 +47,27 @@ describe('message values', () => {
     const classReport = requestVars({ collection: 'daily_reports', id: '2026-09-28--wonder-wings', data: { date: '2026-09-28', className: 'Wonder Wings' }, requesterName: 'V', appUrl });
     expect(classReport.itemTitle).toBe('Daily report: Mon, 28 Sep 2026 · Wonder Wings');
     const msg = renderStaffMessage('approvalRequested', menu);
-    expect(msg.title).toBe('Weekly menu waiting for approval');
+    expect(msg.title).toBe('Approval requested');
     expect(msg.text).toBe('Vineetha sent Weekly menu: 28 Sep – 02 Oct 2026 for approval.\nReview it: https://abhishri-academy.web.app/menu-report');
   });
 
   it("tells the teacher the outcome, with the admin's note only when there is one", () => {
     const args = { collection: 'daily_reports', id: '2026-09-28', reviewerName: 'Sathya', appUrl };
     const approved = renderStaffMessage(outcomeKey('approved'), outcomeVars({ ...args, data: doc(pending()), event: 'approved' }));
-    expect(approved.title).toBe('Your daily report is approved');
+    expect(approved.title).toBe('Your request was approved');
     expect(approved.text).toBe('Sathya approved Daily report: Mon, 28 Sep 2026. You can export it now.\nhttps://abhishri-academy.web.app/menu-report?tab=report');
     const returned = renderStaffMessage(outcomeKey('returned'), outcomeVars({ ...args, data: { approval: { note: ' Fix the Tamil date ' } }, event: 'returned' }));
     expect(returned.text).toBe('Sathya sent back Daily report: Mon, 28 Sep 2026.\nNote: Fix the Tamil date\nEdit it: https://abhishri-academy.web.app/menu-report?tab=report');
-    expect(renderStaffMessage('approvalOutcomeReturned', outcomeVars({ ...args, data: {}, event: 'returned' })).text).not.toContain('Note');
+    expect(renderStaffMessage('approvalOutcomeReturned', outcomeVars({ ...args, data: {}, event: 'returned' })).text).toContain('\nNo note added.\n');
   });
 
   it('notes the decision for the admins', () => {
     const args = { collection: 'daily_reports', id: '2026-09-28', reviewerName: 'Sathya', requesterName: 'Vineetha', appUrl };
     const a = renderStaffMessage('approvalDecided', decidedVars({ ...args, data: {}, event: 'approved' }));
-    expect(a.title).toBe('Approved: Daily report: Mon, 28 Sep 2026');
-    expect(a.text).toBe("Sathya approved Vineetha's daily report.");
+    expect(a.title).toBe('Approval decided');
+    expect(a.text).toBe('Sathya approved Daily report: Mon, 28 Sep 2026 from Vineetha.\nNo note added.');
     const r = renderStaffMessage('approvalDecided', decidedVars({ ...args, data: { approval: { note: 'Fix the date' } }, event: 'returned' }));
-    expect(r.title).toMatch(/^Sent back:/);
-    expect(r.text).toBe("Sathya sent back Vineetha's daily report.\nNote: Fix the date");
+    expect(r.text).toBe('Sathya sent back Daily report: Mon, 28 Sep 2026 from Vineetha.\nNote: Fix the date');
     expect(decidedVars({ ...args, requesterName: 'Teachers', data: {}, event: 'approved' }).requesterPossessive).toBe("Teachers'");
   });
 

@@ -29,6 +29,9 @@ const SCOPES = [
   "ArattaiBusiness.phonenumbers.READ",
   "ArattaiBusiness.customerdata.READ",
   "ArattaiBusiness.miniapps.CREATE",
+  "ArattaiBusiness.messagetemplates.CREATE",
+  "ArattaiBusiness.messagetemplates.UPDATE",
+  "ArattaiBusiness.messagetemplates.DELETE",
 ].join(",");
 
 const SEND_PATH = { transaction: "/api/v1/transactions", promotion: "/api/v1/promotions", authentication: "/api/v1/authentications" };
@@ -213,6 +216,53 @@ async function listTemplates(config) {
   return out;
 }
 
+// ---- Managing templates (staff notifications: one template per event)
+
+/**
+ * A template response (fields under `data` or at the top) as
+ * { id, status, reason, enabled }. `status` is the English translation's status
+ * (draft | under_review | approved | rejected | update_required), "draft" when there is none yet.
+ */
+function parseTemplate(res) {
+  const d = res?.data && typeof res.data === "object" && !Array.isArray(res.data) ? res.data : res || {};
+  const translations = Array.isArray(d.translations) ? d.translations : [];
+  const tr = translations.find((t) => t.language === "en") || translations[0] || {};
+  const status = String(tr.status || d.translation_status || "draft");
+  const reason = tr.rejection_reason || tr.rejected_reason || tr.reason || d.rejection_reason || d.reason || null;
+  return { id: d.id != null ? String(d.id) : "", status, reason: reason ? String(reason) : null, enabled: d.status ? d.status === "enabled" : null };
+}
+
+const templateCall = async (fn) => {
+  try {
+    return await fn();
+  } catch (err) {
+    throw asHttps(err);
+  }
+};
+
+/** Create a Transactional template from { name, description, message, place_holders, ... }. */
+function createTemplate(config, payload) {
+  return templateCall(async () => parseTemplate(await call(config, "POST", `/api/v1/businesses/${encodeURIComponent(config.businessId)}/messagetemplates`, { body: payload })));
+}
+
+/** Send a template for Arattai's review (English). */
+function submitTemplate(config, id) {
+  return templateCall(() => call(config, "POST", `/api/v1/messagetemplates/${encodeURIComponent(id)}/submit`, { body: { languages: ["en"] } }));
+}
+
+/** Edit a template. Arattai refuses while a translation is under review. */
+function updateTemplate(config, id, payload) {
+  return templateCall(() => call(config, "PATCH", `/api/v1/messagetemplates/${encodeURIComponent(id)}`, { body: payload }));
+}
+
+function deleteTemplate(config, id) {
+  return templateCall(() => call(config, "DELETE", `/api/v1/messagetemplates/${encodeURIComponent(id)}`));
+}
+
+function getTemplate(config, id) {
+  return templateCall(async () => parseTemplate(await call(config, "GET", `/api/v1/messagetemplates/${encodeURIComponent(id)}`)));
+}
+
 // ---------------------------------------------------------------- Sending
 
 async function sendTemplateTo(config, template, recipient, values) {
@@ -314,22 +364,20 @@ const live = (config) => {
     },
 
     /**
-     * Staff notifications. Staff rarely message the school first, so this needs an
-     * approved template with one placeholder (the whole message) or two (title, details).
+     * Staff notifications: each event has its own approved template (see
+     * ./staffTemplates.js). `template` is { arattai: { id, type, language } } and
+     * `message.values` the named placeholder values, never empty.
      * Arattai's API can't post to groups.
      */
     async sendNotification({ to, message, template }) {
       ready();
       if (to?.groupId) throw new HttpsError("failed-precondition", "Arattai's Business API can't post to groups. Clear the group ID so each admin gets a direct message.");
-      if (!template) throw new HttpsError("failed-precondition", "Pick a staff notification template in Settings → Staff Notifications.");
-      const { plainText } = await import("../shared/plainMessage.mjs");
-      const n = (template.arattai?.placeholders || []).length;
-      const values = n >= 2
-        ? [message.title || "Abhishri Engine", plainText({ ...message, title: "" })]
-        : [plainText(message)];
+      if (!template?.arattai?.id) throw new HttpsError("failed-precondition", "This notification has no approved Arattai template. Submit it in Settings → Staff Notifications.");
+      const names = Object.keys(message?.values || {});
+      const meta = { ...template, arattai: { ...template.arattai, placeholders: names } };
       const recipient = await resolveRecipient(to.phone);
       try {
-        return await sendTemplateTo(config, template, recipient.userId ? recipient : { phone: to.phone }, values);
+        return await sendTemplateTo(config, meta, recipient.userId ? recipient : { phone: to.phone }, names.map((n) => message.values[n]));
       } catch (err) {
         throw asHttps(err);
       }
@@ -425,15 +473,31 @@ function parseReceived(e, { userId, phone, name, ts }) {
 }
 
 /**
+ * messagetemplate.approval.updated -> { templateId, status: approved|rejected, reason },
+ * or null for any other body.
+ */
+function parseTemplateEvent(body) {
+  if (body?.event !== "messagetemplate.approval.updated") return null;
+  const e = body.entity || {};
+  const status = String(e.status || "").toLowerCase();
+  const templateId = e.template_id ?? e.id;
+  if (templateId == null || !["approved", "rejected"].includes(status)) return null;
+  const reason = e.reason || e.rejection_reason || e.rejected_reason || null;
+  return { templateId: String(templateId), status, reason: reason ? String(reason).slice(0, 500) : null };
+}
+
+/**
  * Arattai's envelope ({ event, event_time, entity }) into the provider-neutral shape.
  * Senders arrive as user IDs; known ones become their phone number, others "u<userId>".
  * The neutral { events: [...] } body is still accepted, for testing.
  */
 async function parseArattai(body) {
   if (Array.isArray(body?.events)) return require("./provider").parseNeutral(body);
-  const incoming = [], statuses = [];
+  const incoming = [], statuses = [], templates = [];
   const e = body?.entity || {};
   const ts = Number(body?.event_time) || Date.now();
+  const tmpl = parseTemplateEvent(body);
+  if (tmpl) templates.push(tmpl);
 
   if (STATUS_EVENT[body?.event]) {
     // "sent" and "failed" carry entity.ack_key; "delivered" carries entity.messages[].ack_key.
@@ -449,7 +513,7 @@ async function parseArattai(body) {
     await rememberUser(userId, { phone, name });
     incoming.push(parseReceived(e, { userId, phone, name, ts }));
   }
-  return { incoming, statuses };
+  return { incoming, statuses, templates };
 }
 
-module.exports = { live, call, asHttps, getMiniAppSession, closeMiniAppSession, verifySignature, parseArattai, renumber, arattaiPhone, missingSettings, SCOPES };
+module.exports = { live, call, asHttps, getMiniAppSession, closeMiniAppSession, verifySignature, parseArattai, parseTemplateEvent, parseTemplate, createTemplate, submitTemplate, updateTemplate, deleteTemplate, getTemplate, renumber, arattaiPhone, missingSettings, SCOPES };

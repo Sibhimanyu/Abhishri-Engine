@@ -101,10 +101,11 @@ export const EVENTS = {
       reviewer: 'Who decided',
       decision: '"approved" or "sent back"',
       Decision: 'Same, with a capital for the start of a title: "Approved" or "Sent back"',
-      note: 'The reviewer\'s note (empty when there is none)',
+      note: 'The reviewer\'s note ("-" when there is none)',
+      noteLine: 'A whole line: "Note: ..." or "No note added."',
       link: 'Link to the approval screen in the app',
     },
-    sample: { itemTitle: 'Weekly menu: 23 Nov – 27 Nov 2026', kind: 'weekly menu', requester: 'Lakshmi', requesterPossessive: "Lakshmi's", reviewer: 'Vineetha', decision: 'sent back', Decision: 'Sent back', note: 'Add the Friday snack', link: `${DEFAULT_APP_URL}/menu-report` },
+    sample: { itemTitle: 'Weekly menu: 23 Nov – 27 Nov 2026', kind: 'weekly menu', requester: 'Lakshmi', requesterPossessive: "Lakshmi's", reviewer: 'Vineetha', decision: 'sent back', Decision: 'Sent back', note: 'Add the Friday snack', noteLine: 'Note: Add the Friday snack', link: `${DEFAULT_APP_URL}/menu-report` },
   },
   approvalOutcomeApproved: {
     label: 'Your request was approved',
@@ -128,10 +129,11 @@ export const EVENTS = {
       kind: '"weekly menu" or "daily report"',
       Kind: 'Same, with a capital for the start of a title',
       reviewer: 'Who sent it back',
-      note: 'The reviewer\'s note (empty when there is none)',
+      note: 'The reviewer\'s note ("-" when there is none)',
+      noteLine: 'A whole line: "Note: ..." or "No note added."',
       link: 'Link to open and edit it in the app',
     },
-    sample: { itemTitle: 'Daily report: Fri, 20 Nov 2026', kind: 'daily report', reviewer: 'Vineetha', note: 'Add photos', link: `${DEFAULT_APP_URL}/menu-report?tab=report` },
+    sample: { itemTitle: 'Daily report: Fri, 20 Nov 2026', kind: 'daily report', reviewer: 'Vineetha', note: 'Add photos', noteLine: 'Note: Add photos', link: `${DEFAULT_APP_URL}/menu-report?tab=report` },
   },
   accessRequest: {
     label: 'Access request',
@@ -139,7 +141,7 @@ export const EVENTS = {
     audience: 'Admins',
     placeholders: {
       who: 'Name and email, or just the email when there is no name',
-      name: 'Their name (empty when unknown)',
+      name: 'Their name ("-" when unknown)',
       email: 'Their email',
       link: 'Link to Settings > User Permissions in the app',
     },
@@ -176,20 +178,20 @@ export const EVENTS = {
 // says what needs attention, then a body of one to three short lines, the link last.
 export const DEFAULT_MESSAGES = {
   approvalRequested: {
-    title: '{Kind} waiting for approval',
+    title: 'Approval requested',
     body: '{requester} sent {itemTitle} for approval.\nReview it: {link}',
   },
   approvalDecided: {
-    title: '{Decision}: {itemTitle}',
-    body: '{reviewer} {decision} {requesterPossessive} {kind}.\nNote: {note}',
+    title: 'Approval decided',
+    body: '{reviewer} {decision} {itemTitle} from {requester}.\n{noteLine}',
   },
   approvalOutcomeApproved: {
-    title: 'Your {kind} is approved',
+    title: 'Your request was approved',
     body: '{reviewer} approved {itemTitle}. You can export it now.\n{link}',
   },
   approvalOutcomeReturned: {
-    title: 'Your {kind} needs changes',
-    body: '{reviewer} sent back {itemTitle}.\nNote: {note}\nEdit it: {link}',
+    title: 'Your request needs changes',
+    body: '{reviewer} sent back {itemTitle}.\n{noteLine}\nEdit it: {link}',
   },
   accessRequest: {
     title: 'New access request',
@@ -259,6 +261,7 @@ const possessive = (name) => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const note = (data) => String(data?.approval?.note || '').trim();
+const noteLine = (text) => (text ? `Note: ${text}` : 'No note added.');
 
 /** approvalRequested */
 export function requestVars({ collection, id, data, requesterName, appUrl }) {
@@ -279,6 +282,7 @@ export function decidedVars({ collection, id, data, event, reviewerName, request
     decision: event === 'approved' ? 'approved' : 'sent back',
     Decision: event === 'approved' ? 'Approved' : 'Sent back',
     note: event === 'approved' ? '' : note(data),
+    noteLine: noteLine(event === 'approved' ? '' : note(data)),
     link: `${trimUrl(appUrl)}${kind.path}`,
   };
 }
@@ -292,6 +296,7 @@ export function outcomeVars({ collection, id, data, event, reviewerName, appUrl 
     Kind: cap(kind.noun),
     reviewer: reviewerName,
     note: event === 'approved' ? '' : note(data),
+    noteLine: noteLine(event === 'approved' ? '' : note(data)),
     link: `${trimUrl(appUrl)}${kind.path}`,
   };
 }
@@ -322,4 +327,90 @@ export function birthdayVars({ members, appUrl }) {
     date: `${tamilMonth} ${tamilDay}`,
     link: `${trimUrl(appUrl)}${n.path(types.length === 1 ? types[0] : 'student')}`,
   };
+}
+
+// ---------------------------------------------------------------------------------------
+// Arattai templates: one per event. Arattai text can't drop lines and values can't be
+// empty, so a template is the wording with {name} turned into {{snake_name}}, and sending
+// supplies a value for every placeholder ("-" when there is none).
+
+export const TEMPLATE_PREFIX = 'abhishri_staff_';
+const MAX_TEMPLATE_PLACEHOLDERS = 10;
+
+/** "itemTitle" -> "item_title"; a capital first letter ("Kind") -> "kind_cap". */
+export function arattaiName(name) {
+  const snake = String(name).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  return /^[A-Z]/.test(name) ? `${snake}_cap` : snake;
+}
+
+const snakeEvent = (key) => String(key).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+
+/** abhishri_staff_<event_snake>, at least 10 characters and at most 120. */
+export function templateName(eventKey) {
+  let name = `${TEMPLATE_PREFIX}${snakeEvent(eventKey)}`;
+  while (name.length < 10) name += '_x';
+  return name.slice(0, 120);
+}
+
+/** A sentence of 30 to 1000 characters about what the template is for. */
+export function templateDescription(eventKey) {
+  const ev = EVENTS[eventKey];
+  let d = `Abhishri Engine staff notification: ${ev.label}. ${ev.description}`;
+  while (d.length < 30) d += ' Sent to school staff.';
+  return d.slice(0, 1000);
+}
+
+const toDouble = (text) => String(text ?? '').replace(PLACEHOLDER, (_, n) => `{{${arattaiName(n)}}}`);
+
+/** Problems that would make Arattai refuse this wording; empty when fine. */
+export function templateProblems(eventKey, { title, body }) {
+  const ev = EVENTS[eventKey];
+  const problems = [];
+  if (!ev) return [`Unknown notification "${eventKey}".`];
+  if (!String(body || '').trim()) problems.push('The body can\'t be empty.');
+  const names = [...placeholdersIn(title), ...placeholdersIn(body)];
+  for (const n of names) if (!Object.prototype.hasOwnProperty.call(ev.placeholders, n)) problems.push(`{${n}} isn't a placeholder for this message.`);
+  const unique = new Set(names.map(arattaiName));
+  if (unique.size > MAX_TEMPLATE_PLACEHOLDERS) problems.push(`Arattai allows at most ${MAX_TEMPLATE_PLACEHOLDERS} placeholders.`);
+  return problems;
+}
+
+/** Value for a placeholder: one line, never empty. */
+const neverEmpty = (v) => {
+  const s = v == null ? '' : String(v).trim();
+  return s || '-';
+};
+
+/** The Arattai create/update body for an event's wording. Throws if the wording can't be a template. */
+export function buildTemplatePayload(eventKey, wording) {
+  const problems = templateProblems(eventKey, wording);
+  if (problems.length) throw new Error(problems[0]);
+  const ev = EVENTS[eventKey];
+  const title = String(wording.title || '').trim();
+  const names = [...new Set([...placeholdersIn(title), ...placeholdersIn(wording.body)])];
+  const message = { body: toDouble(String(wording.body).trim()) };
+  if (title) message.title = toDouble(title);
+  return {
+    type: 'transaction',
+    language: 'en',
+    name: templateName(eventKey),
+    description: templateDescription(eventKey),
+    message,
+    place_holders: names.map((n) => ({ name: arattaiName(n), type: 'text', sample_value: neverEmpty(ev.sample[n]) })),
+  };
+}
+
+/** { snake_name: value } for the placeholders in the given wording, from the render values. */
+export function templateValues(wording, vars = {}) {
+  const out = {};
+  for (const n of [...placeholdersIn(wording.title), ...placeholdersIn(wording.body)]) {
+    out[arattaiName(n)] = neverEmpty(String(vars[n] ?? '').replace(/\s*\n\s*/g, ' / ')).slice(0, 1000);
+  }
+  return out;
+}
+
+/** True when the wording differs from what was last submitted to Arattai. */
+export function editedSinceSubmission(current, submitted) {
+  if (!submitted) return false;
+  return String(current.title ?? '') !== String(submitted.title ?? '') || String(current.body ?? '') !== String(submitted.body ?? '');
 }
