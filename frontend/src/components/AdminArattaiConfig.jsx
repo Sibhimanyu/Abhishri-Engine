@@ -5,7 +5,6 @@ import { getDoc } from '../utils/firestoreRead';
 import { httpsCallable } from 'firebase/functions';
 import { firestore, functions } from '../firebase';
 import { CheckCircle, AlertCircle, RefreshCw, Save, FlaskConical, Radio, Send, Copy } from 'lucide-react';
-import AdminStaffNotifications from './AdminStaffNotifications';
 
 const WEBHOOK_URL = 'https://us-central1-abhishri-academy.cloudfunctions.net/arattaiWebhook';
 
@@ -226,8 +225,6 @@ export default function AdminArattaiConfig() {
           </button>
         </form>
       </div>
-
-      <AdminStaffNotifications />
 
       {/* Sandbox tools */}
       {account?.mode === 'sandbox' && (

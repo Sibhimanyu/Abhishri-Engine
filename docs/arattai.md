@@ -40,30 +40,40 @@ Permissions use the `arattai_sender` module:
 The server checks the specific action, unlike WhatsApp, where any one of the three passes.
 No role gets it by default; grant it per user or per permission group.
 
-## Staff notifications (moving off Cliq)
+## Staff notifications
 
-The internal notifications the Cliq bot sends can go to Arattai too:
-- approval requests and outcomes
-- access requests
-- Tamil birthdays
+Internal notifications go to staff on Arattai only:
+- approval requested (weekly menu, daily report) → admins
+- approved or sent back → admins, and the teacher who asked
+- access request (someone signed in who isn't set up) → admins
+- Tamil birthdays, one message at 7:30 each morning → admins
+- a test send
 
-`functions/src/notify/dispatch.js` sends each one to every channel that's on:
-- Cliq: Settings → Cliq Bot
-- Arattai: Settings → Arattai Config → Staff notifications, stored in `configs/arattai_notify`
+Settings → Staff Notifications (master/admin) holds everything: on/off, app address, admins' group, template, phone numbers, "Check who gets them", "Send a test", the recent log, and the message wording. Settings are in `configs/arattai_notify` (`enabled`, `appUrl` with default https://abhishri-academy.web.app, `groupId`, `phoneMap`, `template`).
 
-Each send is written to `notification_log`, which is admin-only and kept for 90 days. The settings page lists recent sends with what Cliq and Arattai each did.
+**Functions** (`functions/src/notify/triggers.js`): `notifyOnMenuApproval`, `notifyOnReportApproval`, `notifyOnAccessRequest`, `notifyTamilBirthdays`, `sendStaffNotificationTest`; sending is in `notify/dispatch.js`, and `checkArattaiNotify` lists recipients. They replace the old `cliqOnMenuApproval`, `cliqOnReportApproval`, `cliqOnAccessRequest`, `cliqTamilBirthdays`, `sendCliqTest` and `cliqAction`, which a deploy must delete.
 
-- **Admins' posts** (what Cliq puts in `#approvals`) go to the Arattai group in `groupId`, or, with no group, to each admin directly.
+Each send is written to `notification_log`, which is admin-only and kept for 90 days.
+
+- **Admins' messages** go to the Arattai group in `groupId`, or, with no group, to each admin directly.
 - **Direct messages** go to the staff member's phone. The number comes from `phoneMap` (`app email = phone`), then the phone on their staff record, then `allowed_users.phone`. Anyone without a number is skipped and listed in the log.
-- **Message text:** `shared/plainMessage.mjs` turns the Cliq message into plain title, text and links (tested in `frontend/src/utils/plainMessage.test.js`), so the wording stays the same.
-- **Approve / Send back** buttons still only work in Cliq. On Arattai, requests carry the "Review in app" link. The plain message keeps the buttons as `actions` with Cliq's keys, so if Arattai's API supports buttons, `sendNotification` can render them, and an endpoint like `cliqAction` (reusing `decisionProblem`) can apply them.
+- **Approvals are reviewed in the app** through the link in the message. There are no in-chat buttons.
 
-**Moving over:**
-1. Fill in phone numbers and, optionally, the group. Then use "Check who gets them" and "Send a test".
-2. Turn Arattai on while Cliq stays on, and watch the log for a few days.
-3. Turn Cliq off in Settings → Cliq Bot.
+**Wording.** Defaults live in `shared/staffMessages.mjs` (`DEFAULT_MESSAGES`, one `{ title, body }` per event: `approvalRequested`, `approvalDecided`, `approvalOutcomeApproved`, `approvalOutcomeReturned`, `accessRequest`, `birthdays`, `test`). Admins override them under "Message wording"; edits are stored in `configs/staff_messages` as `{ [eventKey]: { title, body } }` (admins only in `firestore.rules`) and the server picks them up within 60 seconds. A blank body means the default. The sent text is the rendered title plus body, through the template logic below (one placeholder: title and body together; two: title, then body). Keep wording plain text, a title of 60 characters or fewer, and a body of one to three short lines.
 
-The Cloud Functions keep their `cliq…` names so deploys don't recreate them.
+Placeholders are `{curly}` names. Unknown names are left as written, empty values become nothing, and a line whose placeholders are all empty is dropped (so `Note: {note}` vanishes when there is no note).
+
+| Event | Placeholders |
+| --- | --- |
+| approvalRequested | `{itemTitle}` (e.g. "Daily report: Fri, 20 Nov 2026 · Sunflowers"), `{kind}` ("daily report"), `{Kind}` ("Daily report"), `{requester}`, `{link}` |
+| approvalDecided | `{itemTitle}`, `{kind}`, `{requester}`, `{requesterPossessive}`, `{reviewer}`, `{decision}` ("approved" / "sent back"), `{Decision}`, `{note}`, `{link}` |
+| approvalOutcomeApproved | `{itemTitle}`, `{kind}`, `{Kind}`, `{reviewer}`, `{link}` |
+| approvalOutcomeReturned | `{itemTitle}`, `{kind}`, `{Kind}`, `{reviewer}`, `{note}`, `{link}` |
+| accessRequest | `{who}` (name and email), `{name}`, `{email}`, `{link}` |
+| birthdays | `{people}` (one line each), `{date}` (Tamil month and day), `{link}` |
+| test | `{where}`, `{link}` |
+
+The `configs/cliq` document from the old bot is no longer read and can be deleted.
 
 ## How Live differs from WhatsApp
 
@@ -84,7 +94,7 @@ The Cloud Functions keep their `cliq…` names so deploys don't recreate them.
 - **Message IDs** are our own `ack_key`s, which Arattai echoes in every receipt.
 - **Staff notifications** need a template, since staff rarely message the school first: an
   approved Transactional template with one placeholder (the whole message) or two (title,
-  then details), picked under Staff notifications. Live can't post to groups, so leave the
+  then details), picked under Settings → Staff Notifications. Live can't post to groups, so leave the
   group ID empty.
 
 ## Pricing

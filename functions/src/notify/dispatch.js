@@ -1,74 +1,48 @@
-// Where staff notifications go. Every notification the Cliq bot used to post directly
-// (functions/src/cliq/triggers.js) now comes through here and goes to each channel that's
-// switched on:
-//   Cliq     configs/cliq.enabled          (Settings > Cliq Bot)
-//   Arattai  configs/arattai_notify.enabled (Settings > Arattai Config)
-// Both can be on at once, so the school can run them side by side and check they match
-// before switching Cliq off. Each send is written to notification_log (admin-only) with
-// what every channel did.
+// Where staff notifications go: Arattai (Settings > Staff Notifications, stored in
+// configs/arattai_notify). Every notification (functions/src/notify/triggers.js) comes
+// through here. Each send is written to notification_log (admin-only) with what happened.
 //
-// Best-effort, like before: nothing here throws, so a failure can't block or repeat the
-// save that caused it.
+// Best-effort: nothing here throws, so a failure can't block or repeat the save that
+// caused it.
 const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 const { FieldValue } = require("firebase-admin/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { loadCliqConfig, missingSetting, postToChannel, postToUsers } = require("../cliq/client");
 const { loadNotifyConfig, sendArattaiNotification } = require("../arattai/notify");
 
 const plain = () => import("../shared/plainMessage.mjs");
 
-async function sendCliq(cfg, audience, message) {
-  if (!cfg.enabled) return { status: "off" };
-  const missing = missingSetting(cfg);
-  if (missing) return { status: "skipped", error: `The ${missing} isn't set in Settings > Cliq Bot.` };
-  try {
-    if (audience.channel) await postToChannel(cfg, message);
-    else await postToUsers(cfg, audience.users || [], message);
-    return { status: "sent" };
-  } catch (err) {
-    return { status: "failed", error: err.message };
-  }
-}
-
 /**
- * Send one staff notification to every channel that's on.
+ * Send one staff notification.
  *   kind      what it is, for the log ("approval requested", "access request", ...)
  *   audience  { channel: true } for the admins, or { users: [appEmails] }
- *   message   the Cliq message (shared/cliqMessages.mjs); other channels get its plain form
- *   cliq      the Cliq config, if the caller already loaded it
+ *   message   { title, text, links, actions } from wording.js
+ *   config    the Arattai notification config, if the caller already loaded it
+ *   force     send even while notifications are switched off (the test send)
  */
-async function notifyStaff({ kind, audience, message, cliq }) {
+async function notifyStaff({ kind, audience, message, config, force }) {
   try {
-    const [cliqCfg, arattaiCfg, { plainFromCliq, plainText }] = await Promise.all([
-      cliq || loadCliqConfig(), loadNotifyConfig(), plain(),
-    ]);
-    const simple = plainFromCliq(message);
-    const [cliqResult, arattaiResult] = await Promise.all([
-      sendCliq(cliqCfg, audience, message),
-      sendArattaiNotification(audience, simple, arattaiCfg),
-    ]);
-    const results = { cliq: cliqResult, arattai: arattaiResult };
-    const attempted = Object.entries(results).filter(([, r]) => r.status !== "off");
-    if (attempted.length === 0) return results;
+    const [loaded, { plainText }] = await Promise.all([config || loadNotifyConfig(), plain()]);
+    const cfg = force ? { ...loaded, enabled: true } : loaded;
+    const result = await sendArattaiNotification(audience, message, cfg);
+    const results = { arattai: result };
+    if (result.status === "off") return results;
 
     await admin.firestore().collection("notification_log").add({
       at: FieldValue.serverTimestamp(),
       kind,
       audience: audience.channel ? "admins" : (audience.users || []).join(", "),
-      title: simple.title,
-      text: plainText({ ...simple, links: [] }),
+      title: message.title,
+      text: plainText({ ...message, title: "", links: [] }),
       results,
     }).catch((err) => logger.warn("Notify: couldn't write notification_log", err.message));
 
-    for (const [name, r] of attempted) {
-      if (r.status === "failed" || r.status === "partial") {
-        logger.error(`Notify: ${name} ${r.status} for ${kind}`, r.error || JSON.stringify(r.failed));
-      } else if (r.status === "skipped") {
-        logger.warn(`Notify: ${name} skipped ${kind}`, r.error || `no phone for ${(r.skipped || []).join(", ")}`);
-      } else {
-        logger.info(`Notify: ${name} sent ${kind}`);
-      }
+    if (result.status === "failed" || result.status === "partial") {
+      logger.error(`Notify: Arattai ${result.status} for ${kind}`, result.error || JSON.stringify(result.failed));
+    } else if (result.status === "skipped") {
+      logger.warn(`Notify: Arattai skipped ${kind}`, result.error || `no phone for ${(result.skipped || []).join(", ")}`);
+    } else {
+      logger.info(`Notify: Arattai sent ${kind}`);
     }
     return results;
   } catch (err) {
@@ -77,7 +51,7 @@ async function notifyStaff({ kind, audience, message, cliq }) {
   }
 }
 
-// The log is for checking the move from Cliq; three months is plenty.
+// Three months of history is plenty for checking what went out.
 const LOG_DAYS = 90;
 exports.pruneNotificationLog = onSchedule({ schedule: "every day 03:50", timeZone: "Asia/Kolkata" }, async () => {
   const cutoff = new Date(Date.now() - LOG_DAYS * 86400000);

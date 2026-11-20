@@ -321,7 +321,7 @@ const live = (config) => {
     async sendNotification({ to, message, template }) {
       ready();
       if (to?.groupId) throw new HttpsError("failed-precondition", "Arattai's Business API can't post to groups. Clear the group ID so each admin gets a direct message.");
-      if (!template) throw new HttpsError("failed-precondition", "Pick a staff notification template in Settings → Arattai Config.");
+      if (!template) throw new HttpsError("failed-precondition", "Pick a staff notification template in Settings → Staff Notifications.");
       const { plainText } = await import("../shared/plainMessage.mjs");
       const n = (template.arattai?.placeholders || []).length;
       const values = n >= 2

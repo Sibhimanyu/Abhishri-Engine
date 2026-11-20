@@ -4,7 +4,7 @@ import { Bell, AlertTriangle, MessageCircle, Cake, ChefHat, CheckCircle, RotateC
 
 // The top-bar bell. What it lists, and the words and links, come from bellEntries
 // (utils/bellEntries.js), built on functions/src/shared/notifications.mjs, the same list
-// the Cliq bot sends from, so the two never drift apart. This file only decides how
+// the staff notifications are sent from, so the two never drift apart. This file only decides how
 // each kind looks.
 const LOOK = {
   accessRequest: { icon: AlertTriangle, iconClass: 'text-orange-500', titleClass: 'text-orange-600 dark:text-orange-400' },

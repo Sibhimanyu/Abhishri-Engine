@@ -195,6 +195,13 @@ service cloud.firestore {
       );
     }
     
+    // The wording of staff notifications, edited in Settings > Staff Notifications and read
+    // by functions/src/notify (Admin SDK). Admins only; the generic configs rule above and the
+    // catch-all already say so, this keeps it explicit.
+    match /configs/staff_messages {
+      allow read, write: if isAuthenticated() && isAdmin();
+    }
+
     // --- Flattened Root Collections (New Architecture) ---
     match /students/{studentId} {
       allow read: if isAuthenticated() && (

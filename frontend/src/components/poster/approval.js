@@ -14,7 +14,7 @@ import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp }
 import { firestore } from '../../firebase';
 import { logAudit } from '../../utils/auditLog';
 import { outcomeEntries } from '../../../../functions/src/shared/notifications.mjs';
-import { KINDS } from '../../../../functions/src/shared/cliqMessages.mjs';
+import { KINDS } from '../../../../functions/src/shared/staffMessages.mjs';
 
 export const DRAFT = 'draft';
 export const PENDING = 'pending';
@@ -56,7 +56,7 @@ export function usePendingApprovals(enabled) {
 
 /**
  * The signed-in person's own requests that were approved recently or sent back, for the
- * bell: the same outcomes Cliq DMs them (see functions/src/shared/notifications.mjs).
+ * bell: the same outcomes staff are messaged about (see functions/src/shared/notifications.mjs).
  */
 export function useMyApprovalOutcomes(email) {
   const [byCollection, setByCollection] = useState({});

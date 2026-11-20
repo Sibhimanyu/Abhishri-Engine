@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { doc, setDoc, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { getDoc } from '../utils/firestoreRead';
 import { httpsCallable } from 'firebase/functions';
-import { Link } from 'react-router-dom';
 import { firestore, functions } from '../firebase';
+import StaffMessageWording from './StaffMessageWording';
 import { BellRing, Save, Send, Users, CheckCircle, AlertCircle } from 'lucide-react';
 
-// Staff notifications on Arattai (configs/arattai_notify, read by functions/src/arattai/notify.js):
-// the approval, access-request and birthday messages the Cliq bot sends. Both channels can
-// be on at once, so the school can compare them in the log below before switching Cliq off.
+// Settings > Staff Notifications: the approval, access-request and birthday messages staff
+// get on Arattai (configs/arattai_notify, read by functions/src/arattai/notify.js), and
+// the wording of each (StaffMessageWording).
 
 const inputClass = 'w-full bg-brand-bg border border-brand-card-border rounded-md py-2 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary text-brand-text';
 
@@ -63,10 +63,9 @@ function People({ label, list }) {
 }
 
 export default function AdminStaffNotifications() {
-  const [cfg, setCfg] = useState({ enabled: false, groupId: '', phoneMap: {}, template: '' });
+  const [cfg, setCfg] = useState({ enabled: false, appUrl: '', groupId: '', phoneMap: {}, template: '' });
   const [templates, setTemplates] = useState([]);
   const [phoneText, setPhoneText] = useState('');
-  const [cliqOn, setCliqOn] = useState(null);
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
   const [check, setCheck] = useState(null);
@@ -80,9 +79,6 @@ export default function AdminStaffNotifications() {
       setCfg(c => ({ ...c, ...data }));
       setPhoneText(mapToText(data.phoneMap));
     }).catch(err => console.warn('Failed to load Arattai notification settings', err));
-    getDoc(doc(firestore, 'configs', 'cliq'))
-      .then(snap => setCliqOn(snap.exists() && snap.data().enabled === true))
-      .catch(() => setCliqOn(null));
     const q = query(collection(firestore, 'notification_log'), orderBy('at', 'desc'), limit(15));
     const offLog = onSnapshot(q, snap => setLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
       err => console.warn('Failed to load notification log', err));
@@ -99,7 +95,7 @@ export default function AdminStaffNotifications() {
     setSaving(true);
     setMessage(null);
     try {
-      const next = { enabled: !!cfg.enabled, groupId: (cfg.groupId || '').trim(), phoneMap: textToMap(phoneText), template: cfg.template || '' };
+      const next = { enabled: !!cfg.enabled, appUrl: (cfg.appUrl || '').trim().replace(/\/+$/, ''), groupId: (cfg.groupId || '').trim(), phoneMap: textToMap(phoneText), template: cfg.template || '' };
       await setDoc(doc(firestore, 'configs', 'arattai_notify'), next);
       setCfg(next);
       setPhoneText(mapToText(next.phoneMap));
@@ -115,7 +111,7 @@ export default function AdminStaffNotifications() {
     setChecking(true);
     setMessage(null);
     try {
-      const res = await httpsCallable(functions, 'checkArattaiNotify')({ send });
+      const res = await httpsCallable(functions, send ? 'sendStaffNotificationTest' : 'checkArattaiNotify')();
       setCheck(res.data);
       if (send) {
         const r = res.data.results;
@@ -130,29 +126,15 @@ export default function AdminStaffNotifications() {
   };
 
   return (
+    <div className="space-y-6">
     <div className="bg-brand-card border border-brand-card-border rounded-xl shadow-sm p-8 space-y-6">
       <div>
         <h3 className="font-semibold text-brand-text text-lg flex items-center gap-2"><BellRing size={18} className="text-brand-primary" /> Staff notifications</h3>
         <p className="text-xs text-brand-text-dim mt-1">
-          The messages the Cliq bot sends staff: approval requests and outcomes, access requests and Tamil birthdays.
-          Turn Arattai on alongside Cliq, check the log shows both arriving, then switch Cliq off in{' '}
-          <Link to="/settings/cliq" className="text-brand-primary font-medium hover:underline">Settings › Cliq Bot</Link>.
+          Messages to staff on Arattai: approval requests and outcomes, access requests and Tamil birthdays.
+          Approvals are reviewed in the app, through the link in the message.
         </p>
       </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="p-3 rounded-lg border border-brand-card-border flex items-center justify-between">
-          <span className="text-sm font-medium text-brand-text">Cliq</span>
-          <span className={`text-xs font-bold ${cliqOn ? 'text-green-600 dark:text-green-400' : 'text-brand-text-dim'}`}>{cliqOn === null ? '…' : cliqOn ? 'On' : 'Off'}</span>
-        </div>
-        <div className="p-3 rounded-lg border border-brand-card-border flex items-center justify-between">
-          <span className="text-sm font-medium text-brand-text">Arattai</span>
-          <span className={`text-xs font-bold ${cfg.enabled ? 'text-green-600 dark:text-green-400' : 'text-brand-text-dim'}`}>{cfg.enabled ? 'On' : 'Off'}</span>
-        </div>
-      </div>
-      {cliqOn === false && !cfg.enabled && (
-        <p className="text-xs text-amber-600 dark:text-amber-400 -mt-3">Both are off, so staff aren’t getting these notifications anywhere.</p>
-      )}
 
       {message && (
         <div className={`p-3 rounded-md text-sm font-medium border ${message.ok ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'}`}>{message.text}</div>
@@ -165,9 +147,15 @@ export default function AdminStaffNotifications() {
         </label>
 
         <div className="space-y-2">
+          <label htmlFor="arattai-app-url" className="text-sm font-medium text-brand-text">App address</label>
+          <input id="arattai-app-url" type="text" value={cfg.appUrl || ''} onChange={e => setCfg({ ...cfg, appUrl: e.target.value })} placeholder="https://abhishri-academy.web.app" className={inputClass} />
+          <p className="text-xs text-brand-text-dim">Where the links in messages point. Leave empty for the default.</p>
+        </div>
+
+        <div className="space-y-2">
           <label htmlFor="arattai-group" className="text-sm font-medium text-brand-text">Admins’ group ID (optional)</label>
           <input id="arattai-group" type="text" value={cfg.groupId || ''} onChange={e => setCfg({ ...cfg, groupId: e.target.value })} placeholder="Leave empty to message each admin" className={inputClass} />
-          <p className="text-xs text-brand-text-dim">What Cliq posts to the admins’ channel. With no group, every admin gets it as a direct message. Live Arattai can’t post to groups, so leave this empty there.</p>
+          <p className="text-xs text-brand-text-dim">What goes to all the admins. With no group, every admin gets it as a direct message. Live Arattai can’t post to groups, so leave this empty there.</p>
         </div>
 
         <div className="space-y-2">
@@ -178,7 +166,7 @@ export default function AdminStaffNotifications() {
           </select>
           <p className="text-xs text-brand-text-dim">
             Arattai only lets businesses message someone first with an approved template. Create a Transactional one with one placeholder
-            (the whole message) or two (title, then details), get it approved, sync templates above, and pick it here. Sandbox ignores this.
+            (the whole message) or two (title, then details), get it approved, sync templates in Arattai Config, and pick it here. Sandbox ignores this.
           </p>
         </div>
 
@@ -215,11 +203,11 @@ export default function AdminStaffNotifications() {
       <div>
         <h4 className="text-sm font-bold text-brand-text mb-2">Recent notifications</h4>
         {log.length === 0 ? (
-          <p className="text-xs text-brand-text-dim">None yet. Notifications appear here once Cliq or Arattai sends one.</p>
+          <p className="text-xs text-brand-text-dim">None yet. Notifications appear here once one is sent.</p>
         ) : (
           <ul className="divide-y divide-brand-card-border border border-brand-card-border rounded-lg">
             {log.map(n => {
-              const anyBad = ['cliq', 'arattai'].some(k => ['failed', 'partial', 'skipped'].includes(n.results?.[k]?.status));
+              const anyBad = ['failed', 'partial', 'skipped'].includes(n.results?.arattai?.status);
               return (
                 <li key={n.id} className="p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                   {anyBad ? <AlertCircle size={16} className="text-amber-500 shrink-0" /> : <CheckCircle size={16} className="text-green-500 shrink-0" />}
@@ -230,7 +218,6 @@ export default function AdminStaffNotifications() {
                     </p>
                   </div>
                   <div className="flex gap-1.5 shrink-0">
-                    <Chip name="Cliq" result={n.results?.cliq} />
                     <Chip name="Arattai" result={n.results?.arattai} />
                   </div>
                 </li>
@@ -239,6 +226,8 @@ export default function AdminStaffNotifications() {
           </ul>
         )}
       </div>
+    </div>
+    <StaffMessageWording />
     </div>
   );
 }

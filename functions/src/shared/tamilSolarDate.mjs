@@ -1,6 +1,6 @@
 // The Tamil solar month and day, as stored on students and staff (tamilMonth / tamilDay)
 // and matched for "Tamil birthday today". Shared so the web app's bell and the morning
-// Cliq digest agree on whose birthday it is. Each side computes the Sun's tropical
+// staff birthday message agree on whose birthday it is. Each side computes the Sun's tropical
 // longitude with astronomy-engine and passes it in.
 
 export const TAMIL_MONTHS = [

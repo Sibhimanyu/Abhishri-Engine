@@ -1,17 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { NOTIFICATIONS, outcomeEntries, APPROVED_SHOWS_FOR_MS } from '../../../functions/src/shared/notifications.mjs';
-import { outcomeMessage, accessRequestMessage, birthdayDigestMessage, requestMessage } from '../../../functions/src/shared/cliqMessages.mjs';
+import { outcomeVars, accessRequestVars, birthdayVars, requestVars, renderStaffMessage, outcomeKey } from '../../../functions/src/shared/staffMessages.mjs';
 import { tamilSolarDate, TAMIL_MONTHS } from '../../../functions/src/shared/tamilSolarDate.mjs';
 import { bellEntries } from './bellEntries';
 
 const appUrl = 'https://abhishri-academy.web.app';
-const linkOf = (message) => message.buttons.at(-1).action.data.web.replace(appUrl, '');
+const linkOf = (vars) => vars.link.replace(appUrl, '');
 
 describe('notification list', () => {
-  it('says where every notification goes in Cliq, or why it stays in the bell', () => {
+  it('says how every notification is sent to staff, or why it stays in the bell', () => {
     for (const [key, n] of Object.entries(NOTIFICATIONS)) {
-      expect(['channel', 'dm', 'digest', null], key).toContain(n.cliq);
-      if (n.cliq === null) expect(n.cliqSkipReason, key).toBeTruthy();
+      expect(['channel', 'dm', 'digest', null], key).toContain(n.staff);
+      if (n.staff === null) expect(n.staffSkipReason, key).toBeTruthy();
       expect(n.title, key).toBeTruthy();
     }
   });
@@ -26,21 +26,25 @@ describe('notification list', () => {
   });
 });
 
-describe('bell and Cliq match', () => {
+describe('bell and staff messages match', () => {
   it('tells the teacher the same thing, linking to the same place', () => {
     const approval = { status: 'changes_requested', requestedBy: 't@x.in', reviewedByName: 'Sathya', note: 'Fix the date', reviewedAtMs: 5 };
     const [bell] = bellEntries({ myOutcomes: outcomeEntries([{ collection: 'daily_reports', id: '2026-09-28', noun: 'daily report', label: '', approval }], 10) });
-    const cliq = outcomeMessage({ collection: 'daily_reports', id: '2026-09-28', data: { approval }, event: 'returned', reviewerName: 'Sathya', appUrl });
-    expect(bell.text).toBe(cliq.text);
-    expect(bell.path).toBe(linkOf(cliq));
+    const vars = outcomeVars({ collection: 'daily_reports', id: '2026-09-28', data: { approval }, event: 'returned', reviewerName: 'Sathya', appUrl });
+    const sent = renderStaffMessage(outcomeKey('returned'), vars);
+    // Same who, what and note as the bell; the message words it as a title plus short lines.
+    expect(sent.text).toContain('Sathya sent back');
+    expect(sent.text).toContain('Note: Fix the date');
+    expect(bell.text).toContain('Note: Fix the date');
+    expect(bell.path).toBe(linkOf(vars));
     expect(bell.title).toBe('Sent Back');
   });
 
   it('links requests and access requests to the same screens', () => {
     const bell = bellEntries({ pendingLogins: 1, pendingApprovals: { menus: 0, reports: 1, total: 1 } });
     const byKey = Object.fromEntries(bell.map(e => [e.key, e]));
-    expect(byKey.approvals.path).toBe(linkOf(requestMessage({ collection: 'daily_reports', id: '2026-09-28', data: {}, requesterName: 'V', appUrl })));
-    expect(byKey.access.path).toBe(linkOf(accessRequestMessage({ data: { email: 'a@b.in' }, appUrl })));
+    expect(byKey.approvals.path).toBe(linkOf(requestVars({ collection: 'daily_reports', id: '2026-09-28', data: {}, requesterName: 'V', appUrl })));
+    expect(byKey.access.path).toBe(linkOf(accessRequestVars({ data: { email: 'a@b.in' }, appUrl })));
     expect(bell.map(e => e.key)).toEqual(['access', 'approvals']);
   });
 
@@ -50,11 +54,11 @@ describe('bell and Cliq match', () => {
       { id: 't1', name: 'Meena', type: 'staff', tamilMonth: 'Purattasi', tamilDay: '11' },
     ];
     const bell = bellEntries({ birthdays: members });
-    const digest = birthdayDigestMessage({ members, appUrl });
-    expect(digest.card.title).toBe('🎂 Tamil Birthday Today! (Purattasi 11)');
-    expect(digest.text).toBe(bell.map(e => `• ${e.text}`).join('\n'));
+    const vars = birthdayVars({ members, appUrl });
+    expect(vars.people).toBe(bell.map(e => `• ${e.text}`).join('\n'));
+    expect(vars.date).toBe('Purattasi 11');
     expect(bell[0].text).toBe("It is Arun's (Student) Tamil Birthday today (Purattasi 11).");
-    expect(birthdayDigestMessage({ members: [], appUrl })).toBe(null);
+    expect(birthdayVars({ members: [], appUrl })).toBe(null);
   });
 });
 

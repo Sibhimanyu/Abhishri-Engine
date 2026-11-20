@@ -12,7 +12,7 @@ describe('reportId', () => {
     expect(reportId('2026-10-05', 'Little Steps 2')).not.toBe(reportId('2026-10-05', 'Little Steps 1'));
   });
 
-  it('never contains "|", which Cliq button keys use as a separator', () => {
+  it('never contains "|", a separator some ids and keys use', () => {
     expect(reportId('2026-10-05', 'A | B')).not.toContain('|');
   });
 

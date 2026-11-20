@@ -1,14 +1,16 @@
-// Staff notifications over Arattai: the same ones the Cliq bot sends (shared/notifications.mjs),
-// so the school can move off Cliq by running both for a while, then switching Cliq off.
-// functions/src/notify/dispatch.js decides what goes where; this sends the Arattai side.
+// Staff notifications over Arattai (the events in shared/notifications.mjs).
+// functions/src/notify/dispatch.js sends them through here.
 //
-// Settings live in configs/arattai_notify (admin-only, by the configs rule's default):
-//   enabled     master switch for Arattai staff notifications
-//   groupId     an Arattai group for what Cliq posts to the admins' channel. When empty,
-//               each admin gets those posts as a direct message instead.
+// Settings live in configs/arattai_notify (admin-only, by the configs rule's default),
+// edited in Settings > Staff Notifications:
+//   enabled     master switch for staff notifications
+//   appUrl      where message links point (default https://abhishri-academy.web.app)
+//   groupId     an Arattai group for what goes to the admins. When empty, each admin gets
+//               those messages as a direct message instead.
 //   phoneMap    { appEmail: phone } for staff with no phone on their staff record
 //   template    name of a synced Arattai template (live mode): Arattai only lets a business
 //               message someone first with an approved template
+// The wording is in configs/staff_messages (see ./../notify/wording.js).
 //
 // Direct messages go to the staff member's mobile: phoneMap, else staff/{id}.phone for the
 // staff record with that email, else allowed_users/{email}.phone. Anyone without one is
@@ -18,6 +20,8 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { resolveAccess } = require("../shared/access");
 const { getProvider, normalizePhone } = require("./provider");
 const { P, safeKey } = require("./store");
+
+const DEFAULT_APP_URL = "https://abhishri-academy.web.app";
 
 async function loadNotifyConfig() {
   const db = admin.firestore();
@@ -38,6 +42,7 @@ async function loadNotifyConfig() {
     : null;
   return {
     enabled: cfg.enabled === true,
+    appUrl: String(cfg.appUrl || "").trim() || DEFAULT_APP_URL,
     groupId: String(cfg.groupId || "").trim(),
     phoneMap,
     template: tSnap?.exists ? tSnap.data() : null,
@@ -76,7 +81,7 @@ async function adminEmails() {
 
 /**
  * Who would get a message for this audience: { group?, people: [{ email, phone|null }] }.
- * `audience` is { channel: true } (what Cliq posts to the admins' channel) or { users: [emails] }.
+ * `audience` is { channel: true } (the admins) or { users: [emails] }.
  */
 async function recipientsFor(cfg, audience) {
   if (audience.channel && cfg.groupId) return { group: cfg.groupId, people: [] };
@@ -108,9 +113,9 @@ async function sendArattaiNotification(audience, message, cfgIn) {
 }
 
 /**
- * Admin-only, from Settings > Arattai Config: who would get staff notifications on
- * Arattai (and whose phone is missing), and with { send: true } a test to both audiences.
- * Works while Arattai notifications are switched off, so the setup can be checked first.
+ * Admin-only, from Settings > Staff Notifications: who would get staff notifications
+ * (and whose phone is missing). Works while notifications are switched off, so the setup
+ * can be checked first. The test send is sendStaffNotificationTest (notify/triggers.js).
  */
 const checkArattaiNotify = onCall(async (request) => {
   const access = await resolveAccess(request.auth);
@@ -121,21 +126,7 @@ const checkArattaiNotify = onCall(async (request) => {
     // An admin signed in without a verified email has no address to look a phone up by.
     access.email ? recipientsFor(cfg, { users: [access.email] }) : { people: [] },
   ]);
-  const out = { enabled: cfg.enabled, mode: cfg.provider.mode, admins, me };
-  if (request.data?.send) {
-    const test = (where) => ({
-      title: "Arattai notification test",
-      text: `Test from Abhishri Engine. If you can see this ${where}, staff notifications on Arattai are set up.`,
-      links: [{ label: "Open app", url: "https://abhishri-academy.web.app" }],
-      actions: [],
-    });
-    const on = { ...cfg, enabled: true };
-    out.results = {
-      admins: await sendArattaiNotification({ channel: true }, test(cfg.groupId ? "in the admins' group" : "as an admin"), on),
-      me: access.email ? await sendArattaiNotification({ users: [access.email] }, test("as a direct message"), on) : { status: "skipped", skipped: [] },
-    };
-  }
-  return out;
+  return { enabled: cfg.enabled, mode: cfg.provider.mode, admins, me };
 });
 
 module.exports = { loadNotifyConfig, recipientsFor, sendArattaiNotification, checkArattaiNotify };

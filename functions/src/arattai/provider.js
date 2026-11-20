@@ -19,8 +19,8 @@ const crypto = require("crypto");
  *   getAccount()                                 -> { connected, label, balance? }
  *   sendNotification({ to, message, template? })  -> { messageId }
  *       Staff notifications (see ./notify.js). `to` is { phone } or { groupId }; `message`
- *       is { title, text, links, actions } from shared/plainMessage.mjs. Send buttons for
- *       links (and actions, if Arattai can run them) or fall back to plainText(message).
+ *       is { title, text, links, actions } already worded (notify/wording.js). Send
+ *       plainText(message) from shared/plainMessage.mjs.
  *   parseWebhook(body)                           -> { incoming, statuses } (or a promise of it)
  *   simulatesReceipts                            -> true when the caller should fake receipts
  *
