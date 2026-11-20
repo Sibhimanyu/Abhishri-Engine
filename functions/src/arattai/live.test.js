@@ -186,3 +186,22 @@ test("parseArattai: real sent, delivered (entity.messages[]) and failed payloads
   assert.strictEqual(received.statuses.length, 0);
   assert.strictEqual(received.incoming[0].text, "Hello");
 });
+
+test("parseArattai: every incoming media type maps to the shared message shape", async () => {
+  const recv = async (entity) => (await parseArattai({ event: "chat.message.received", event_time: 9, entity: { ack_key: "k1", user: { id: "2694197", name: "Adish" }, ...entity } })).incoming[0];
+  const gif = await recv({ type: "gif", content: { gif: { height: "576", url: "https://static.klipy.com/a.gif", width: "1024" }, url: "https://static.klipy.com/a.gif" } });
+  assert.strictEqual(gif.type, "image");
+  assert.strictEqual(gif.isGif, true);
+  assert.strictEqual(gif.mediaUrl, "https://static.klipy.com/a.gif");
+  const file = await recv({ type: "file", content: { file_name: "fees.pdf", size: 2048, type: "application/pdf", url: "https://f/x" } });
+  assert.deepStrictEqual([file.type, file.mediaUrl, file.fileName, file.size], ["document", "https://f/x", "fees.pdf", 2048]);
+  const img = await recv({ type: "file", content: { file_name: "a.jpg", type: "image/jpeg", url: "https://f/i", comment: "look" } });
+  assert.deepStrictEqual([img.type, img.text], ["image", "look"]);
+  const loc = await recv({ type: "location", content: { location: "School", latitude: 12.9, longitude: 80.2, name: "School", loc_type: "pinned" } });
+  assert.strictEqual(loc.type, "location");
+  assert.deepStrictEqual(loc.location, { lat: 12.9, lng: 80.2, name: "School", url: "https://www.google.com/maps?q=12.9%2C80.2" });
+  const contact = await recv({ type: "contact", content: { name: "Asha", phones: [{ type: "mobile", number: "99999" }] } });
+  assert.deepStrictEqual(contact.contact, { name: "Asha", phones: ["99999"] });
+  const odd = await recv({ type: "mystery", content: { x: 1 } });
+  assert.strictEqual(odd.text, "[unsupported message type: mystery]");
+});

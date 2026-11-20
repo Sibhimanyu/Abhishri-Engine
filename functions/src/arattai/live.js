@@ -368,6 +368,62 @@ function describe(type, content) {
   return String(content.message || content.title || content.comment || "");
 }
 
+
+const mapsLink = (lat, lng) => `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}`;
+
+/**
+ * One chat.message.received entity into the neutral incoming shape. Media arrives as a
+ * `url` (content.url, or content.<type>.url for gif), never a media ID, so it is stored as is.
+ * Besides the base fields it may carry fileName, size, location { lat, lng, name, url }
+ * and contact { name, phones }.
+ */
+function parseReceived(e, { userId, phone, name, ts }) {
+  const c = e.content;
+  const obj = c && typeof c === "object" ? c : {};
+  const t = e.type || "text";
+  const out = {
+    messageId: String(e.id || e.ack_key || `in_${crypto.randomUUID()}`),
+    from: phone || `u${digits(userId)}`,
+    name,
+    type: t === "text" ? "text" : t,
+    text: "",
+    mediaUrl: null,
+    mimeType: null,
+    timestamp: ts,
+  };
+  const rawUrl = String(obj[t]?.url || obj.url || "");
+  // Only web links: anything else (javascript:, data:) would end up in a staff member's href.
+  const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : "";
+  const mime = String(obj.type || obj[t]?.type || "");
+  if (t === "file" && url) {
+    out.type = mime.startsWith("image/") ? "image" : mime.startsWith("audio/") ? "audio" : mime.startsWith("video/") ? "video" : "document";
+    out.text = String(obj.comment || obj.file_name || "");
+    out.mediaUrl = url;
+    out.mimeType = mime || null;
+    if (obj.file_name) out.fileName = String(obj.file_name);
+    if (obj.size != null) out.size = Number(obj.size) || null;
+  } else if ((t === "gif" || t === "image" || t === "sticker" || t === "video" || t === "audio" || t === "voice") && url) {
+    out.type = t === "gif" ? "image" : t === "voice" ? "audio" : t;
+    if (t === "gif") out.isGif = true;
+    out.text = String(obj.comment || obj.caption || "");
+    out.mediaUrl = url;
+    out.mimeType = /^(image|audio|video)\//.test(mime) ? mime : t === "gif" ? "image/gif" : null;
+  } else if (t === "location" && obj.latitude != null && obj.longitude != null) {
+    out.text = describe(t, obj);
+    out.location = { lat: Number(obj.latitude), lng: Number(obj.longitude), name: String(obj.name || obj.location || ""), url: mapsLink(obj.latitude, obj.longitude) };
+  } else if (t === "contact") {
+    const phones = (Array.isArray(obj.phones) ? obj.phones : []).map((p) => String(p?.number || p?.phone || p?.value || (typeof p === "string" ? p : ""))).filter(Boolean);
+    out.text = describe(t, obj);
+    out.contact = { name: String(obj.name || ""), phones };
+  } else if (t === "text" || typeof c === "string") {
+    out.text = describe(t, c);
+  } else {
+    out.text = describe(t, c) || `[unsupported message type: ${t}]`;
+  }
+  out.text = out.text.slice(0, 4096);
+  return out;
+}
+
 /**
  * Arattai's envelope ({ event, event_time, entity }) into the provider-neutral shape.
  * Senders arrive as user IDs; known ones become their phone number, others "u<userId>".
@@ -391,18 +447,7 @@ async function parseArattai(body) {
     const name = e.user.name ? String(e.user.name).slice(0, 100) : null;
     const phone = await phoneForUser(userId);
     await rememberUser(userId, { phone, name });
-    const isFile = e.type === "file" && e.content?.url;
-    const mime = isFile ? String(e.content.type || "") : "";
-    incoming.push({
-      messageId: String(e.id || e.ack_key || `in_${crypto.randomUUID()}`),
-      from: phone || `u${digits(userId)}`,
-      name,
-      type: isFile ? (mime.startsWith("image/") ? "image" : mime.startsWith("audio/") ? "audio" : mime.startsWith("video/") ? "video" : "document") : (e.type === "text" || !e.type ? "text" : e.type),
-      text: (isFile ? String(e.content.comment || e.content.file_name || "") : describe(e.type, e.content)).slice(0, 4096),
-      mediaUrl: isFile ? String(e.content.url) : null,
-      mimeType: mime || null,
-      timestamp: ts,
-    });
+    incoming.push(parseReceived(e, { userId, phone, name, ts }));
   }
   return { incoming, statuses };
 }

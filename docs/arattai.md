@@ -155,3 +155,14 @@ with it and shows the normal parent portal, with no SMS code. A number not on an
   Refresh Token in Settings → Arattai Config), otherwise the exchange fails.
 - **How parents open it:** add a URL button pointing at the page to a template, or register it as
   the mini app on the pinned business number so it appears in the chat.
+
+## Incoming message types
+
+`chat.message.received` entity: `user {id, name}`, `ack_key`, `type`, `content`. Documented types:
+`text` (content is a string), `list_input`, `address`, `file` (image, video, audio, document:
+`content {file_name, size, type (MIME), url, comment?}`), `location` (`latitude`, `longitude`,
+`name`, `location`, `loc_type`), `contact` (`name`, `phones[]`, ...), `sticker`. Production also
+sends `gif` (`content.url`, `content.gif.url`). Media comes as a plain `url` in the payload; the
+docs describe no media ID, download endpoint or scope, so URLs are stored as is (no Storage copy).
+`parseArattai` maps these to the WhatsApp shape (`imageData`), plus `location`/`contact` on the
+message; unknown types show "[unsupported message type: X]".
