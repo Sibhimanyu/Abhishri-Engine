@@ -224,3 +224,16 @@ test("parseArattai: every incoming media type maps to the shared message shape",
   const odd = await recv({ type: "mystery", content: { x: 1 } });
   assert.strictEqual(odd.text, "[unsupported message type: mystery]");
 });
+
+test("parseReceived: a photo arrives as type file with content.download_url", () => {
+  const { parseReceived } = require("./live");
+  const e = { ack_key: "1795155245377_1800", type: "file",
+    content: { dimensions: { height: 1600, width: 788 }, download_url: "https://files.arattai.in/public?x-service=ArattaiBusiness&event-id=abc",
+      file_name: "image_5827c.PNG", size: 83621, type: "image/jpeg" },
+    user: { id: "3307860", name: "Sibhi" } };
+  const m = parseReceived(e, { userId: "3307860", phone: null, name: "Sibhi", ts: 1 });
+  assert.equal(m.type, "image");
+  assert.equal(m.mediaUrl, "https://files.arattai.in/public?x-service=ArattaiBusiness&event-id=abc");
+  assert.equal(m.text, "");
+  assert.equal(m.fileName, "image_5827c.PNG");
+});
