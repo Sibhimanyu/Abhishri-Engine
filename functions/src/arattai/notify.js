@@ -8,9 +8,9 @@
 //   groupId     an Arattai group for what goes to the admins. When empty, each admin gets
 //               those messages as a direct message instead.
 //   phoneMap    { appEmail: phone } for staff with no phone on their staff record
-//   template    name of a synced Arattai template (live mode): Arattai only lets a business
-//               message someone first with an approved template
-// The wording is in configs/staff_messages (see ./../notify/wording.js).
+// (An old `template` field is ignored.) Each event has its own Arattai template, made and
+// tracked in configs/staff_messages (see ./staffTemplates.js); an event whose template isn't
+// approved is not sent. The wording is in configs/staff_messages too (../notify/wording.js).
 //
 // Direct messages go to the staff member's mobile: phoneMap, else staff/{id}.phone for the
 // staff record with that email, else allowed_users/{email}.phone. Anyone without one is
@@ -19,7 +19,7 @@ const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { resolveAccess } = require("../shared/access");
 const { getProvider, normalizePhone } = require("./provider");
-const { P, safeKey } = require("./store");
+const { P } = require("./store");
 
 const DEFAULT_APP_URL = "https://abhishri-academy.web.app";
 
@@ -36,16 +36,17 @@ async function loadNotifyConfig() {
     const p = normalizePhone(phone);
     if (e && p.length >= 10) phoneMap[e] = p;
   });
-  const templateName = String(cfg.template || "").trim();
-  const tSnap = templateName
-    ? await db.collection("configs").doc(P.config).collection("templates").doc(safeKey(templateName)).get()
-    : null;
+  const staffMsgs = await db.collection("configs").doc("staff_messages").get().catch(() => null);
+  const staffTemplates = {};
+  Object.entries(staffMsgs?.exists ? staffMsgs.data() : {}).forEach(([key, v]) => {
+    if (v?.arattai) staffTemplates[key] = v.arattai;
+  });
   return {
     enabled: cfg.enabled === true,
     appUrl: String(cfg.appUrl || "").trim() || DEFAULT_APP_URL,
     groupId: String(cfg.groupId || "").trim(),
     phoneMap,
-    template: tSnap?.exists ? tSnap.data() : null,
+    staffTemplates,
     provider: getProvider(main.exists ? main.data() : {}),
   };
 }
@@ -97,12 +98,21 @@ async function recipientsFor(cfg, audience) {
 async function sendArattaiNotification(audience, message, cfgIn) {
   const cfg = cfgIn || await loadNotifyConfig();
   if (!cfg.enabled) return { status: "off" };
+  // Each event is sent with its own template, and only once Arattai has approved it.
+  const state = cfg.staffTemplates?.[message.event];
+  if (!state || state.status !== "approved" || !state.templateId) {
+    return { status: "skipped", reason: "template not approved", mode: cfg.provider.mode, sent: 0, failed: [], skipped: [] };
+  }
   try {
+    const { templateValues } = await import("../shared/staffMessages.mjs");
+    // The approved template holds the text last submitted, so fill exactly its placeholders.
+    const sendMessage = { ...message, values: templateValues(state.submittedText || {}, message.vars) };
+    const template = { name: state.templateId, arattai: { id: state.templateId, type: "transaction", language: "en" } };
     const { group, people } = await recipientsFor(cfg, audience);
     const targets = group ? [{ label: "group", to: { groupId: group } }]
       : people.filter((p) => p.phone).map((p) => ({ label: p.email, to: { phone: p.phone } }));
     const skipped = people.filter((p) => !p.phone).map((p) => p.email);
-    const results = await Promise.allSettled(targets.map((t) => cfg.provider.sendNotification({ to: t.to, message, template: cfg.template })));
+    const results = await Promise.allSettled(targets.map((t) => cfg.provider.sendNotification({ to: t.to, message: sendMessage, template })));
     const failed = results.map((r, i) => (r.status === "rejected" ? { to: targets[i].label, error: r.reason?.message || String(r.reason) } : null)).filter(Boolean);
     const sent = targets.length - failed.length;
     const status = targets.length === 0 ? "skipped" : sent === 0 ? "failed" : failed.length || skipped.length ? "partial" : "sent";

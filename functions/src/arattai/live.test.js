@@ -156,16 +156,35 @@ test("parseArattai: receipts by ack_key, incoming by user ID", async () => {
   assert.strictEqual(r4.statuses[0].status, "delivered", "neutral shape still works");
 });
 
-test("sendNotification uses the picked template and refuses groups", async () => {
+test("sendNotification sends the event's template with named values and refuses groups", async () => {
   routes["POST /api/v1/transactions"] = (u, opts) => [201, { data: { user_id: "9", ack_key: JSON.parse(opts.body).ack_key } }];
-  const template = { name: "staff", arattai: { id: "T9", type: "transaction", placeholders: ["title", "details"] } };
+  const template = { name: "T9", arattai: { id: "T9", type: "transaction", language: "en" } };
   const p = live(config);
   await assert.rejects(p.sendNotification({ to: { groupId: "g" }, message: {}, template }), /groups/);
-  await assert.rejects(p.sendNotification({ to: { phone: "919800000001" }, message: {} }), /Pick a staff notification template/);
-  await p.sendNotification({ to: { phone: "919800000001" }, template, message: { title: "Approval needed", text: "Menu for Monday", links: [{ label: "Open", url: "https://a" }] } });
+  await assert.rejects(p.sendNotification({ to: { phone: "919800000001" }, message: {} }), /no approved Arattai template/);
+  await p.sendNotification({ to: { phone: "919800000001" }, template, message: { values: { requester: "Lakshmi", link: "https://a" } } });
   const body = calls.find((c) => c.key === "POST /api/v1/transactions").body;
   assert.strictEqual(body.phone_number, "91-9800000001");
-  assert.deepStrictEqual(body.variables, { title: "Approval needed", details: "Menu for Monday\nOpen: https://a" });
+  assert.strictEqual(body.id, "T9");
+  assert.deepStrictEqual(body.variables, { requester: "Lakshmi", link: "https://a" });
+});
+
+test("template management calls", async () => {
+  routes["POST /api/v1/businesses/B1/messagetemplates"] = () => [201, { data: { id: "NT1", status: "enabled", translations: [] } }];
+  routes["POST /api/v1/messagetemplates/NT1/submit"] = () => [200, {}];
+  routes["PATCH /api/v1/messagetemplates/NT1"] = () => [200, {}];
+  routes["DELETE /api/v1/messagetemplates/NT1"] = () => [200, {}];
+  routes["GET /api/v1/messagetemplates/NT1"] = () => [200, { data: { id: "NT1", status: "enabled", translations: [{ language: "en", status: "rejected", rejection_reason: "Too vague" }] } }];
+  const { createTemplate, submitTemplate, updateTemplate, deleteTemplate, getTemplate, SCOPES } = require(path.join(__dirname, "live.js"));
+  const made = await createTemplate(config, { name: "abhishri_staff_test" });
+  assert.deepStrictEqual([made.id, made.status], ["NT1", "draft"]);
+  await submitTemplate(config, "NT1");
+  assert.deepStrictEqual(calls.find((c) => c.key === "POST /api/v1/messagetemplates/NT1/submit").body, { languages: ["en"] });
+  await updateTemplate(config, "NT1", { description: "x" });
+  const t = await getTemplate(config, "NT1");
+  assert.deepStrictEqual([t.status, t.reason], ["rejected", "Too vague"]);
+  await deleteTemplate(config, "NT1");
+  for (const s of ["CREATE", "UPDATE", "DELETE"]) assert.ok(SCOPES.includes(`ArattaiBusiness.messagetemplates.${s}`));
 });
 
 test("parseArattai: real sent, delivered (entity.messages[]) and failed payloads become receipts", async () => {

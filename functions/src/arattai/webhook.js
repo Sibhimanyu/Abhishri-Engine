@@ -7,6 +7,7 @@ const crypto = require("crypto");
 const { getProvider } = require("./provider");
 const { verifySignature } = require("./live");
 const { P, applyIncoming, applyStatus } = require("./store");
+const { applyTemplateApproval } = require("./staffTemplates");
 
 const tokenMatches = (presented, expected) => {
   const a = Buffer.from(String(presented || ""));
@@ -56,8 +57,9 @@ exports.arattaiWebhook = onRequest(async (request, response) => {
   try {
     const body = request.body || {};
     await admin.database().ref(P.debug).push({ timestamp: ServerValue.TIMESTAMP, payload: body });
-    const { incoming, statuses } = await getProvider(config).parseWebhook(body);
+    const { incoming, statuses, templates = [] } = await getProvider(config).parseWebhook(body);
     for (const inc of incoming) await applyIncoming(inc);
+    for (const t of templates) await applyTemplateApproval(t);
     let unmatched = 0;
     for (const st of statuses) if (!(await applyStatus(st))) unmatched++;
     if (unmatched) logger.info("Arattai webhook: receipts for unknown messages", { unmatched });

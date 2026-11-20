@@ -22,10 +22,13 @@ async function loadOverrides() {
   return overrides;
 }
 
-/** { title, text, links: [], actions: [] } for an event, ready for sendArattaiNotification. */
+/**
+ * { title, text, links: [], actions: [], event, vars } for an event, ready for
+ * sendArattaiNotification (which sends the event's own template and needs `event` and `vars`).
+ */
 async function composeStaffMessage(eventKey, vars) {
   const [{ renderStaffMessage }, overrides] = await Promise.all([messages(), loadOverrides()]);
-  return { ...renderStaffMessage(eventKey, vars, overrides), links: [], actions: [] };
+  return { ...renderStaffMessage(eventKey, vars, overrides), links: [], actions: [], event: eventKey, vars };
 }
 
 module.exports = { composeStaffMessage };

@@ -49,7 +49,9 @@ Internal notifications go to staff on Arattai only:
 - Tamil birthdays, one message at 7:30 each morning → admins
 - a test send
 
-Settings → Staff Notifications (master/admin) holds everything: on/off, app address, admins' group, template, phone numbers, "Check who gets them", "Send a test", the recent log, and the message wording. Settings are in `configs/arattai_notify` (`enabled`, `appUrl` with default https://abhishri-academy.web.app, `groupId`, `phoneMap`, `template`).
+Settings → Staff Notifications (master/admin) holds everything: on/off, app address, admins' group, template, phone numbers, "Check who gets them", "Send a test", the recent log, and the message wording. Settings are in `configs/arattai_notify` (`enabled`, `appUrl` with default https://abhishri-academy.web.app, `groupId`, `phoneMap`; an old `template` field is ignored).
+
+**One Arattai template per event.** Each event's wording is its own Transactional template (`abhishri_staff_<event>`), created, submitted, edited and deleted from Settings → Staff Notifications (`functions/src/arattai/staffTemplates.js`: `submitStaffTemplate`, `refreshStaffTemplates`, `deleteStaffTemplate`). `{name}` in the wording becomes `{{snake_name}}`; values are never empty (`-`), so optional lines use one placeholder such as `{noteLine}`. State is in `configs/staff_messages` under `<event>.arattai` (`templateId`, `status`, `rejectedReason`, `submittedAt`, `approvedAt`, `submittedText`, `lastError`) and follows the `messagetemplate.approval.updated` webhook. An event whose template isn't approved is not sent: the log shows "skipped: template not approved". Sandbox approves on submit.
 
 **Functions** (`functions/src/notify/triggers.js`): `notifyOnMenuApproval`, `notifyOnReportApproval`, `notifyOnAccessRequest`, `notifyTamilBirthdays`, `sendStaffNotificationTest`; sending is in `notify/dispatch.js`, and `checkArattaiNotify` lists recipients. They replace the old `cliqOnMenuApproval`, `cliqOnReportApproval`, `cliqOnAccessRequest`, `cliqTamilBirthdays`, `sendCliqTest` and `cliqAction`, which a deploy must delete.
 
@@ -92,9 +94,8 @@ The `configs/cliq` document from the old bot is no longer read and can be delete
 - **Limits:** 1,000 different recipients a day until Arattai raises it on request, 15
   messages a minute to one person, 80 a second overall.
 - **Message IDs** are our own `ack_key`s, which Arattai echoes in every receipt.
-- **Staff notifications** need a template, since staff rarely message the school first: an
-  approved Transactional template with one placeholder (the whole message) or two (title,
-  then details), picked under Settings → Staff Notifications. Live can't post to groups, so leave the
+- **Staff notifications** need a template, since staff rarely message the school first: one
+  per event, made under Settings → Staff Notifications (see above). Live can't post to groups, so leave the
   group ID empty.
 
 ## Pricing
@@ -120,8 +121,8 @@ sets: ask for it when applying, or write to support@arattaibusiness.in.
 2. **OAuth client.** At https://api-console.arattai.in create a client (Self Client is the
    simplest, if offered; otherwise Server-based with any redirect URI). Get a grant code for
    these scopes, with `access_type=offline`:
-   `ArattaiBusiness.messages.CREATE,ArattaiBusiness.messagetemplates.READ,ArattaiBusiness.phonenumbers.READ,ArattaiBusiness.customerdata.READ,ArattaiBusiness.miniapps.CREATE`
-   (the last two are for the [parent mini app](#parent-mini-app))
+   `ArattaiBusiness.messages.CREATE,ArattaiBusiness.messagetemplates.READ,ArattaiBusiness.phonenumbers.READ,ArattaiBusiness.customerdata.READ,ArattaiBusiness.miniapps.CREATE,ArattaiBusiness.messagetemplates.CREATE,ArattaiBusiness.messagetemplates.UPDATE,ArattaiBusiness.messagetemplates.DELETE`
+   (`customerdata.READ` and `miniapps.CREATE` are for the [parent mini app](#parent-mini-app); the three `messagetemplates` write scopes are for staff notification templates)
    (URL: `https://accounts.arattai.in/oauth/v2/auth?response_type=code&client_id=…&scope=…&redirect_uri=…&access_type=offline&prompt=consent&tenant=ArattaiBusiness`).
    The code lasts one minute; exchange it straight away:
    `curl -X POST "https://accounts.arattai.in/oauth/v2/token?grant_type=authorization_code&code=…&client_id=…&client_secret=…&redirect_uri=…"`

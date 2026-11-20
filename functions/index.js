@@ -42,6 +42,9 @@ exports.simulateArattaiInbound = arattaiSend.simulateArattaiInbound;
 exports.arattaiWebhook = arattaiWebhook.arattaiWebhook;
 exports.pruneArattaiDebugLog = arattaiWebhook.pruneArattaiDebugLog;
 exports.checkArattaiNotify = require("./src/arattai/notify").checkArattaiNotify;
+exports.submitStaffTemplate = require("./src/arattai/staffTemplates").submitStaffTemplate;
+exports.refreshStaffTemplates = require("./src/arattai/staffTemplates").refreshStaffTemplates;
+exports.deleteStaffTemplate = require("./src/arattai/staffTemplates").deleteStaffTemplate;
 exports.startArattaiMiniApp = require("./src/arattai/miniapp").startArattaiMiniApp;
 
 // --- Staff notifications (see src/notify/dispatch.js) ---
