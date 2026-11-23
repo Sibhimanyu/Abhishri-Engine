@@ -266,7 +266,7 @@ service cloud.firestore {
       // trans_add holders (fee entry only) may read ONE student's ledger by path. They are
       // deliberately NOT added to the {path=**}/transactions rule above, so collection-group
       // queries (dashboards/totals/reports) stay closed to them.
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || getPerm('fees_accounting', 'trans_add'));
+      allow read: if isAuthenticated() && (getPerm('fees_accounting', 'trans_add') || isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger'));
       // Payments/discounts need trans_add. A void reversal row (type 'void') needs trans_void
       // and must be committed in the same batch as flipping its original to isVoided.
       allow create: if isAuthenticated()
@@ -395,6 +395,7 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         isAdmin() || 
         getPerm('fees_accounting', 'exp_all') || 
+        (authEmail() != '' && isInternalStaff() && (resource.data.get('createdBy', '') == authEmail() || resource.data.get('staffEmail', '') == authEmail())) ||
         (resource != null && getPerm('fees_accounting', 'exp_own') && isOwnEmail(resource.data.get('createdBy', ''))) || 
         (resource != null && isInternalStaff() && (
           isOwnEmail(resource.data.get('createdBy', '')) ||
