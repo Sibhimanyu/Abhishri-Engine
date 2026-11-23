@@ -69,16 +69,29 @@ Home - Float the boat in a bucket of water.
     ]);
   });
 
-  it('joins wrapped lines and accepts labelled classroom text', () => {
+  it('keeps line breaks and accepts labelled classroom text', () => {
     const res = parsePlainReport(`Story Time:
 In the classroom: We read
 The Very Hungry Caterpillar.
 Try at home:
 Count fruits together.`);
     expect(res.highlights).toEqual([
-      { activity: 'Story Time', classroom: 'We read The Very Hungry Caterpillar.', home: 'Count fruits together.' },
+      { activity: 'Story Time', classroom: 'We read\nThe Very Hungry Caterpillar.', home: 'Count fruits together.' },
     ]);
     expect(res.date).toBe('');
+  });
+
+  it('keeps a pasted poem on its own lines', () => {
+    const res = parsePlainReport(`Rhyme Time
+Twinkle, twinkle, little star,
+How I wonder what you are.
+Up above the world so high,
+Like a diamond in the sky.
+At home:
+Sing it at bedtime,
+clapping along.`);
+    expect(res.highlights[0].classroom).toBe('Twinkle, twinkle, little star,\nHow I wonder what you are.\nUp above the world so high,\nLike a diamond in the sky.');
+    expect(res.highlights[0].home).toBe('Sing it at bedtime,\nclapping along.');
   });
 
   it('keeps a single sentence as classroom text', () => {
