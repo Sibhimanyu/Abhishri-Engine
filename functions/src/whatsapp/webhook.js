@@ -5,6 +5,9 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 const { extractReaction, storeReaction, findMessage } = require("./reactions");
+const { savePending, drainPending } = require("../shared/pendingEvents");
+
+const PENDING = "whatsapp_pending_events";
 
 
 
@@ -35,11 +38,16 @@ function receiptError(report, status) {
  * broadcast lookups never see). `applied` holds ref paths already updated by the broadcast
  * branch so one receipt isn't recorded twice.
  */
-async function updateConversationMessage(db, { wamid, recipient, status, timestamp, errMsg }, applied = new Set()) {
+async function updateConversationMessage(db, { wamid, ids, recipient, status, timestamp, errMsg }, applied = new Set(), { pending = false } = {}) {
   const conversationId = String(recipient || "").replace(/[^\d]/g, "");
-  if (!wamid || !conversationId) return false;
-  const snap = await findMessage(db.ref(`whatsapp_conversations/${conversationId}/messages`), wamid);
-  if (!snap) return false;
+  const lookup = [...new Set([wamid, ...(ids || [])].filter(Boolean).map(String))];
+  if (!lookup.length || !conversationId) return false;
+  const snap = await findMessage(db.ref(`whatsapp_conversations/${conversationId}/messages`), lookup);
+  if (!snap) {
+    // The message may not be filed yet (send.js writes the provider id after the call returns).
+    if (pending) await savePending(db, PENDING, lookup, "status", { ids: lookup, recipient: conversationId, status, timestamp, errMsg: errMsg || null });
+    return false;
+  }
   const path = snap.ref.toString();
   if (applied.has(path)) return false;
   applied.add(path);
@@ -59,6 +67,17 @@ async function updateConversationMessage(db, { wamid, recipient, status, timesta
 }
 
 /**
+ * Replay receipts and reactions that arrived before this message was filed. Called by send.js
+ * right after it writes the provider ids. Ranking is kept (updateConversationMessage only moves
+ * the status forward).
+ */
+function replayPendingEvents(db, ids) {
+  return drainPending(db, PENDING, ids, (kind, data) => (kind === "reaction"
+    ? storeReaction(db, data)
+    : updateConversationMessage(db, data)));
+}
+
+/**
  * Common Logic for processing Incoming Messages
  */
 async function processIncoming(db, report) {
@@ -70,7 +89,7 @@ async function processIncoming(db, report) {
   // A reaction is stored on the message it reacts to: no bubble, no unread bump, no notification.
   if ((report.message_type || report.type) === "reaction") {
     const reaction = extractReaction({ ...report, type: "reaction", from: report.from });
-    if (reaction && !(await storeReaction(db, reaction))) console.warn("Reaction for an unknown message", reaction.targetId);
+    if (reaction && !(await storeReaction(db, reaction, undefined, { pending: PENDING }))) console.warn("Reaction for an unknown message", reaction.targetId);
     return;
   }
   const type = report.message_type || report.type || "text";
@@ -319,9 +338,10 @@ async function processStatus(db, fs, report) {
 
   // Live-chat replies (and anything else filed under the conversation) are matched by wamid
   // whether or not a broadcast claimed the receipt.
+  const ids = [report.request_id, report.id, report.message_id, report.fast2sms_request_id];
   await updateConversationMessage(db, {
-    wamid: metaMessageId, recipient: recipientPhone, status, timestamp, errMsg: receiptError(report, status),
-  }, appliedConvoPaths);
+    wamid: metaMessageId, ids, recipient: recipientPhone, status, timestamp, errMsg: receiptError(report, status),
+  }, appliedConvoPaths, { pending: !broadcastId });
 }
 
 /**
@@ -354,6 +374,7 @@ exports.shouldApplyStatus = shouldApplyStatus;
 exports.receiptError = receiptError;
 exports.updateConversationMessage = updateConversationMessage;
 exports.processStatus = processStatus;
+exports.replayPendingEvents = replayPendingEvents;
 exports.processIncoming = processIncoming;
 exports.whatsappWebhook = onRequest(async (request, response) => {
   let token;
@@ -399,17 +420,21 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
         else if (report.type === "status_update") await processStatus(db, fs, report);
       }
     } else if (body.object) {
-      const change = body.entry?.[0]?.changes?.[0] || {};
-      const value = change.value || {};
-      // The business's own phone reacting (WhatsApp Business app): shown on the message like ours.
-      if (change.field === "smb_message_echoes") {
-        for (const echo of value.message_echoes || []) {
-          const reaction = extractReaction(echo, { fromMe: true });
-          if (reaction) await storeReaction(db, reaction);
+      // A batched payload carries several entries, each with several changes.
+      for (const entry of body.entry || []) {
+        for (const change of entry.changes || []) {
+          const value = change.value || {};
+          // The business's own phone reacting (WhatsApp Business app): shown on the message like ours.
+          if (change.field === "smb_message_echoes") {
+            for (const echo of value.message_echoes || []) {
+              const reaction = extractReaction(echo, { fromMe: true });
+              if (reaction) await storeReaction(db, reaction, undefined, { pending: PENDING });
+            }
+          }
+          if (value.messages) for (const msg of value.messages) await processIncoming(db, { ...msg, profile_name: value.contacts?.[0]?.profile?.name });
+          if (value.statuses) for (const status of value.statuses) await processStatus(db, fs, status);
         }
       }
-      if (value.messages) for (const msg of value.messages) await processIncoming(db, { ...msg, profile_name: value.contacts?.[0]?.profile?.name });
-      if (value.statuses) for (const status of value.statuses) await processStatus(db, fs, status);
     }
 
     response.status(200).send("OK");

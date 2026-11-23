@@ -69,7 +69,7 @@ exports.arattaiWebhook = onRequest(async (request, response) => {
     }
     for (const t of templates) await applyTemplateApproval(t);
     let unmatched = 0;
-    for (const st of statuses) if (!(await applyStatus(st))) unmatched++;
+    for (const st of statuses) if (!(await applyStatus(st, { pending: true }))) unmatched++;
     if (unmatched) logger.info("Arattai webhook: receipts for unknown messages", { unmatched });
     return response.status(200).json({ ok: true, messages: incoming.length, receipts: statuses.length });
   } catch (err) {

@@ -1,5 +1,6 @@
 const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
+const { savePending, drainPending } = require("../shared/pendingEvents");
 
 /**
  * Where Arattai data lives, and the writes shared by the callables and the webhook.
@@ -10,6 +11,7 @@ const { FieldValue } = require("firebase-admin/firestore");
  *   arattai_conversations/{phone}/messages/{k}  { messageId, from, to, message, type, timestamp, direction, status, imageData?, broadcastId?, statusHistory? }
  *   arattai_broadcast_logs/{broadcastId}/{phone} { broadcastId, recipientId, name, status, timestamp, sentAt?, deliveredAt?, readAt?, messageId?, error? }
  *   arattai_message_map/{messageId}             { phone, messageKey, broadcastId? }  (server only: receipt -> where to apply it)
+ *   arattai_pending_events/{messageId}/{k}      { kind, data, createdAt }              (server only: receipts that beat the send)
  *   arattai_debug_webhooks/{k}                  { timestamp, payload }               (admin read, pruned after 30 days)
  *   arattai_users/{userId}                      { phone?, name?, updatedAt }         (server only: Arattai user ID -> parent)
  *   arattai_phone_users/{phone}                 userId                               (server only: the other way)
@@ -24,6 +26,7 @@ const P = {
   conversations: "arattai_conversations",
   logs: "arattai_broadcast_logs",
   map: "arattai_message_map",
+  pending: "arattai_pending_events",
   debug: "arattai_debug_webhooks",
   history: "arattai_history",
   config: "arattai_main",
@@ -57,10 +60,14 @@ function counterDeltas(from, to) {
  * Apply a delivery receipt. Receipts only ever move a message forward (a late "sent"
  * after "read" is recorded in statusHistory but doesn't change the status).
  */
-async function applyStatus(st) {
+async function applyStatus(st, { pending = false } = {}) {
   const db = admin.database();
   const mapSnap = await db.ref(`${P.map}/${safeKey(st.messageId)}`).once("value");
-  if (!mapSnap.exists()) return false;
+  if (!mapSnap.exists()) {
+    // sendArattaiMessage writes the map entry just after the provider call; park the receipt for it.
+    if (pending) await savePending(db, P.pending, [st.messageId], "status", st);
+    return false;
+  }
   const { phone, messageKey, broadcastId } = mapSnap.val();
   const entry = { status: st.status, timestamp: st.timestamp, serverTime: Date.now() };
   if (st.error) entry.error = st.error;
@@ -91,6 +98,11 @@ async function applyStatus(st) {
   }
   await Promise.all(writes);
   return true;
+}
+
+/** Apply receipts parked for `messageId` (called once its map entry exists). */
+function replayPendingStatuses(messageId) {
+  return drainPending(admin.database(), P.pending, [messageId], (kind, data) => (kind === "status" ? applyStatus(data) : false));
 }
 
 /** File an incoming message under its sender's conversation and bump the unread count. */
@@ -177,4 +189,4 @@ async function phoneForUser(userId) {
   return (await admin.database().ref(`${P.users}/${safeKey(String(userId))}/phone`).once("value")).val() || null;
 }
 
-module.exports = { P, safeKey, applyStatus, applyIncoming, simulateReceipts, counterDeltas, rememberUser, userIdForPhone, phoneForUser };
+module.exports = { P, safeKey, applyStatus, replayPendingStatuses, applyIncoming, simulateReceipts, counterDeltas, rememberUser, userIdForPhone, phoneForUser };

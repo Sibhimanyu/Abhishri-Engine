@@ -1,6 +1,6 @@
 import { Spinner } from './Spinner';
 import React, { useState, useEffect, useRef } from 'react';
-import { ref, onValue, push, update, set, remove } from 'firebase/database';
+import { ref, onValue, push, update, set, remove, runTransaction, child } from 'firebase/database';
 import { rtdb } from '../firebase';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import { Search, Send, ArrowLeft, Clock, Check, CheckCheck, MessageSquare, AlertCircle, SmilePlus } from 'lucide-react';
@@ -116,8 +116,9 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
     const functions = getFunctions();
     const sendMessage = httpsCallable(functions, channel.fn.send);
 
+    let msgRef = null;
     try {
-      const msgRef = push(ref(rtdb, `${channel.conversations}/${safeKey}/messages`));
+      msgRef = push(ref(rtdb, `${channel.conversations}/${safeKey}/messages`));
       const ts = Date.now();
       await set(msgRef, {
         message: text,
@@ -136,8 +137,9 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
       });
 
       // Call Cloud Function
-      if (channel.passesMessageKey) {
-        // The server records the result (sent, or failed with the reason) on this message.
+      const sameKey = String(activeChat.phoneNumber).replace(/[^\d]/g, '') === safeKey;
+      if (channel.passesMessageKey || sameKey) {
+        // The server records the result (provider ids, or failed with the reason) on this message.
         await sendMessage({ to: activeChat.phoneNumber, text, messageKey: msgRef.key });
       } else {
         const result = await sendMessage({ to: activeChat.phoneNumber, text });
@@ -154,7 +156,13 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
 
     } catch (err) {
       console.error("Send failed:", err);
-      // In a real app we'd show a toast here
+      // The server marks the message failed itself; this covers a call that never got that far.
+      // Only while still 'processing': a client-side timeout must not overwrite a real 'sent'.
+      if (msgRef) {
+        runTransaction(child(msgRef, 'status'), (s) =>
+          (s == null || s === 'processing') ? 'failed' : undefined
+        ).catch(() => {});
+      }
     }
     setIsSending(false);
   };

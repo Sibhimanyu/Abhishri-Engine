@@ -21,7 +21,7 @@
           ".indexOn": ["timestamp"]
         },
         "messages": {
-          ".indexOn": ["messageId", "timestamp"]
+          ".indexOn": ["messageId", "wamid", "requestId", "timestamp"]
         }
       }
     },
@@ -31,6 +31,10 @@
       "$broadcastId": {
         ".indexOn": ["messageId", "timestamp"]
       }
+    },
+    "whatsapp_pending_events": {
+      ".read": false,
+      ".write": false
     },
     "whatsapp_batch_map": {
       ".read": false,
@@ -59,6 +63,10 @@
       "$broadcastId": {
         ".indexOn": ["messageId", "timestamp"]
       }
+    },
+    "arattai_pending_events": {
+      ".read": false,
+      ".write": false
     },
     "arattai_message_map": {
       ".read": false,
