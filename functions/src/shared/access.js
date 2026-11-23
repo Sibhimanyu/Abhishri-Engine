@@ -14,7 +14,7 @@ const FALLBACK = (role) => ({
   student_directory: { view: true, manage: role === "pro", delete: false },
   attendance: { view: true, mark: role === "teacher" || role === "pro", edit: role === "pro" },
   fees_accounting: {
-    view: false, view_dashboard: false, config: false, ledger: false, trans_add: false, trans_delete: false,
+    view: false, view_dashboard: false, config: false, ledger: false, trans_add: role === "pro", trans_void: role === "pro", trans_delete: false,
     exp_own: role !== "teacher", exp_all: false, wallet_view_own: role !== "teacher", wallet_edit_own: false,
   },
   whatsapp_sender: { access: false, broadcast: false, manage: false },

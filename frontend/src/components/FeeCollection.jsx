@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { ScrollText, FileCheck } from 'lucide-react';
 import FeesLedger from './FeesLedger';
 import FeesPlans from './FeesPlans';
+import { feeAccess } from '../utils/feeAccess';
 
 export default function FeeCollection() {
   const { userData } = useAuth();
@@ -13,14 +14,15 @@ export default function FeeCollection() {
   const isAdmin = userData?.isAdmin;
   const perms = userData?.permissions?.fees_accounting || {};
   const isMaster = isAdmin || perms === true;
+  const { canSeeLedgerTabs, canOpenFeeCollection } = feeAccess(perms, isMaster);
 
   const tabs = [
-    { id: 'preschool', label: 'Preschool Ledger', icon: ScrollText, show: isMaster || perms?.ledger },
-    { id: 'tuition', label: 'Tuition Ledger', icon: ScrollText, show: isMaster || perms?.ledger },
+    { id: 'preschool', label: 'Preschool Ledger', icon: ScrollText, show: canSeeLedgerTabs },
+    { id: 'tuition', label: 'Tuition Ledger', icon: ScrollText, show: canSeeLedgerTabs },
     { id: 'plans', label: 'Fee Packages', icon: FileCheck, show: isMaster || perms?.config }
   ];
 
-  if (!isMaster && !perms?.view && !perms?.ledger && !perms?.config) {
+  if (!canOpenFeeCollection) {
     return (
       <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 p-8 rounded-xl text-center m-6">
         <h3 className="text-xl font-bold text-brand-text mb-2">Access Denied</h3>

@@ -502,7 +502,7 @@ export default function AdminUserPermissions() {
                     <ul className="list-disc pl-5 space-y-1">
                       <li><span className="font-medium text-brand-text">Directories:</span> Full access to View and Manage Student and Staff directories</li>
                       <li><span className="font-medium text-brand-text">Attendance:</span> Full access to mark and edit past attendance</li>
-                      <li><span className="font-medium text-brand-text">Fees & Accounting:</span> Can only log and view their own personal expenses</li>
+                      <li><span className="font-medium text-brand-text">Fees & Accounting:</span> Can log monthly fee payments and void entries (no totals, reports or settings), and log and view their own personal expenses</li>
                       <li><span className="font-medium text-brand-text">Communications:</span> No access to WhatsApp Broadcasts</li>
                       <li><span className="font-medium text-brand-text">Smart Campus:</span> Full access to view and control areas</li>
                     </ul>
