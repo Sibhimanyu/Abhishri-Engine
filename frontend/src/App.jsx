@@ -66,8 +66,8 @@ import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 function App() {
   const location = useLocation();
   const activeTab = location.pathname === '/' ? 'dashboard' : location.pathname.split('/')[1];
-  // Communications manages its own header and scrolling.
-  const fullBleed = location.pathname.startsWith('/whatsapp');
+  // These pages put their tab bar flush under the top bar and manage their own scrolling.
+  const fullBleed = ['/whatsapp', '/reports', '/accounting', '/fee-collection'].some(p => location.pathname.startsWith(p));
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined' && window.matchMedia) {
       return window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -242,6 +242,8 @@ function App() {
     { id: 'menu-report', label: 'Menu & Report', icon: ChefHat },
     ...(isMaster ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
   ];
+
+  const pageTitle = navItems.find(i => i.id === activeTab)?.label || 'Overview';
 
   // Links in Firebase's emails (set password, confirm email) land here, signed in or not.
   if (location.pathname === '/auth/action') {
@@ -509,6 +511,7 @@ function App() {
             >
               <Menu size={20} />
             </button>
+            <h1 className="text-base sm:text-lg font-bold text-brand-text truncate shrink-0 max-w-[6.5rem] sm:max-w-[13rem] md:max-w-none">{pageTitle}</h1>
             <GlobalSearch />
           </div>
           
@@ -585,16 +588,6 @@ function App() {
 
         {/* Page Content */}
         <div className={fullBleed ? 'flex-1 min-h-0 overflow-hidden flex flex-col relative' : 'flex-1 overflow-y-auto p-4 md:p-8 relative'}>
-          {activeTab !== 'dashboard' && !fullBleed && (
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-brand-text">
-                  {navItems.find(i => i.id === activeTab)?.label || 'Overview'}
-                </h2>
-              </div>
-            </div>
-          )}
-          
           {/* Routes */}
           <ErrorBoundary>
           <Suspense fallback={<RouteLoader />}>

@@ -10,6 +10,7 @@ import WhatsAppHistory from './WhatsAppHistory';
 import { CHANNELS, channelPerms } from '../utils/messagingChannels';
 
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import PageTabs from './PageTabs';
 
 // Communications: WhatsApp at /whatsapp/*, Arattai at /whatsapp/arattai/*. Both use the
 // same four screens, pointed at their own channel.
@@ -60,42 +61,28 @@ function ChannelView({ channel, perms, available }) {
 
   return (
     <div className="h-full flex-1 min-h-0 flex flex-col bg-brand-bg">
-      {/* Header: title, channel switch and tabs. Never scrolls. */}
-      <div className="shrink-0 border-b border-brand-card-border bg-brand-sidebar">
-        <div className="flex items-center gap-3 px-4 md:px-8 pt-3">
-          <h2 className="text-xl font-bold text-brand-text">Communications</h2>
-          {available.length > 1 && (
-            <div className="flex shrink-0 bg-brand-bg rounded-lg p-0.5 border border-brand-card-border" role="tablist" aria-label="Channel">
+      {/* Header: tabs, with the channel switch pinned at the far right. Never scrolls. */}
+      <div className="shrink-0">
+        <PageTabs
+          ariaLabel="Communications"
+          activeId={activeView}
+          tabs={tabs.filter(t => t.show).map(t => ({ ...t, to: `${channel.basePath}/${t.id}` }))}
+          trailing={available.length > 1 && (
+            <div className="flex bg-brand-bg rounded-lg p-0.5 border border-brand-card-border" role="tablist" aria-label="Channel">
               {available.map(c => (
                 <Link
                   key={c.id}
                   to={`${c.basePath}/chats`}
                   role="tab"
                   aria-selected={c.id === channel.id}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${c.id === channel.id ? 'bg-brand-primary text-white shadow-sm' : 'text-brand-text-dim hover:text-brand-text'}`}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${c.id === channel.id ? 'bg-brand-primary/10 text-brand-primary' : 'text-brand-text-dim hover:text-brand-text'}`}
                 >
                   {c.label}
                 </Link>
               ))}
             </div>
           )}
-        </div>
-        <div className="flex items-center scroll-tabs edge-fade px-2 md:px-6">
-          {tabs.filter(t => t.show).map(tab => (
-            <Link
-              key={tab.id}
-              to={`${channel.basePath}/${tab.id}`}
-              className={`flex items-center gap-2 px-3 sm:px-4 py-3 font-medium text-sm transition-colors border-b-2 ${
-                activeView === tab.id
-                  ? 'border-brand-primary text-brand-primary'
-                  : 'border-transparent text-brand-text-dim hover:text-brand-text hover:border-brand-card-border'
-              }`}
-            >
-              <tab.icon size={16} />
-              {tab.label}
-            </Link>
-          ))}
-        </div>
+        />
       </div>
 
       {channel.id === 'arattai' && <ArattaiModeBanner />}

@@ -120,9 +120,9 @@ export function Field({ label, children, className = '' }) {
   );
 }
 
-export function Select({ value, onChange, options, className = '' }) {
+export function Select({ value, onChange, options, className = '', ...rest }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={`${CONTROL} ${className}`}>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={`${className.includes('bg-transparent') ? '' : CONTROL} ${className}`} {...rest}>
       {options.map(o => <option key={o.id ?? o.value} value={o.id ?? o.value}>{o.label}</option>)}
     </select>
   );
@@ -716,9 +716,10 @@ export function SavedViews({ storageKey, current, onApply }) {
     <div className="relative" ref={ref}>
       <button
         type="button" onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-brand-card-border text-xs font-bold text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
+        title="Saved views" aria-label="Saved views" aria-expanded={open}
+        className="inline-flex items-center justify-center gap-1 h-8 min-w-8 px-2 rounded-lg border border-brand-card-border text-xs font-bold text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors whitespace-nowrap"
       >
-        <Bookmark size={13} /> Saved views {views.length > 0 && <span className="text-brand-primary">({views.length})</span>}
+        <Bookmark size={15} /> {views.length > 0 && <span className="text-brand-primary">{views.length}</span>}
       </button>
       {open && (
         <div className="absolute right-0 z-40 mt-1 w-64 bg-brand-card border border-brand-card-border rounded-lg shadow-xl overflow-hidden">
