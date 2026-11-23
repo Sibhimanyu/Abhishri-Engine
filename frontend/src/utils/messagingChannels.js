@@ -14,7 +14,7 @@ export const CHANNELS = {
     history: 'whatsapp_history',
     configDoc: 'whatsapp_main',
     headersFolder: 'whatsapp_headers',
-    fn: { send: 'sendWhatsAppMessage', broadcast: 'sendWhatsAppBroadcast' },
+    fn: { send: 'sendWhatsAppMessage', broadcast: 'sendWhatsAppBroadcast', react: 'sendWhatsAppReaction' },
     // The server writes the outgoing message itself; the screen adds its own copy.
     passesMessageKey: false,
     // Fast2SMS's per-message rates, for the estimate before sending.
@@ -34,6 +34,7 @@ export const CHANNELS = {
     history: 'arattai_history',
     configDoc: 'arattai_main',
     headersFolder: null,
+    // No react: Arattai's Business API has no documented reaction call; reactions only display.
     fn: { send: 'sendArattaiMessage', broadcast: 'sendArattaiBroadcast' },
     // The screen creates the message and the server fills in the result at the same key.
     passesMessageKey: true,

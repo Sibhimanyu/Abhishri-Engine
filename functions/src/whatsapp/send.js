@@ -4,6 +4,7 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const axios = require("axios");
 const { verifiedEmail } = require("../shared/access");
+const { BUSINESS, storeReaction } = require("./reactions");
 
 const sanitizeKey = (key) => key ? String(key).replace(/[.#$/[\]]/g, "_") : key;
 
@@ -149,6 +150,30 @@ exports.sendWhatsAppMessage = onCall(async (request) => {
     }
     return response.data;
   } catch (error) { throw new HttpsError("internal", error.message); }
+});
+
+/**
+ * Staff react to a parent's message (emoji "" removes our reaction). Same permission as
+ * sendWhatsAppMessage. Meta's reaction message goes through the same Fast2SMS endpoint as text,
+ * then the reaction is stored on the message so the chat shows it at once.
+ */
+exports.sendWhatsAppReaction = onCall(async (request) => {
+  await verifyAdmin(request.auth);
+  const { to, messageId } = request.data || {};
+  const emoji = typeof request.data?.emoji === "string" ? request.data.emoji.trim() : "";
+  const phone = String(to || "").replace(/[^\d]/g, "");
+  if (!phone || !messageId || typeof messageId !== "string") throw new HttpsError("invalid-argument", "A recipient and message are required.");
+  if (emoji.length > 16) throw new HttpsError("invalid-argument", "That isn't an emoji.");
+  const config = await getWhatsAppConfig();
+  try {
+    await axios.post(`https://www.fast2sms.com/dev/whatsapp/v24.0/${config.phoneNumberId}/messages`, {
+      messaging_product: "whatsapp", recipient_type: "individual", to: phone, type: "reaction", reaction: { message_id: messageId, emoji },
+    }, { headers: { "Authorization": config.apiKey, "Content-Type": "application/json" } });
+  } catch (error) {
+    throw new HttpsError("internal", error.response?.data?.message || error.message);
+  }
+  await storeReaction(admin.database(), { conversationId: phone, targetId: messageId, key: BUSINESS, from: BUSINESS, emoji, at: Date.now() });
+  return { ok: true };
 });
 
 exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) => {

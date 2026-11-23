@@ -4,6 +4,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const { extractReaction, storeReaction, findMessage } = require("./reactions");
 
 
 
@@ -30,20 +31,6 @@ function receiptError(report, status) {
 }
 
 /**
- * Find the live-chat message a receipt is about: first by key (send.js files replies under
- * the sanitized wamid), then by its messageId field. Returns a snapshot or null.
- */
-async function findConversationMessage(messagesRef, wamid) {
-  if (!wamid) return null;
-  const byKey = await messagesRef.child(sanitizeKey(wamid)).once("value");
-  if (byKey.exists()) return byKey;
-  const q = await messagesRef.orderByChild("messageId").equalTo(wamid).once("value");
-  let found = null;
-  q.forEach((c) => { if (!found) found = c; });
-  return found;
-}
-
-/**
  * Apply a receipt to the conversation message it belongs to (live-chat replies, which the
  * broadcast lookups never see). `applied` holds ref paths already updated by the broadcast
  * branch so one receipt isn't recorded twice.
@@ -51,7 +38,7 @@ async function findConversationMessage(messagesRef, wamid) {
 async function updateConversationMessage(db, { wamid, recipient, status, timestamp, errMsg }, applied = new Set()) {
   const conversationId = String(recipient || "").replace(/[^\d]/g, "");
   if (!wamid || !conversationId) return false;
-  const snap = await findConversationMessage(db.ref(`whatsapp_conversations/${conversationId}/messages`), wamid);
+  const snap = await findMessage(db.ref(`whatsapp_conversations/${conversationId}/messages`), wamid);
   if (!snap) return false;
   const path = snap.ref.toString();
   if (applied.has(path)) return false;
@@ -80,6 +67,12 @@ async function processIncoming(db, report) {
   // A copy of the business's own outgoing message is not an incoming one. Its record already
   // exists (send.js files it); never file it as a customer message.
   if (report.from_me === true || report.direction === "outbound") return;
+  // A reaction is stored on the message it reacts to: no bubble, no unread bump, no notification.
+  if ((report.message_type || report.type) === "reaction") {
+    const reaction = extractReaction({ ...report, type: "reaction", from: report.from });
+    if (reaction && !(await storeReaction(db, reaction))) console.warn("Reaction for an unknown message", reaction.targetId);
+    return;
+  }
   const type = report.message_type || report.type || "text";
   const timestamp = (report.timestamp > 10000000000 ? report.timestamp : report.timestamp * 1000);
   const conversationId = String(from).replace(/[^\d]/g, "");
@@ -406,7 +399,15 @@ exports.whatsappWebhook = onRequest(async (request, response) => {
         else if (report.type === "status_update") await processStatus(db, fs, report);
       }
     } else if (body.object) {
-      const value = body.entry?.[0]?.changes?.[0]?.value || {};
+      const change = body.entry?.[0]?.changes?.[0] || {};
+      const value = change.value || {};
+      // The business's own phone reacting (WhatsApp Business app): shown on the message like ours.
+      if (change.field === "smb_message_echoes") {
+        for (const echo of value.message_echoes || []) {
+          const reaction = extractReaction(echo, { fromMe: true });
+          if (reaction) await storeReaction(db, reaction);
+        }
+      }
       if (value.messages) for (const msg of value.messages) await processIncoming(db, { ...msg, profile_name: value.contacts?.[0]?.profile?.name });
       if (value.statuses) for (const status of value.statuses) await processStatus(db, fs, status);
     }
