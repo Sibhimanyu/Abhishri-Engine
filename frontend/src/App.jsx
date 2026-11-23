@@ -1,5 +1,5 @@
 import React, { useState, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, CreditCard, Settings, LogOut, Search, ChevronDown, Moon, Sun, ClipboardCheck, Cpu, MessageSquare, Briefcase, Menu, X, AlertTriangle, Database, Landmark, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Settings, LogOut, Search, ChevronDown, Moon, Sun, ClipboardCheck, Cpu, MessageSquare, Briefcase, Menu, X, AlertTriangle, Database, Landmark, BarChart3, MessageSquareWarning } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth, firestore, rtdb } from './firebase';
 import Login from './components/Login';
@@ -15,6 +15,7 @@ import { CalendarDays, ChefHat } from 'lucide-react';
 import { isAdminUser, usePendingApprovals, useMyApprovalOutcomes } from './components/poster/approval';
 import NotificationBell from './components/NotificationBell';
 import HeresayIntro from './components/HeresayIntro';
+import { openHeresay } from './utils/heresay';
 import { bellEntries } from './utils/bellEntries';
 
 // Route modules are lazy so the login screen and dashboard don't pay for the
@@ -428,7 +429,14 @@ function App() {
           })}
         </nav>
         
-        <div className="p-4 border-t border-brand-card-border">
+        <div className="p-4 border-t border-brand-card-border flex flex-col gap-1">
+          <button
+            onClick={() => openHeresay()}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-brand-text-dim hover:bg-black/5 dark:hover:bg-white/5 hover:text-brand-text w-full transition-colors"
+          >
+            <MessageSquareWarning size={18} className="opacity-70" />
+            Report a problem
+          </button>
           <button 
             onClick={() => signOut(auth)}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-brand-text-dim hover:bg-black/5 dark:hover:bg-white/5 hover:text-brand-text w-full transition-colors"
@@ -486,7 +494,14 @@ function App() {
               })}
             </nav>
             
-            <div className="p-4 border-t border-brand-card-border shrink-0">
+            <div className="p-4 border-t border-brand-card-border shrink-0 flex flex-col gap-1">
+              <button
+                onClick={() => { setShowMobileSidebar(false); openHeresay(); }}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-brand-text-dim hover:bg-black/5 dark:hover:bg-white/5 hover:text-brand-text w-full transition-colors"
+              >
+                <MessageSquareWarning size={18} className="opacity-70" />
+                Report a problem
+              </button>
               <button 
                 onClick={() => { setShowMobileSidebar(false); signOut(auth); }}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-brand-text-dim hover:bg-black/5 dark:hover:bg-white/5 hover:text-brand-text w-full transition-colors"

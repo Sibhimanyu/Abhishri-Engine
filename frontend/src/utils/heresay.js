@@ -25,3 +25,9 @@ export function identifyForHeresay(user, userData) {
     });
   });
 }
+
+/** Opens Heresay's report form. The app has no floating button (data-position="none"):
+ *  "Report a problem" in the sidebar opens it. */
+export function openHeresay() {
+  return withHeresay((h) => h.open());
+}
