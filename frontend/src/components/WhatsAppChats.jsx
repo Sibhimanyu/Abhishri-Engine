@@ -1,5 +1,6 @@
 import { Spinner } from './Spinner';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import ImageViewer from './ImageViewer';
 import { ref, onValue, push, update, set, remove, runTransaction, child } from 'firebase/database';
 import { rtdb } from '../firebase';
 import { httpsCallable, getFunctions } from 'firebase/functions';
@@ -23,6 +24,33 @@ export function dedupeByMessageId(list) {
   return list.filter((m) => !m.messageId || keep.has(m));
 }
 
+function ChatImage({ src, onOpen }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="relative w-[260px] max-w-full aspect-[4/3] rounded-md overflow-hidden bg-black/5 dark:bg-white/10">
+      {failed ? (
+        <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">Image unavailable</div>
+      ) : (
+        <>
+          {!loaded && <div className="absolute inset-0 animate-pulse motion-reduce:animate-none bg-black/10 dark:bg-white/10" />}
+          <button type="button" onClick={onOpen} aria-label="View image" className="absolute inset-0 w-full h-full p-0 border-0 cursor-zoom-in">
+            <img
+              src={src}
+              alt="Attachment"
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setLoaded(true)}
+              onError={() => setFailed(true)}
+              className={`w-full h-full object-cover transition-opacity duration-300 motion-reduce:transition-none ${loaded ? 'opacity-100' : 'opacity-0'}`}
+            />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
   const { currentUser, userData } = useAuth();
   const [conversations, setConversations] = useState([]);
@@ -35,6 +63,9 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
   const [isSending, setIsSending] = useState(false);
   const [pickerFor, setPickerFor] = useState(null);
   const messagesEndRef = useRef(null);
+  const scrollRef = useRef(null);
+  const stickRef = useRef(true);
+  const [viewerSrc, setViewerSrc] = useState(null);
 
   // Fetch Conversations from RTDB
   useEffect(() => {
@@ -65,6 +96,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
     const safeKey = activeChat.phoneNumber.replace(/[.#$/[\]]/g, '_');
     const msgsRef = ref(rtdb, `${channel.conversations}/${safeKey}/messages`);
     
+    stickRef.current = true;
     setMessagesLoading(true);
     setMessages([]); // clear old messages while loading
 
@@ -78,7 +110,6 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
           .map(([key, val]) => ({ id: key, ...val }))
           .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         setMessages(dedupeByMessageId(msgsList));
-        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
       } else {
         setMessages([]);
       }
@@ -90,6 +121,12 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
 
     return () => unsub();
   }, [activeChat, channel.conversations, channel.label]);
+
+  // Keep the chat pinned to the bottom unless the user has scrolled up.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages, messagesLoading]);
 
   const handleReact = async (msg, emoji) => {
     setPickerFor(null);
@@ -257,7 +294,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
             </div>
 
             {/* Chat Messages */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 relative bg-[#efeae2] dark:bg-[#0b141a] bg-contain bg-blend-multiply dark:bg-none bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
+            <div ref={scrollRef} onScroll={(e) => { const el = e.currentTarget; stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 relative bg-[#efeae2] dark:bg-[#0b141a] bg-contain bg-blend-multiply dark:bg-none bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
               {messagesLoading ? (
                 <div className="flex justify-center items-center h-full">
                   <Spinner />
@@ -278,18 +315,18 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
                       ) : (
                         <div className="flex flex-col gap-2">
                           {(msg.type === 'image' || msg.type === 'photo') && msg.imageData?.url && (
-                            <a href={msg.imageData.url} target="_blank" rel="noreferrer">
-                              <img src={msg.imageData.url} alt="Attachment" className="max-w-full rounded-md max-h-64 object-cover hover:opacity-90 transition-opacity" loading="lazy" />
-                            </a>
+                            <ChatImage src={msg.imageData.url} onOpen={() => setViewerSrc(msg.imageData.url)} />
                           )}
                           {msg.type === 'sticker' && msg.imageData?.url && (
-                            <img src={msg.imageData.url} alt="Sticker" className="w-32 h-32 object-contain" loading="lazy" />
+                            <img src={msg.imageData.url} alt="Sticker" className="w-32 h-32 object-contain" loading="lazy" decoding="async" />
                           )}
                           {msg.type === 'video' && msg.imageData?.url && (
                             <video controls src={msg.imageData.url} className="max-w-full rounded-md max-h-64" />
                           )}
-                          {msg.type === 'audio' && msg.imageData?.url && (
-                            <audio controls src={msg.imageData.url} className="w-full max-w-[240px] h-10" />
+                          {msg.type === 'audio' && (
+                            /^https?:\/\//.test(msg.imageData?.url || '')
+                              ? <audio controls preload="metadata" src={msg.imageData.url} className="w-full max-w-[240px] h-10" />
+                              : <p className="text-xs italic text-brand-text-dim px-1 py-2">🎤 Voice message unavailable</p>
                           )}
                           {msg.type === 'document' && msg.imageData?.url && (
                             <a href={msg.imageData.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-lg hover:bg-black/10 transition-colors">
@@ -373,7 +410,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
             </div>
 
             {/* Input Area */}
-            <form onSubmit={handleSend} className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center pl-4 pr-4 md:pr-28 gap-3 shrink-0">
+            <form onSubmit={handleSend} className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center px-4 gap-3 shrink-0">
               <input 
                 type="text" 
                 value={inputMsg}
@@ -389,7 +426,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
                 {isSending ? (
                   <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></div>
                 ) : (
-                  <Send size={18} className="ml-1" />
+                  <Send size={18} className="-translate-x-px translate-y-px" />
                 )}
               </button>
             </form>
@@ -397,6 +434,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
         )}
       </div>
     </div>
+    {viewerSrc && <ImageViewer src={viewerSrc} onClose={() => setViewerSrc(null)} />}
     </div>
   );
 }

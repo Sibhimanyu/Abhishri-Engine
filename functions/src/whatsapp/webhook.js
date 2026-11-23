@@ -78,6 +78,16 @@ function replayPendingEvents(db, ids) {
 }
 
 /**
+ * The playable/viewable link of an incoming media object. Fast2SMS puts its own copy of the file
+ * at `<type>.media_url` (nested, not top level); Meta's `<type>.url` needs an access token and
+ * `<type>.id` is only a media id, so neither is usable in the browser and an id is never stored.
+ */
+function mediaLink(report, obj) {
+  const web = (u) => (typeof u === "string" && /^https?:\/\//i.test(u) ? u : "");
+  return web(report.media_url) || web(obj?.media_url) || web(obj?.link) || "";
+}
+
+/**
  * Common Logic for processing Incoming Messages
  */
 async function processIncoming(db, report) {
@@ -105,10 +115,10 @@ async function processIncoming(db, report) {
       const img = report.image || {};
       textBody = report.caption || img.caption || "";
       previewText = textBody ? `📷 ${textBody}` : `📷 Photo`;
-      imageData = { url: report.media_url || img.link || img.id, mimeType: report.mime_type || img.mime_type || "", caption: textBody };
+      imageData = { url: mediaLink(report, img), mimeType: report.mime_type || img.mime_type || "", caption: textBody };
     } else if (type === "audio") {
       previewText = `🎤 Voice Message`;
-      imageData = { url: report.media_url || report.audio?.link || report.audio?.id, mimeType: report.mime_type || report.audio?.mime_type || "" };
+      imageData = { url: mediaLink(report, report.audio), mimeType: report.mime_type || report.audio?.mime_type || "" };
     } else {
       textBody = report.caption || "";
       previewText = `📎 Attachment`;
@@ -376,6 +386,7 @@ exports.updateConversationMessage = updateConversationMessage;
 exports.processStatus = processStatus;
 exports.replayPendingEvents = replayPendingEvents;
 exports.processIncoming = processIncoming;
+exports.mediaLink = mediaLink;
 exports.whatsappWebhook = onRequest(async (request, response) => {
   let token;
   try {
