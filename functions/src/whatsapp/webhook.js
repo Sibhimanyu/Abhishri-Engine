@@ -176,12 +176,12 @@ async function processStatus(db, fs, report) {
   // 1. Find the broadcastId from the batchId (Fast2SMS request ID)
   const appliedConvoPaths = new Set();
   let broadcastId = null;
-  const batchMapSnap = await db.ref(`whatsapp_batch_map/${batchId}`).once("value");
+  const batchMapSnap = await db.ref(`whatsapp_batch_map/${sanitizeKey(batchId)}`).once("value");
   if (batchMapSnap.exists()) {
     broadcastId = batchMapSnap.val();
   } else if (metaMessageId) {
     // Fallback: try mapping from metaMessageId if possible (requires storing it in batch_map too, but let's try lookup)
-    const metaMapSnap = await db.ref(`whatsapp_batch_map/${metaMessageId}`).once("value");
+    const metaMapSnap = await db.ref(`whatsapp_batch_map/${sanitizeKey(metaMessageId)}`).once("value");
     if (metaMapSnap.exists()) broadcastId = metaMapSnap.val();
   }
 
@@ -251,7 +251,7 @@ async function processStatus(db, fs, report) {
           if (metaMessageId && metaMessageId !== logData.messageId) {
             rtdbUpdate.metaMessageId = metaMessageId;
             // Also map the metaMessageId to this broadcastId for future webhooks
-            updates.push(db.ref(`whatsapp_batch_map/${metaMessageId}`).set(broadcastId));
+            updates.push(db.ref(`whatsapp_batch_map/${sanitizeKey(metaMessageId)}`).set(broadcastId));
           }
           
           updates.push(logRef.update(rtdbUpdate));

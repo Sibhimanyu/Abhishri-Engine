@@ -8,7 +8,12 @@ const { shouldApplyStatus, updateConversationMessage, processStatus, processInco
 
 // Fake RTDB over a flat map of path -> record (only messages/ children are modelled).
 function fakeDb(data) {
-  const refAt = (path) => ({
+  const refAt = (path) => {
+    // Like RTDB: a wamid ("wamid.HB...") used raw as a path segment is rejected.
+    if (/[.#$[\]]/.test(path)) throw new Error(`invalid path = "${path}"`);
+    return refAtValid(path);
+  };
+  const refAtValid = (path) => ({
     toString: () => path,
     child: (k) => refAt(`${path}/${k}`),
     push: async (v) => { data[`${path}/${Math.random()}`] = v; },
