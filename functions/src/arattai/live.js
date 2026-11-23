@@ -513,7 +513,7 @@ function parseTemplateEvent(body) {
  */
 async function parseArattai(body) {
   if (Array.isArray(body?.events)) return require("./provider").parseNeutral(body);
-  const incoming = [], statuses = [], templates = [];
+  const incoming = [], statuses = [], templates = [], reactions = [];
   const e = body?.entity || {};
   const ts = Number(body?.event_time) || Date.now();
   const tmpl = parseTemplateEvent(body);
@@ -532,8 +532,15 @@ async function parseArattai(body) {
     const phone = await phoneForUser(userId);
     await rememberUser(userId, { phone, name });
     incoming.push(parseReceived(e, { userId, phone, name, ts }));
+  } else if (body?.event === "chat.message.reacted" && e.ack_key && e.sender?.id) {
+    // { ack_key: <the message reacted to>, id: <the reaction>, content: { emoji }, sender: { id, name } }.
+    // An empty emoji is a removal (same rule as WhatsApp).
+    const userId = String(e.sender.id);
+    const phone = await phoneForUser(userId);
+    const from = phone || `u${digits(userId)}`;
+    reactions.push({ conversationId: from, targetId: String(e.ack_key), key: from, from, emoji: String(e.content?.emoji || ""), at: ts });
   }
-  return { incoming, statuses, templates };
+  return { incoming, statuses, templates, reactions };
 }
 
 /** Headers for an authenticated Arattai request (used to fetch media files). */
