@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, getDocs, setDoc, collectionGroup } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { feeAccess } from '../utils/feeAccess';
 import { Search, ChevronRight, CheckCircle2, AlertCircle, CircleSlash2 } from 'lucide-react';
 import { isDiscontinued, isOnRolls } from '../utils/reportUtils';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
@@ -31,6 +32,7 @@ function StatusLabel({ student }) {
 export default function FeesLedger({ wing }) {
   const { userData } = useAuth();
   const navigate = useNavigate();
+  const { canSeeTotals } = feeAccess(userData?.permissions?.fees_accounting, userData?.isAdmin || userData?.role === 'admin');
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -130,15 +132,15 @@ export default function FeesLedger({ wing }) {
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4 text-right">Due Now</th>
               <th className="px-6 py-4 text-right">Ahead By</th>
-              <th className="px-6 py-4 text-right">Discount</th>
-              <th className="px-6 py-4 text-right">Annual Remaining</th>
+              {canSeeTotals && <th className="px-6 py-4 text-right">Discount</th>}
+              {canSeeTotals && <th className="px-6 py-4 text-right">Annual Remaining</th>}
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan="7" className="px-6 py-8 text-center text-brand-text-dim">
+                <td colSpan={canSeeTotals ? 7 : 5} className="px-6 py-8 text-center text-brand-text-dim">
                   No students found.
                 </td>
               </tr>
@@ -164,8 +166,8 @@ export default function FeesLedger({ wing }) {
                   </td>
                   <td className="px-6 py-4 text-right font-bold text-red-500">{student.dueNow > 0 ? `₹ ${student.dueNow.toLocaleString()}` : '-'}</td>
                   <td className="px-6 py-4 text-right font-bold text-brand-secondary">{student.aheadBy > 0 ? `₹ ${student.aheadBy.toLocaleString()}` : '-'}</td>
-                  <td className="px-6 py-4 text-right text-brand-text-dim">{student.discount > 0 ? `₹ ${student.discount.toLocaleString()}` : '-'}</td>
-                  <td className="px-6 py-4 text-right">₹ {student.annualRemaining.toLocaleString()}</td>
+                  {canSeeTotals && <td className="px-6 py-4 text-right text-brand-text-dim">{student.discount > 0 ? `₹ ${student.discount.toLocaleString()}` : '-'}</td>}
+                  {canSeeTotals && <td className="px-6 py-4 text-right">₹ {student.annualRemaining.toLocaleString()}</td>}
                   <td className="px-6 py-4 text-right">
                     <button 
                       onClick={(e) => { e.stopPropagation(); navigate(student.id); }}
@@ -204,8 +206,8 @@ export default function FeesLedger({ wing }) {
               <div className="text-sm mt-1"><StatusLabel student={student} /></div>
               <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-xs text-brand-text-dim">
                 {student.aheadBy > 0 && <span>Ahead <b className="text-brand-secondary">₹ {student.aheadBy.toLocaleString()}</b></span>}
-                {student.discount > 0 && <span>Discount ₹ {student.discount.toLocaleString()}</span>}
-                <span>Year left ₹ {student.annualRemaining.toLocaleString()}</span>
+                {canSeeTotals && student.discount > 0 && <span>Discount ₹ {student.discount.toLocaleString()}</span>}
+                {canSeeTotals && <span>Year left ₹ {student.annualRemaining.toLocaleString()}</span>}
               </div>
             </div>
             <div className="text-right shrink-0">

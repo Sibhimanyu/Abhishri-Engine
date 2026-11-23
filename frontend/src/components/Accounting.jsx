@@ -19,7 +19,7 @@ export default function Accounting() {
   const canViewAllWallets = isMaster || perms?.exp_all === true;
 
   const tabs = [
-    { id: 'transactions', label: 'All Transactions', icon: CreditCard, show: isMaster || perms?.exp_all || perms?.trans_add || perms?.trans_delete },
+    { id: 'transactions', label: 'All Transactions', icon: CreditCard, show: isMaster || perms?.exp_all || perms?.view_dashboard || perms?.view || perms?.ledger },
     { id: 'wallets', label: 'All Wallets', icon: CreditCard, show: canViewAllWallets },
     { id: 'my-expenses', label: 'My Expenses', icon: CreditCard, show: isMaster || perms?.exp_own || perms?.wallet_view_own || perms?.exp_all },
     // Reconciliation reads the whole ledger, so it needs ledger-level sight rather than
@@ -27,7 +27,7 @@ export default function Accounting() {
     { id: 'reconciliation', label: 'Reconciliation', icon: Scale, show: isMaster || perms?.ledger || perms?.config || perms?.view }
   ];
 
-  if (!isMaster && !perms?.view_dashboard && !perms?.exp_all && !perms?.exp_own && !perms?.wallet_view_own && !perms?.trans_add && !perms?.trans_delete) {
+  if (!isMaster && !perms?.view_dashboard && !perms?.exp_all && !perms?.exp_own && !perms?.wallet_view_own) {
     return (
       <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 p-8 rounded-xl text-center m-6">
         <h3 className="text-xl font-bold text-brand-text mb-2">Access Denied</h3>
@@ -63,7 +63,7 @@ export default function Accounting() {
         <Routes>
           <Route path="/" element={<Navigate to={defaultTab} replace />} />
           <Route path="wallets" element={<FeesStaffWallets />} />
-          <Route path="transactions" element={<FeesTransactions />} />
+          <Route path="transactions" element={tabs[0].show ? <FeesTransactions /> : <Navigate to={`/accounting/${defaultTab}`} replace />} />
           <Route path="my-expenses" element={<FeesMyExpenses />} />
           <Route path="reconciliation" element={<Reconciliation />} />
           <Route path="*" element={<div className="text-center py-12 text-brand-text-dim">Module section under construction.</div>} />

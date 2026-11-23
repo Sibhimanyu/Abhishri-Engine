@@ -99,7 +99,7 @@ service cloud.firestore {
         'staff_directory': {'view': !isTeach, 'manage': isPro, 'delete': false},
         'student_directory': {'view': true, 'manage': isPro, 'delete': false},
         'attendance': {'view': true, 'mark': isTeach || isPro, 'edit': isPro},
-        'fees_accounting': {'view': false, 'view_dashboard': false, 'config': false, 'ledger': false, 'trans_add': false, 'trans_delete': false, 'exp_own': !isTeach, 'exp_all': false, 'wallet_view_own': !isTeach, 'wallet_edit_own': false},
+        'fees_accounting': {'view': false, 'view_dashboard': false, 'config': false, 'ledger': false, 'trans_add': isPro, 'trans_void': isPro, 'trans_delete': false, 'exp_own': !isTeach, 'exp_all': false, 'wallet_view_own': !isTeach, 'wallet_edit_own': false},
         'whatsapp_sender': {'access': false, 'broadcast': false, 'manage': false},
         'arattai_sender': {'access': false, 'broadcast': false, 'manage': false},
         'smart_campus': {'view': isPro, 'control': isPro, 'scenes': false, 'config': false}
@@ -263,18 +263,32 @@ service cloud.firestore {
     }
 
     match /students/{studentId}/transactions/{id} {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger'));
+      // trans_add holders (fee entry only) may read ONE student's ledger by path. They are
+      // deliberately NOT added to the {path=**}/transactions rule above, so collection-group
+      // queries (dashboards/totals/reports) stay closed to them.
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || getPerm('fees_accounting', 'trans_add'));
+      // Payments/discounts need trans_add. A void reversal row (type 'void') needs trans_void
+      // and must be committed in the same batch as flipping its original to isVoided.
       allow create: if isAuthenticated()
-        && (isAdmin() || getPerm('fees_accounting', 'trans_add'))
+        && (isAdmin()
+          || (request.resource.data.get('type', '') != 'void' && getPerm('fees_accounting', 'trans_add'))
+          || (request.resource.data.get('type', '') == 'void' && getPerm('fees_accounting', 'trans_void')
+              && request.resource.data.get('voidRefId', '') is string
+              && request.resource.data.get('voidRefId', '') != ''
+              && getAfter(/databases/$(database)/documents/students/$(studentId)/transactions/$(request.resource.data.voidRefId)).data.get('isVoided', false) == true))
         && isPeriodOpen(request.resource.data.get('periodKey', null));
       // APPEND-ONLY LEDGER (docs/payments-data-model-review.md phase 3).
       // A posted payment is never rewritten. The only permitted mutation is flipping
       // isVoided, which is how both voiding and correcting work: the correction posts a
       // reversal row plus a replacement payment instead of editing in place, so a period
       // that has already been reconciled cannot change underneath you.
+      // Voiding (isVoided false -> true) needs trans_void or trans_delete; un-voiding is admin-only.
       allow update: if isAuthenticated()
-        && (isAdmin() || getPerm('fees_accounting', 'trans_delete') || getPerm('fees_accounting', 'trans_add'))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isVoided']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isVoided'])
+        && (isAdmin()
+          || ((getPerm('fees_accounting', 'trans_void') || getPerm('fees_accounting', 'trans_delete'))
+              && request.resource.data.get('isVoided', false) == true
+              && resource.data.get('isVoided', false) != true));
       // Deleting is deliberately reserved for administrators. The client presents a
       // confirmation dialog and records the action in audit_logs.
       allow delete: if isAuthenticated() && isAdmin();
@@ -373,7 +387,7 @@ service cloud.firestore {
     }
 
     match /students/{studentId}/fee_ledger/{id} {
-      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger'));
+      allow read: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'view_dashboard') || getPerm('fees_accounting', 'view') || getPerm('fees_accounting', 'ledger') || getPerm('fees_accounting', 'trans_add'));
       allow write: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'config'));
     }
 
@@ -446,7 +460,8 @@ service cloud.firestore {
       allow create: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_add'));
       // "trans_add" is meant to let a role record NEW collections, not edit/delete existing
       // receipts — that must go through "trans_delete" (matching students/{id}/transactions).
-      allow update, delete: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
+      allow update: if isAuthenticated() && (isAdmin() || getPerm('fees_accounting', 'trans_delete'));
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     match /salaries/{id} {

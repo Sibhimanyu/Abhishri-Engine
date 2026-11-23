@@ -23,7 +23,7 @@ function defaultPermissions(role) {
     attendance: { view: true, mark: isTeach || isPro, edit: isPro },
     fees_accounting: {
       view: false, view_dashboard: false, config: false,
-      ledger: false, trans_add: false, trans_delete: false,
+      ledger: false, trans_add: isPro, trans_void: isPro, trans_delete: false,
       exp_own: !isTeach, exp_all: false, wallet_view_own: !isTeach, wallet_edit_own: false
     },
     whatsapp_sender: { access: false, broadcast: false, manage: false },

@@ -106,15 +106,14 @@ function App() {
   const hasFeeCollectionAccess = isMaster || 
     userData?.permissions?.fees_accounting?.view || 
     userData?.permissions?.fees_accounting?.ledger ||
-    userData?.permissions?.fees_accounting?.config;
+    userData?.permissions?.fees_accounting?.config ||
+    userData?.permissions?.fees_accounting?.trans_add;
 
   const hasAccountingAccess = isMaster || 
     userData?.permissions?.fees_accounting?.view_dashboard || 
     userData?.permissions?.fees_accounting?.exp_all || 
     userData?.permissions?.fees_accounting?.exp_own || 
-    userData?.permissions?.fees_accounting?.wallet_view_own || 
-    userData?.permissions?.fees_accounting?.trans_add ||
-    userData?.permissions?.fees_accounting?.trans_delete;
+    userData?.permissions?.fees_accounting?.wallet_view_own;
 
   // Reports read the fee ledger and/or the full expense book, so they need the same
   // permissions firestore.rules requires for those reads — not merely "some accounting access".

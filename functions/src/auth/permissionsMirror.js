@@ -9,7 +9,7 @@ const MODULE_ACTIONS = {
   staff_directory: ['view', 'manage', 'delete'],
   student_directory: ['view', 'manage', 'delete'],
   attendance: ['view', 'mark', 'edit'],
-  fees_accounting: ['view', 'view_dashboard', 'config', 'ledger', 'trans_add', 'trans_delete', 'exp_own', 'exp_all', 'wallet_view_own', 'wallet_edit_own'],
+  fees_accounting: ['view', 'view_dashboard', 'config', 'ledger', 'trans_add', 'trans_void', 'trans_delete', 'exp_own', 'exp_all', 'wallet_view_own', 'wallet_edit_own'],
   whatsapp_sender: ['access', 'broadcast', 'manage'],
   arattai_sender: ['access', 'broadcast', 'manage'],
   smart_campus: ['view', 'control', 'scenes', 'config']
@@ -22,7 +22,7 @@ function fallbackPerms(role) {
     staff_directory: { view: !isTeach, manage: isPro, delete: false },
     student_directory: { view: true, manage: isPro, delete: false },
     attendance: { view: true, mark: isTeach || isPro, edit: isPro },
-    fees_accounting: { view: false, view_dashboard: false, config: false, ledger: false, trans_add: false, trans_delete: false, exp_own: !isTeach, exp_all: false, wallet_view_own: !isTeach, wallet_edit_own: false },
+    fees_accounting: { view: false, view_dashboard: false, config: false, ledger: false, trans_add: isPro, trans_void: isPro, trans_delete: false, exp_own: !isTeach, exp_all: false, wallet_view_own: !isTeach, wallet_edit_own: false },
     whatsapp_sender: { access: false, broadcast: false, manage: false },
     arattai_sender: { access: false, broadcast: false, manage: false },
     smart_campus: { view: isPro, control: isPro, scenes: false, config: false }

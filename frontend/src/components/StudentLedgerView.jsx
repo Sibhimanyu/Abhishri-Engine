@@ -1,3 +1,4 @@
+import { feeAccess } from '../utils/feeAccess';
 import { CenteredSpinner } from './Spinner';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, orderBy, addDoc, serverTimestamp, onSnapshot, limit, writeBatch } from 'firebase/firestore';
@@ -81,7 +82,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
   // Keep this aligned with the Firestore admin rule, which accepts either flag.
   const isAdmin = userData?.isAdmin || userData?.role === 'admin';
   const feesPerms = userData?.permissions?.fees_accounting || {};
-  const canLogPayment = isAdmin || feesPerms.trans_add;
+  const { canLog: canLogPayment, canVoid, canSeeTotals, canConfig } = feeAccess(feesPerms, isAdmin);
 
   const beginTransactionAction = (transactionId) => {
     if (transactionActionRef.current) return false;
@@ -106,17 +107,21 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           if (sDoc.exists()) setStudent({ id: sDoc.id, ...sDoc.data() });
         });
 
-        const plansSnap = await getDocs(collection(firestore, 'fee_plans'));
-        const plans = [];
-        plansSnap.forEach(p => {
-          const data = p.data();
-          const monthlyTotal = (data.components || []).filter(c => c.frequency === 'monthly').reduce((acc, c) => acc + c.amount, 0);
-          const oneTimeTotal = (data.components || []).filter(c => c.frequency === 'onetime').reduce((acc, c) => acc + c.amount, 0);
-          const billingCycle = data.billingCycle || 12;
-          const total = (monthlyTotal * billingCycle) + oneTimeTotal;
-          plans.push({ id: p.id, ...data, total });
-        });
-        setAvailablePlans(plans);
+        // fee_plans are only readable with config rights (not for fee-entry-only roles),
+        // and only the Config modal needs them.
+        if (canConfig) {
+          const plansSnap = await getDocs(collection(firestore, 'fee_plans'));
+          const plans = [];
+          plansSnap.forEach(p => {
+            const data = p.data();
+            const monthlyTotal = (data.components || []).filter(c => c.frequency === 'monthly').reduce((acc, c) => acc + c.amount, 0);
+            const oneTimeTotal = (data.components || []).filter(c => c.frequency === 'onetime').reduce((acc, c) => acc + c.amount, 0);
+            const billingCycle = data.billingCycle || 12;
+            const total = (monthlyTotal * billingCycle) + oneTimeTotal;
+            plans.push({ id: p.id, ...data, total });
+          });
+          setAvailablePlans(plans);
+        }
 
         // Real-time listener for fees
         unsubscribeFees = onSnapshot(doc(firestore, 'students', studentId, 'fee_ledger', 'plan_details'), (docSnap) => {
@@ -149,7 +154,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       unsubscribeFees();
       unsubscribeTransactions();
     };
-  }, [studentId, wing, txLimit]);
+  }, [studentId, wing, txLimit, canConfig]);
 
   const openConfigModal = () => {
     const f = fees || {};
@@ -961,7 +966,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         >
           <Printer size={16} />
         </button>
-        {canLogPayment && (
+        {canLogPayment && canVoid && (
           <button 
             onClick={() => handleEditTransaction(t)}
             className={`p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors${tap ? ' inline-flex items-center' : ''}${tapClass}`}
@@ -970,7 +975,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
             <Edit2 size={16} />
           </button>
         )}
-        {canLogPayment && !isDynamicallyVoided && t.type !== 'void' && (
+        {canVoid && !isDynamicallyVoided && t.type !== 'void' && (
           <button 
             onClick={() => handleVoidTransaction(t)}
             disabled={processingTransactionId !== null}
@@ -1027,7 +1032,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
               Fees are billed for {schedule.chargeable.length} month{schedule.chargeable.length === 1 ? '' : 's'} only.
               {/* Measured against the final settlement, not dues-to-date: with an exit date
                   still ahead, the months up to it are owed even though not yet due. */}
-              {' '}{annualRemaining > 0
+              {' '}{!canSeeTotals ? '' : annualRemaining > 0
                 ? `Final settlement outstanding: ₹${annualRemaining.toLocaleString('en-IN')}.`
                 : settlementBalance > 0
                   ? `Overpaid by ₹${settlementBalance.toLocaleString('en-IN')} — refund due.`
@@ -1064,7 +1069,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           </div>
           {/* Phones: Log Payment across the top, Config and Discount side by side below it. */}
           <div className="flex flex-wrap-reverse md:flex-nowrap items-center gap-2 md:gap-3">
-            {(isAdmin || feesPerms.config) && (
+            {canConfig && (
               <button 
                 onClick={openConfigModal}
                 className="flex-1 md:flex-none justify-center bg-black/5 dark:bg-white/5 hover:bg-brand-primary/10 text-brand-text-dim hover:text-brand-primary px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors text-sm whitespace-nowrap"
@@ -1075,12 +1080,14 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
             )}
             {canLogPayment && (
               <div className="contents md:flex md:gap-2">
+                {canConfig && (
                 <button 
                   onClick={() => { setSelectedDues([]); setIsDiscountOpen(true); }}
                   className="flex-1 md:flex-none justify-center bg-brand-secondary/10 hover:bg-brand-secondary/20 text-brand-secondary px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-colors text-sm whitespace-nowrap"
                 >
                   <PlusCircle size={18} /> Discount
                 </button>
+                )}
                 <button 
                   onClick={() => { setSelectedDues([]); setPaymentForm(prev => ({ ...prev, externalRef: '', idemKey: newIdempotencyKey() })); setIsPaymentOpen(true); }}
                   className="basis-full md:basis-auto justify-center bg-brand-primary hover:bg-brand-primary-hover text-white px-5 py-3 md:py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-colors text-sm whitespace-nowrap"
@@ -1093,7 +1100,8 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+      <div className={`grid grid-cols-2 gap-4 ${canSeeTotals ? 'md:grid-cols-6' : 'md:grid-cols-2'}`}>
+        {canSeeTotals && (<>
         <div className="bg-brand-card border border-brand-card-border p-5 rounded-2xl flex flex-col justify-between">
           <p className="text-[10px] font-bold text-brand-text-dim uppercase tracking-wider mb-2">{studentLeft ? 'Base Fee Billed' : 'Base Annual Fee'}</p>
           <p className="text-2xl font-black text-brand-text">₹{annualBaseFee.toLocaleString('en-IN')}</p>
@@ -1110,6 +1118,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           <p className="text-[10px] font-bold text-brand-text-dim uppercase tracking-wider mb-2">{studentLeft ? 'Final Settlement' : 'Annual Remaining'}</p>
           <p className="text-2xl font-black text-brand-text">₹{annualRemaining.toLocaleString('en-IN')}</p>
         </div>
+        </>)}
         <div className="bg-brand-card border border-brand-card-border p-5 rounded-2xl flex flex-col justify-between">
           <p className="text-[10px] font-bold text-brand-text-dim uppercase tracking-wider mb-2">Current Dues</p>
           <p className={`text-2xl font-black ${currentDuesToDisplay > 0 ? 'text-red-500' : 'text-green-500'}`}>₹{currentDuesToDisplay.toLocaleString('en-IN')}</p>
@@ -1185,6 +1194,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
       </div>
 
       <div className="space-y-6 pb-20">
+        {canSeeTotals && (
         <div>
           <h3 className="font-bold text-lg text-brand-text flex items-center gap-2 mb-4"><Layers size={20} className="text-brand-secondary" /> Detailed Fee Architecture</h3>
           <div className="bg-brand-card border border-brand-card-border rounded-xl overflow-hidden">
@@ -1273,6 +1283,7 @@ export default function StudentLedgerView({ studentId, wing, onBack }) {
           </div>
           </div>
         </div>
+        )}
 
         <div>
           <h3 className="font-bold text-lg text-brand-text flex items-center gap-2 mb-4"><ListChecks size={20} className="text-green-500" /> Payment Audit Trail</h3>
