@@ -100,7 +100,7 @@ export default function GlobalSearch() {
   };
 
   return (
-    <div className="relative w-full max-w-md" ref={wrapperRef}>
+    <div className="relative w-full min-w-0 max-w-sm" ref={wrapperRef}>
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-text-dim" size={16} />
         <input 

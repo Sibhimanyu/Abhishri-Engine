@@ -1,6 +1,6 @@
 import { Spinner } from './Spinner';
 import React, { useState, useEffect, useMemo } from 'react';
-import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { collection, onSnapshot, collectionGroup } from 'firebase/firestore';
 import { getDocs } from '../utils/firestoreRead';
 import { firestore } from '../firebase';
@@ -11,6 +11,7 @@ import ReportCollections from './ReportCollections';
 import ReportExpenses from './ReportExpenses';
 import ReportCashFlow from './ReportCashFlow';
 import ReportDues from './ReportDues';
+import PageTabs from './PageTabs';
 
 /**
  * Reports shell.
@@ -273,25 +274,12 @@ export default function Reports() {
   const defaultTab = visibleTabs[0]?.id || 'collections';
 
   return (
-    <div className="h-full flex flex-col -mx-4 md:-mx-8 bg-brand-bg relative">
-      <div className="bg-brand-sidebar pt-2 shrink-0 print:hidden">
-        <div className="flex scroll-tabs edge-fade gap-1 border-b border-brand-card-border px-2 sm:px-4 md:px-8">
-          {visibleTabs.map(tab => (
-            <Link
-              key={tab.id}
-              to={`/reports/${tab.id}`}
-              className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
-                activeView === tab.id
-                  ? 'border-brand-primary text-brand-primary bg-brand-primary/5'
-                  : 'border-transparent text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5'
-              }`}
-            >
-              <tab.icon size={16} />
-              {tab.label}
-            </Link>
-          ))}
-        </div>
-      </div>
+    <div className="h-full flex flex-col bg-brand-bg relative">
+      <PageTabs
+        ariaLabel="Reports"
+        activeId={activeView}
+        tabs={visibleTabs.map(t => ({ ...t, to: `/reports/${t.id}` }))}
+      />
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
         {!studentsReadable && (

@@ -9,6 +9,7 @@ import AdminArattaiConfig from './AdminArattaiConfig';
 import AdminStaffNotifications from './AdminStaffNotifications';
 import AdminEntities from './AdminEntities';
 import AdminAuditLog from './AdminAuditLog';
+import PageTabs from './PageTabs';
 
 // /settings/* doesn't declare per-tab sub-routes, so a deep link like /settings/arattai
 // needs to be read here directly rather than always falling back to the default tab.
@@ -51,26 +52,14 @@ export default function SettingsAdmin() {
   return (
     <div className="space-y-6">
 
-      {/* Tabs */}
-      <div className="flex bg-black/5 dark:bg-white/5 rounded-lg p-1 scroll-tabs edge-fade">
-        {tabs.map(tab => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => goToTab(tab.id)}
-              className={`md:flex-1 md:min-w-[150px] px-4 py-2.5 md:py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                activeTab === tab.id
-                  ? 'bg-white dark:bg-brand-card shadow-sm text-brand-text'
-                  : 'text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5'
-              }`}
-            >
-              <Icon size={16} className={activeTab === tab.id ? 'text-brand-primary' : ''} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Tabs: flush under the top bar */}
+      <PageTabs
+        ariaLabel="Settings"
+        className="-mx-4 md:-mx-8 -mt-4 md:-mt-8"
+        activeId={activeTab}
+        onSelect={goToTab}
+        tabs={tabs}
+      />
 
       {/* Content */}
       <div className="animate-in fade-in duration-300">
