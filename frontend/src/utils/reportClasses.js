@@ -3,7 +3,11 @@
 // poster never shows it. The list lives in configs/daily_report (admins edit it in the
 // report editor); this default stands in until it's saved.
 
-export const DEFAULT_CLASSES = ['Little Steps 1', 'Little Steps 2', 'Happy Explorers 1', 'Happy Explorers 2', 'Wonder Wings'];
+export const DEFAULT_CLASSES = [
+  'Little Steps 1', 'Little Steps 2', 'Little Steps 3',
+  'Happy Explorers 1', 'Happy Explorers 2', 'Happy Explorers 3',
+  'Wonder Wings 1', 'Wonder Wings 2',
+];
 
 /** "little-steps-1" from "Little Steps 1". */
 export function classSlug(name) {
