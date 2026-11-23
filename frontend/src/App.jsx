@@ -519,7 +519,7 @@ function App() {
         {/* Top Navbar */}
         {/* Three columns from md up: title left, search a fixed width in the centre whatever
             the title's length, actions right. Phones keep a single flowing row. */}
-        <header className="bg-brand-sidebar border-b border-brand-card-border h-16 flex items-center justify-between gap-2 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,24rem)_minmax(0,1fr)] md:gap-6 px-2 sm:px-4 md:px-8 shrink-0 transition-colors duration-300">
+        <header className="bg-brand-sidebar border-b border-brand-card-border h-16 flex items-center justify-between gap-2 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,24rem)_minmax(max-content,1fr)] md:gap-6 px-2 sm:px-4 md:px-8 shrink-0 transition-colors duration-300">
           <div className="flex items-center gap-1 sm:gap-3 shrink-0 md:shrink min-w-0">
             <button 
               onClick={() => setShowMobileSidebar(true)}
@@ -534,13 +534,14 @@ function App() {
             <GlobalSearch />
           </div>
 
-          <div className="flex items-center justify-end gap-0.5 sm:gap-3 md:gap-5 shrink-0">
+          {/* Right group: same-size icon buttons, then the account button, which never shrinks. */}
+          <div className="flex items-center justify-end gap-1 sm:gap-2 shrink-0 min-w-0">
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)}
               aria-label={isDarkMode ? 'Light mode' : 'Dark mode'}
-              className="text-brand-text-dim hover:text-brand-text transition-colors p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
+              className="w-9 h-9 flex items-center justify-center shrink-0 text-brand-text-dim hover:text-brand-text transition-colors rounded-full hover:bg-black/5 dark:hover:bg-white/5"
             >
-              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
             <NotificationBell entries={bellEntries({
@@ -551,29 +552,27 @@ function App() {
               unreadArattai: unreadArattaiCount,
               birthdays: tamilBirthdayMembers,
             })} />
-            
-            <div className="h-6 w-px bg-brand-card-border hidden sm:block"></div>
 
-            <div className="relative">
+            <div className="relative shrink-0 sm:ml-1">
               {/* On phones only the initials show; the menu has the full name and email. */}
               <button
                 type="button"
                 aria-label="Account menu"
-                className="flex items-center gap-3 cursor-pointer group p-1 sm:p-0 rounded-full"
+                className="flex items-center gap-2.5 cursor-pointer group h-9 pl-0.5 sm:pr-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
               >
-                <div className="w-8 h-8 rounded-full bg-brand-secondary/20 flex items-center justify-center text-brand-secondary font-bold text-sm uppercase">
+                <div className="w-8 h-8 shrink-0 rounded-full bg-brand-secondary/20 flex items-center justify-center text-brand-secondary font-bold text-xs uppercase">
                   {userData?.displayName ? userData.displayName.substring(0, 2) : (currentUser?.email ? currentUser.email.substring(0, 2) : 'U')}
                 </div>
-                <div className="hidden sm:flex flex-col text-left">
-                  <span className="font-semibold text-sm leading-tight text-brand-text">
+                <div className="hidden sm:flex flex-col text-left min-w-0 max-w-[9rem] lg:max-w-[11rem]">
+                  <span className="font-semibold text-sm leading-tight text-brand-text truncate whitespace-nowrap">
                     {userData?.displayName || currentUser?.email?.split('@')[0] || 'User'}
                   </span>
-                  <span className="text-xs text-brand-text-dim leading-tight capitalize">
+                  <span className="text-[11px] text-brand-text-dim leading-tight capitalize truncate whitespace-nowrap">
                     {userData?.role === 'pro' ? 'PRO' : (userData?.role || 'User')}
                   </span>
                 </div>
-                <ChevronDown size={14} className={`hidden sm:block text-brand-text-dim group-hover:text-brand-text ml-1 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
+                <ChevronDown size={14} className={`hidden sm:block shrink-0 text-brand-text-dim group-hover:text-brand-text transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
               </button>
 
               {showProfileMenu && (

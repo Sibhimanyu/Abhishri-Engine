@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell, AlertTriangle, MessageCircle, Cake, ChefHat, CheckCircle, RotateCcw } from 'lucide-react';
+import { unseenEntries, markAllSeen, loadSeen, saveSeen } from '../utils/bellSeen';
 
 // The top-bar bell. What it lists, and the words and links, come from bellEntries
 // (utils/bellEntries.js), built on functions/src/shared/notifications.mjs, the same list
@@ -19,9 +20,22 @@ const LOOK = {
 export default function NotificationBell({ entries }) {
   const [open, setOpen] = useState(false);
   const active = entries.length > 0;
-  // When something's waiting, the bell grows into a pill naming the first thing (plus how
-  // many more) and softly blinks, so it's noticed without opening the list.
-  const more = entries.length - 1;
+  // Opening the bell marks what's in it as seen (per device, utils/bellSeen.js). Seen
+  // notifications stay listed, but only unseen ones make the bell call: it grows into a
+  // pill naming the first unseen thing (plus how many more) and softly blinks. Once all are
+  // seen it goes quiet: a plain bell with a grey count.
+  const [seenSet, setSeenSet] = useState(() => loadSeen());
+  const unseen = unseenEntries(entries, seenSet);
+  const calling = unseen.length > 0;
+  const more = unseen.length - 1;
+  const toggle = () => {
+    if (!open && active) {
+      const next = markAllSeen(entries);
+      setSeenSet(next);
+      saveSeen(next);
+    }
+    setOpen(!open);
+  };
 
   // Ring the bell when something new comes in while the app is already open. The first
   // few seconds are skipped: that's everything loading in, not something new arriving.
@@ -48,22 +62,27 @@ export default function NotificationBell({ entries }) {
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen(!open)}
-        aria-label={active ? `Notifications (${entries.length})` : 'Notifications'}
-        className={`relative flex items-center gap-2 rounded-full transition-colors ${
-          active
-            ? `pl-2.5 pr-3 py-1.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/15 ${arriving ? 'motion-safe:animate-bell-pop' : 'motion-safe:animate-bell-blink'}`
-            : 'p-2 text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5'
+        onClick={toggle}
+        aria-label={active ? `Notifications (${entries.length}${calling ? `, ${unseen.length} new` : ''})` : 'Notifications'}
+        className={`relative flex items-center gap-1.5 h-9 rounded-full transition-colors ${
+          calling
+            ? `px-2.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/15 ${arriving ? 'motion-safe:animate-bell-pop' : 'motion-safe:animate-bell-blink'}`
+            : 'w-9 justify-center text-brand-text-dim hover:text-brand-text hover:bg-black/5 dark:hover:bg-white/5'
         }`}
       >
-        <Bell size={active ? 18 : 20} className={`shrink-0 origin-top ${arriving ? 'motion-safe:animate-bell-ring' : ''}`} />
-        {active && (
+        <Bell size={18} className={`shrink-0 origin-top ${arriving && calling ? 'motion-safe:animate-bell-ring' : ''}`} />
+        {calling && (
           <>
-            <span key={entries[0].key} className="text-xs sm:text-sm font-semibold truncate max-w-[7.5rem] sm:max-w-[14rem] motion-safe:animate-bell-label-in">{entries[0].title}</span>
+            {/* The label only shows on wide screens; narrower ones keep the bell and the count. */}
+            <span key={unseen[0].key} className="hidden xl:inline text-xs font-semibold truncate max-w-[10rem] motion-safe:animate-bell-label-in">{unseen[0].title}</span>
+            <span className="shrink-0 min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-brand-primary text-white text-[10px] font-bold flex items-center justify-center xl:hidden">{unseen.length}</span>
             {more > 0 && (
-              <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-brand-primary text-white text-[11px] font-bold flex items-center justify-center">+{more}</span>
+              <span className="hidden xl:flex shrink-0 min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-brand-primary text-white text-[10px] font-bold items-center justify-center">+{more}</span>
             )}
           </>
+        )}
+        {!calling && active && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[1rem] h-4 px-1 rounded-full bg-brand-text-dim/25 text-brand-text text-[10px] font-semibold flex items-center justify-center">{entries.length}</span>
         )}
       </button>
 
