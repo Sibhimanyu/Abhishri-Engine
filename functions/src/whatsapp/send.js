@@ -424,7 +424,7 @@ exports.sendWhatsAppBroadcast = onCall({ timeoutSeconds: 540 }, async (request) 
 
       // Store messageId -> broadcastId mapping for webhook lookup
       if (messageId && broadcastId) {
-        await db.ref(`whatsapp_batch_map/${messageId}`).set(broadcastId);
+        await db.ref(`whatsapp_batch_map/${sanitizeKey(messageId)}`).set(broadcastId);
       }
 
       const successUpdates = {};
