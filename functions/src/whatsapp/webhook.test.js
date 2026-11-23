@@ -122,3 +122,15 @@ test("a receipt matches on the wamid field or the Fast2SMS request id", async ()
   assert.ok(await updateConversationMessage(db, { ids: ["REQ9"], recipient: "918825622360", status: "read", timestamp: 2 }));
   assert.strictEqual(db.data["whatsapp_conversations/918825622360/messages/-Pxyz"].status, "read");
 });
+
+// --- incoming media links ---
+const { mediaLink } = require("./webhook");
+
+test("mediaLink takes Fast2SMS's nested media_url, never a bare media id or Meta's token-only url", () => {
+  const audio = { id: "123", media_url: "https://files.fast2sms.com/chat_uploads/1/2.mp3", url: "https://lookaside.fbsbx.com/x", mime_type: "audio/mpeg" };
+  assert.strictEqual(mediaLink({}, audio), "https://files.fast2sms.com/chat_uploads/1/2.mp3");
+  assert.strictEqual(mediaLink({ media_url: "https://a.example/top.mp3" }, audio), "https://a.example/top.mp3");
+  assert.strictEqual(mediaLink({}, { id: "123", url: "https://lookaside.fbsbx.com/x" }), "");
+  assert.strictEqual(mediaLink({}, { link: "javascript:alert(1)" }), "");
+  assert.strictEqual(mediaLink({}, undefined), "");
+});
