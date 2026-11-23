@@ -19,6 +19,14 @@ describe('reportId', () => {
   it('gives every default class a distinct id', () => {
     expect(new Set(DEFAULT_CLASSES.map(classSlug)).size).toBe(DEFAULT_CLASSES.length);
   });
+
+  it('defaults to the school\'s eight classes, in order', () => {
+    expect(DEFAULT_CLASSES).toEqual([
+      'Little Steps 1', 'Little Steps 2', 'Little Steps 3',
+      'Happy Explorers 1', 'Happy Explorers 2', 'Happy Explorers 3',
+      'Wonder Wings 1', 'Wonder Wings 2',
+    ]);
+  });
 });
 
 describe('cleanClasses', () => {

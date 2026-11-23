@@ -70,8 +70,8 @@ const looseDate = (s) => {
 /**
  * Staff's own text: one activity per block, blocks separated by a blank line. The first
  * line is the activity's name ("Circle Time", or "Circle Time: what we did" on one line),
- * the lines after it are what happened in the classroom, and a line starting "At home:"
- * begins the at-home part. A "Date: …" line sets the date.
+ * the lines after it are what happened in the classroom (line breaks kept), and a line
+ * starting "At home:" begins the at-home part. A "Date: …" line sets the date.
  */
 export function parsePlainReport(text) {
   let date = '';
@@ -110,7 +110,8 @@ export function parsePlainReport(text) {
       }
       target.push(line.replace(CLASSROOM_LABEL, ''));
     });
-    const out = { activity: h.activity, classroom: h.classroom.join(' ').trim(), home: h.home.join(' ').trim() };
+    // Line breaks stay as typed (a poem keeps its lines); the poster shows them.
+    const out = { activity: h.activity, classroom: h.classroom.join('\n').trim(), home: h.home.join('\n').trim() };
     if (out.activity || out.classroom || out.home) highlights.push(out);
   });
   if (!highlights.length) throw new Error('No highlights found in the pasted text.');
