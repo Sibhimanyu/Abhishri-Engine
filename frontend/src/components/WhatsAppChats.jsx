@@ -3,9 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ref, onValue, push, update, set, remove } from 'firebase/database';
 import { rtdb } from '../firebase';
 import { httpsCallable, getFunctions } from 'firebase/functions';
-import { Search, Send, ArrowLeft, Clock, Check, CheckCheck, MessageSquare, AlertCircle } from 'lucide-react';
+import { Search, Send, ArrowLeft, Clock, Check, CheckCheck, MessageSquare, AlertCircle, SmilePlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CHANNELS } from '../utils/messagingChannels';
+import { QUICK_EMOJIS, reactionChips, emojiToSend } from '../utils/reactions';
 
 const STATUS_RANK = { queued: 1, processing: 2, sent: 3, delivered: 4, read: 5, failed: 6, error: 6 };
 
@@ -32,6 +33,7 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
   const [initialLoading, setInitialLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [pickerFor, setPickerFor] = useState(null);
   const messagesEndRef = useRef(null);
 
   // Fetch Conversations from RTDB
@@ -88,6 +90,19 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
 
     return () => unsub();
   }, [activeChat, channel.conversations, channel.label]);
+
+  const handleReact = async (msg, emoji) => {
+    setPickerFor(null);
+    if (!channel.fn.react || !msg.messageId || !activeChat) return;
+    try {
+      await httpsCallable(getFunctions(), channel.fn.react)({
+        to: activeChat.phoneNumber, messageId: msg.messageId, emoji: emojiToSend(msg.reactions, emoji),
+      });
+    } catch (err) {
+      console.error('Reaction failed:', err);
+      alert(err?.message || 'Could not send the reaction.');
+    }
+  };
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -242,10 +257,12 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
               ) : messages.map(msg => {
                 const isInbound = msg.direction === 'inbound';
                 const timeStr = new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                const chips = reactionChips(msg.reactions);
+                const canReact = !!channel.fn.react && isInbound && !!msg.messageId && msg.type !== 'revoke';
                 
                 return (
-                  <div key={msg.id} className={`flex ${isInbound ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-[75%] min-w-0 rounded-lg px-3 py-2 shadow-sm ${isInbound ? 'bg-white dark:bg-[#202c33] text-black dark:text-[#e9edef]' : 'bg-[#d9fdd3] dark:bg-[#005c4b] text-black dark:text-[#e9edef]'}`}>
+                  <div key={msg.id} className={`group flex items-center gap-1 ${isInbound ? 'justify-start' : 'justify-end'} ${chips.length ? 'mb-4' : ''}`}>
+                    <div className={`relative max-w-[75%] min-w-0 rounded-lg px-3 py-2 shadow-sm ${isInbound ? 'bg-white dark:bg-[#202c33] text-black dark:text-[#e9edef]' : 'bg-[#d9fdd3] dark:bg-[#005c4b] text-black dark:text-[#e9edef]'}`}>
                       {msg.type === 'revoke' ? (
                         <p className="text-sm italic text-gray-500 flex items-center gap-1">
                           <span className="text-xs">🚫</span> This message was deleted
@@ -304,7 +321,43 @@ export default function WhatsAppChats({ channel = CHANNELS.whatsapp }) {
                           </span>
                         )}
                       </div>
+                      {chips.length > 0 && (
+                        <div className={`absolute -bottom-3 ${isInbound ? 'left-2' : 'right-2'} flex gap-1`}>
+                          {chips.map(c => (
+                            <button
+                              key={c.emoji}
+                              type="button"
+                              disabled={!c.mine || !canReact}
+                              onClick={() => handleReact(msg, c.emoji)}
+                              title={c.mine && canReact ? 'Tap to remove your reaction' : undefined}
+                              className={`flex items-center gap-0.5 rounded-full border px-1.5 py-px text-[12px] leading-4 shadow-sm bg-white dark:bg-[#202c33] text-black dark:text-[#e9edef] ${c.mine ? 'border-brand-primary' : 'border-gray-200 dark:border-gray-600'} ${c.mine && canReact ? 'cursor-pointer' : 'cursor-default'}`}
+                            >
+                              <span>{c.emoji}</span>
+                              {c.count > 1 && <span className="text-[11px] text-gray-500 dark:text-gray-400">{c.count}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
+                    {canReact && (
+                      <div className="relative order-last shrink-0">
+                        <button
+                          type="button"
+                          aria-label="React"
+                          onClick={() => setPickerFor(pickerFor === msg.id ? null : msg.id)}
+                          className={`rounded-full p-1 text-gray-500 hover:bg-black/10 dark:hover:bg-white/10 transition-opacity focus:opacity-100 ${pickerFor === msg.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-60'}`}
+                        >
+                          <SmilePlus size={16} />
+                        </button>
+                        {pickerFor === msg.id && (
+                          <div className="absolute bottom-full left-0 z-20 mb-1 flex gap-1 rounded-full border border-gray-200 bg-white px-2 py-1 shadow-lg dark:border-gray-600 dark:bg-[#202c33]">
+                            {QUICK_EMOJIS.map(e => (
+                              <button key={e} type="button" onClick={() => handleReact(msg, e)} className={`rounded-full px-0.5 text-lg transition-transform hover:scale-125 ${msg.reactions?.business?.emoji === e ? 'bg-black/10 dark:bg-white/10' : ''}`}>{e}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
