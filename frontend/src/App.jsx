@@ -502,8 +502,10 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Top Navbar */}
-        <header className="bg-brand-sidebar border-b border-brand-card-border h-16 flex items-center justify-between gap-2 px-2 sm:px-4 md:px-8 shrink-0 transition-colors duration-300">
-          <div className="flex items-center gap-1 sm:gap-3 flex-1 min-w-0">
+        {/* Three columns from md up: title left, search a fixed width in the centre whatever
+            the title's length, actions right. Phones keep a single flowing row. */}
+        <header className="bg-brand-sidebar border-b border-brand-card-border h-16 flex items-center justify-between gap-2 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,24rem)_minmax(0,1fr)] md:gap-6 px-2 sm:px-4 md:px-8 shrink-0 transition-colors duration-300">
+          <div className="flex items-center gap-1 sm:gap-3 shrink-0 md:shrink min-w-0">
             <button 
               onClick={() => setShowMobileSidebar(true)}
               className="text-brand-text-dim hover:text-brand-text p-2.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 md:hidden transition-colors shrink-0"
@@ -511,11 +513,13 @@ function App() {
             >
               <Menu size={20} />
             </button>
-            <h1 className="text-base sm:text-lg font-bold text-brand-text truncate shrink-0 max-w-[6.5rem] sm:max-w-[13rem] md:max-w-none">{pageTitle}</h1>
+            <h1 className="text-base sm:text-lg font-bold text-brand-text truncate max-w-[6.5rem] sm:max-w-[13rem] md:max-w-none">{pageTitle}</h1>
+          </div>
+          <div className="flex flex-1 min-w-0 justify-center md:flex-none">
             <GlobalSearch />
           </div>
-          
-          <div className="flex items-center gap-0.5 sm:gap-3 md:gap-5 shrink-0">
+
+          <div className="flex items-center justify-end gap-0.5 sm:gap-3 md:gap-5 shrink-0">
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)}
               aria-label={isDarkMode ? 'Light mode' : 'Dark mode'}
