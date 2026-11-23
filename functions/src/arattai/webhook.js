@@ -8,6 +8,7 @@ const { getProvider } = require("./provider");
 const { verifySignature } = require("./live");
 const { P, applyIncoming, applyStatus } = require("./store");
 const { mirrorMedia } = require("./media");
+const { storeReaction } = require("../whatsapp/reactions");
 const { authHeaders } = require("./live");
 const { applyTemplateApproval } = require("./staffTemplates");
 
@@ -59,7 +60,7 @@ exports.arattaiWebhook = onRequest(async (request, response) => {
   try {
     const body = request.body || {};
     await admin.database().ref(P.debug).push({ timestamp: ServerValue.TIMESTAMP, payload: body });
-    const { incoming, statuses, templates = [] } = await getProvider(config).parseWebhook(body);
+    const { incoming, statuses, templates = [], reactions = [] } = await getProvider(config).parseWebhook(body);
     for (const inc of incoming) {
       // Arattai's file links expire quickly, so keep our own copy before saving the message.
       const msg = config.mode === "live" && inc.mediaUrl
@@ -68,6 +69,11 @@ exports.arattaiWebhook = onRequest(async (request, response) => {
       await applyIncoming(msg);
     }
     for (const t of templates) await applyTemplateApproval(t);
+    // Reactions sit on the message they react to (incoming ones carry the ack_key as messageId,
+    // ours carry Arattai's id), shown as chips like WhatsApp's.
+    for (const r of reactions) {
+      if (!(await storeReaction(admin.database(), r, P.conversations))) logger.info("Arattai webhook: reaction for an unknown message", { targetId: r.targetId });
+    }
     let unmatched = 0;
     for (const st of statuses) if (!(await applyStatus(st, { pending: true }))) unmatched++;
     if (unmatched) logger.info("Arattai webhook: receipts for unknown messages", { unmatched });

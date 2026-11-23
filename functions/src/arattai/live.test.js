@@ -237,3 +237,13 @@ test("parseReceived: a photo arrives as type file with content.download_url", ()
   assert.equal(m.text, "");
   assert.equal(m.fileName, "image_5827c.PNG");
 });
+
+test("parseArattai: chat.message.reacted (real shape) targets ack_key, keyed by the sender's chat", async () => {
+  rtdb["arattai_users/3307860/phone"] = "918825622360";
+  const r = await parseArattai({ event: "chat.message.reacted", event_time: 1795451272532, entity: { ack_key: "1795451123935_6742", content: { emoji: "👍" }, id: "1795451123992_64579303704", sender: { id: "3307860", name: "S" } } });
+  assert.deepStrictEqual(r.reactions, [{ conversationId: "918825622360", targetId: "1795451123935_6742", key: "918825622360", from: "918825622360", emoji: "👍", at: 1795451272532 }]);
+  // Unknown sender: "u<id>" chat; no emoji is a removal.
+  const gone = await parseArattai({ event: "chat.message.reacted", event_time: 2, entity: { ack_key: "k9", content: {}, sender: { id: "555" } } });
+  assert.deepStrictEqual(gone.reactions[0], { conversationId: "u555", targetId: "k9", key: "u555", from: "u555", emoji: "", at: 2 });
+  assert.deepStrictEqual(gone.incoming, []);
+});
