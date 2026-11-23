@@ -4,7 +4,7 @@ const admin = require("firebase-admin");
 const { FieldValue } = require("firebase-admin/firestore");
 const { resolveAccess } = require("../shared/access");
 const { getProvider, normalizePhone } = require("./provider");
-const { P, safeKey, applyIncoming, simulateReceipts } = require("./store");
+const { P, safeKey, applyIncoming, simulateReceipts, replayPendingStatuses } = require("./store");
 
 /**
  * Arattai callables. Unlike the WhatsApp module, each one checks the specific action it
@@ -85,17 +85,29 @@ exports.sendArattaiMessage = onCall(async (request) => {
   const msgRef = db.ref(`${P.conversations}/${to}/messages/${key}`);
   const ts = Date.now();
 
+  const doc = { message: text, to, from: "business", direction: "outbound", type: "text", timestamp: ts };
   let messageId;
   try {
+    // File the message first (status processing): only the id and the lookup entry are left to write.
+    await msgRef.update({ ...doc, status: "processing" });
     ({ messageId } = await provider.sendText({ to, text }));
   } catch (err) {
-    await msgRef.update({ message: text, to, from: "business", direction: "outbound", type: "text", timestamp: ts, status: "failed", error: err.message });
+    await msgRef.update({ ...doc, status: "failed", error: err.message }).catch(() => {});
     throw err instanceof HttpsError ? err : new HttpsError("internal", err.message);
   }
 
-  await msgRef.update({ messageId, message: text, to, from: "business", direction: "outbound", type: "text", timestamp: ts, status: "sent" });
-  await db.ref(`${P.conversations}/${to}/metadata`).update({ lastMessage: text, timestamp: ts, phoneNumber: to });
-  await db.ref(`${P.map}/${safeKey(messageId)}`).set({ phone: to, messageKey: key });
+  // One atomic write: the id, the status, the preview and the receipt lookup entry together.
+  const convo = `${P.conversations}/${to}`;
+  await db.ref().update({
+    [`${convo}/messages/${key}/messageId`]: messageId,
+    [`${convo}/messages/${key}/status`]: "sent",
+    [`${convo}/metadata/lastMessage`]: text,
+    [`${convo}/metadata/timestamp`]: ts,
+    [`${convo}/metadata/phoneNumber`]: to,
+    [`${P.map}/${safeKey(messageId)}`]: { phone: to, messageKey: key },
+  });
+  // Receipts that beat the write above were parked; apply them now (rank keeps status forward).
+  await replayPendingStatuses(messageId).catch((e) => logger.warn("Replay of pending receipts failed", e.message));
   if (provider.simulatesReceipts) await simulateReceipts([{ messageId, phone: to }]);
   return { messageId, mode: provider.mode };
 });
@@ -200,6 +212,7 @@ exports.sendArattaiBroadcast = onCall({ timeoutSeconds: 540 }, async (request) =
       }
     });
     await db.ref().update(updates);
+    for (const { messageId } of sent) await replayPendingStatuses(messageId).catch(() => {});
     dispatched += ok;
     const inc = FieldValue.increment;
     await historyRef.update({

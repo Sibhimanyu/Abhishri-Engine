@@ -68,18 +68,21 @@ function ChannelView({ channel, perms, available }) {
           activeId={activeView}
           tabs={tabs.filter(t => t.show).map(t => ({ ...t, to: `${channel.basePath}/${t.id}` }))}
           trailing={available.length > 1 && (
-            <div className="flex bg-brand-bg rounded-lg p-0.5 border border-brand-card-border" role="tablist" aria-label="Channel">
-              {available.map(c => (
-                <Link
-                  key={c.id}
-                  to={`${c.basePath}/chats`}
-                  role="tab"
-                  aria-selected={c.id === channel.id}
-                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${c.id === channel.id ? 'bg-brand-primary/10 text-brand-primary' : 'text-brand-text-dim hover:text-brand-text'}`}
-                >
-                  {c.label}
-                </Link>
-              ))}
+            <div className="flex items-center gap-2">
+              <span className="hidden sm:inline text-xs font-semibold uppercase tracking-wide text-brand-text-dim">Channel</span>
+              <div className="flex bg-brand-card rounded-lg p-1 border-2 border-brand-primary/40 shadow-sm" role="tablist" aria-label="Channel">
+                {available.map(c => (
+                  <Link
+                    key={c.id}
+                    to={`${c.basePath}/chats`}
+                    role="tab"
+                    aria-selected={c.id === channel.id}
+                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-colors ${c.id === channel.id ? 'bg-brand-primary text-white shadow' : 'text-brand-text hover:bg-brand-primary/10'}`}
+                  >
+                    {c.label}
+                  </Link>
+                ))}
+              </div>
             </div>
           )}
         />

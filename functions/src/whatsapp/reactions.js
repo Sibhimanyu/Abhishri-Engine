@@ -2,6 +2,8 @@
 // stored on the message it reacts to, as `reactions/<senderKey>` = { emoji, at, from }.
 // Pure parts are tested in reactions.test.js (node --test src/whatsapp/reactions.test.js).
 
+const { savePending } = require("../shared/pendingEvents");
+
 const sanitizeKey = (key) => (key ? String(key).replace(/[.#$/[\]]/g, "_") : key);
 const BUSINESS = "business";
 
@@ -54,21 +56,37 @@ function nextReactions(current, change) {
   return map;
 }
 
-/** Find a conversation message by key (send.js files replies under the sanitized wamid) or messageId. */
-async function findMessage(messagesRef, wamid) {
-  if (!wamid) return null;
-  const byKey = await messagesRef.child(sanitizeKey(wamid)).once("value");
-  if (byKey.exists()) return byKey;
-  const q = await messagesRef.orderByChild("messageId").equalTo(wamid).once("value");
-  let found = null;
-  q.forEach((c) => { if (!found) found = c; });
-  return found;
+/**
+ * Find a conversation message by provider id. `ids` is one id or several (send.js stores the
+ * Fast2SMS request id and the wamid): each is tried as the sanitized key, then as the
+ * `messageId`, `wamid` or `requestId` field.
+ */
+async function findMessage(messagesRef, ids) {
+  const list = [...new Set((Array.isArray(ids) ? ids : [ids]).filter(Boolean).map(String))];
+  for (const id of list) {
+    const byKey = await messagesRef.child(sanitizeKey(id)).once("value");
+    if (byKey.exists()) return byKey;
+    for (const field of ["messageId", "wamid", "requestId"]) {
+      const q = await messagesRef.orderByChild(field).equalTo(id).once("value");
+      let found = null;
+      q.forEach((c) => { if (!found) found = c; });
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
-/** Store a reaction on its message. Returns false (and writes nothing) when the message isn't ours to find. */
-async function storeReaction(db, reaction, prefix = "whatsapp_conversations") {
+/**
+ * Store a reaction on its message. Returns false (and writes nothing) when the message isn't
+ * found; with `pending` (a collection name) the reaction is parked there for the send code to
+ * replay once the message exists.
+ */
+async function storeReaction(db, reaction, prefix = "whatsapp_conversations", { pending } = {}) {
   const snap = await findMessage(db.ref(`${prefix}/${reaction.conversationId}/messages`), reaction.targetId);
-  if (!snap) return false;
+  if (!snap) {
+    if (pending) await savePending(db, pending, [reaction.targetId], "reaction", reaction);
+    return false;
+  }
   const reactions = snap.val().reactions || null;
   const next = nextReactions(reactions, reaction);
   if (next === reactions) return true;

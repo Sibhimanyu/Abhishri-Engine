@@ -5,6 +5,7 @@ const admin = require("firebase-admin");
 const axios = require("axios");
 const { verifiedEmail } = require("../shared/access");
 const { BUSINESS, storeReaction } = require("./reactions");
+const { replayPendingEvents } = require("./webhook");
 
 const sanitizeKey = (key) => key ? String(key).replace(/[.#$/[\]]/g, "_") : key;
 
@@ -133,23 +134,54 @@ exports.checkWhatsAppWallet = onCall(async (request) => {
   }
 });
 
+/**
+ * The ids a Fast2SMS send response gives a message: `requestId` (Fast2SMS's) and `wamid` (Meta's),
+ * whichever are present. `messageId` stays the first of them, as before.
+ */
+function sendIds(data) {
+  const requestId = data?.request_id || null;
+  const wamid = data?.messages?.[0]?.id || (requestId ? (data?.message_id || data?.id || null) : null);
+  const messageId = requestId || wamid || data?.id || data?.message_id || null;
+  return { requestId, wamid, messageId };
+}
+
 exports.sendWhatsAppMessage = onCall(async (request) => {
   await verifyAdmin(request.auth);
   const config = await getWhatsAppConfig();
-  const { to, text } = request.data;
+  const { to, text, messageKey } = request.data;
+  if (messageKey && !/^[-_A-Za-z0-9]{1,40}$/.test(messageKey)) throw new HttpsError("invalid-argument", "Bad message key.");
+  const db = admin.database(), ts = Date.now(), recipientPhone = String(to).replace(/[^\d]/g, "");
+  const key = messageKey || db.ref().push().key;
+  const msgRef = db.ref(`whatsapp_conversations/${recipientPhone}/messages/${key}`);
+  const base = { from: "business", to, message: text, type: "text", timestamp: ts, direction: "outbound" };
   try {
+    // File the message first (status processing) so only the provider ids are left to write afterwards.
+    await msgRef.update({ ...base, status: "processing" });
     // Single message still uses v24.0 API
     const response = await axios.post(`https://www.fast2sms.com/dev/whatsapp/v24.0/${config.phoneNumberId}/messages`, {
       messaging_product: "whatsapp", to: String(to).replace("+", ""), type: "text", text: { body: text }
-    }, { headers: { "Authorization": config.apiKey, "Content-Type": "application/json" } });
-    const messageId = response.data.request_id || response.data.messages?.[0]?.id || response.data.id;
+    }, { headers: { "Authorization": config.apiKey, "Content-Type": "application/json" }, timeout: 30000 });
+    const { requestId, wamid, messageId } = sendIds(response.data);
     if (messageId) {
-      const ts = Date.now(), docId = sanitizeKey(messageId), recipientPhone = String(to).replace(/[^\d]/g, ""), db = admin.database();
-      await db.ref(`whatsapp_conversations/${recipientPhone}/messages/${docId}`).set({ messageId, from: "business", to, message: text, type: "text", timestamp: ts, direction: "outbound", status: "processing" });
-      await db.ref(`whatsapp_conversations/${recipientPhone}/metadata`).update({ lastMessage: text, timestamp: ts, phoneNumber: to });
+      // One write for the ids and the preview, then replay receipts/reactions that beat us here.
+      const ids = { messageId, ...(requestId ? { requestId } : {}), ...(wamid ? { wamid } : {}) };
+      const prefix = `whatsapp_conversations/${recipientPhone}`;
+      await db.ref().update({
+        [`${prefix}/messages/${key}/messageId`]: ids.messageId,
+        [`${prefix}/messages/${key}/requestId`]: ids.requestId || null,
+        [`${prefix}/messages/${key}/wamid`]: ids.wamid || null,
+        [`${prefix}/metadata/lastMessage`]: text,
+        [`${prefix}/metadata/timestamp`]: ts,
+        [`${prefix}/metadata/phoneNumber`]: to,
+      });
+      await replayPendingEvents(db, [messageId, requestId, wamid]).catch((e) => logger.warn("Replay of pending events failed", e.message));
     }
     return response.data;
-  } catch (error) { throw new HttpsError("internal", error.message); }
+  } catch (error) {
+    // Never leave the message showing "processing" for a send that didn't go through.
+    await msgRef.update({ status: "failed", error: error.response?.data?.message || error.message }).catch(() => {});
+    throw new HttpsError("internal", error.message);
+  }
 });
 
 /**

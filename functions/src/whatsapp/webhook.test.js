@@ -84,3 +84,41 @@ test("a business echo is never filed as a customer message", async () => {
   await processIncoming(db, { id: WAMID, from: "918825622360", from_me: true, timestamp: 1, type: "text", text: { body: "working" } });
   assert.strictEqual(Object.keys(db.data).length, before);
 });
+
+// --- receipts that beat the send, and id matching ---
+const { replayPendingEvents } = require("./webhook");
+
+test("a receipt for an unfiled message is parked, then replayed once the message exists", async () => {
+  const db = fakeDb({});
+  // fake needs push to yield children and remove; extend minimally
+  const store = db.data;
+  const parked = [];
+  const origRef = db.ref;
+  db.ref = (path) => {
+    const r = origRef(path);
+    if (path.startsWith("whatsapp_pending_events/")) {
+      r.push = async (v) => { parked.push({ path, v }); store[`${path}/k${parked.length}`] = v; };
+      r.once = async () => {
+        const keys = Object.keys(store).filter((k) => k.startsWith(`${path}/`));
+        return { exists: () => keys.length > 0, forEach: (fn) => keys.forEach((k) => fn({ ref: { ...origRef(k), remove: async () => { delete store[k]; } }, val: () => store[k] })) };
+      };
+    }
+    return r;
+  };
+  await processStatus(db, null, { id: WAMID, status: "read", timestamp: "1795152132", recipient_id: "918825622360" });
+  assert.strictEqual(parked.length, 1);
+  assert.strictEqual(parked[0].v.kind, "status");
+  // the send now files the message (as status "processing") and replays
+  store[`whatsapp_conversations/918825622360/messages/-Pxyz`] = { messageId: "REQ9", wamid: WAMID, status: "processing" };
+  await replayPendingEvents(db, [WAMID]);
+  assert.strictEqual(store["whatsapp_conversations/918825622360/messages/-Pxyz"].status, "read");
+  assert.ok(!Object.keys(store).some((k) => k.startsWith("whatsapp_pending_events/")));
+});
+
+test("a receipt matches on the wamid field or the Fast2SMS request id", async () => {
+  const db = fakeDb({ "whatsapp_conversations/918825622360/messages/-Pxyz": { messageId: "REQ9", wamid: WAMID, requestId: "REQ9", status: "processing" } });
+  assert.ok(await updateConversationMessage(db, { ids: [WAMID], recipient: "918825622360", status: "delivered", timestamp: 1 }));
+  assert.strictEqual(db.data["whatsapp_conversations/918825622360/messages/-Pxyz"].status, "delivered");
+  assert.ok(await updateConversationMessage(db, { ids: ["REQ9"], recipient: "918825622360", status: "read", timestamp: 2 }));
+  assert.strictEqual(db.data["whatsapp_conversations/918825622360/messages/-Pxyz"].status, "read");
+});
