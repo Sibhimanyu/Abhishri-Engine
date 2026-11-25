@@ -61,7 +61,7 @@ export default function StaffMessageEditor({ eventKey, saved, state, mode, onSav
   useEffect(() => { setTitle(saved.title); setBody(saved.body); setNote(null); }, [eventKey, saved.title, saved.body]);
 
   const status = templateStatus(saved, state);
-  const locked = state?.status === 'under_review';
+  const underReview = state?.status === 'under_review';
   const dirty = title !== saved.title || body !== saved.body;
   const isDefault = title === def.title && body === def.body;
 
@@ -97,10 +97,13 @@ export default function StaffMessageEditor({ eventKey, saved, state, mode, onSav
 
   const save = () => run(() => onSave(eventKey, { title, body }), 'Wording saved.');
   const reset = () => run(() => onSave(eventKey, null), 'Back to the default wording.');
-  const submit = () => run(async () => {
+  const submit = () => {
+    if (underReview && !window.confirm(`Arattai is reviewing the "${ev.label}" template. Submitting again replaces it with your new wording and restarts the review. Continue?`)) return;
+    return run(async () => {
     if (dirty) await onSave(eventKey, { title, body });
     await onSubmit(eventKey);
   }, mode === 'live' ? 'Sent to Arattai for review.' : 'Approved (sandbox: nothing was really sent to Arattai).');
+  };
   const remove = () => {
     if (!window.confirm(`Delete the Arattai template for "${ev.label}"? This notification won't be sent until a new template is submitted and approved. Your wording is kept.`)) return;
     run(() => onDelete(eventKey), 'Template deleted.');
@@ -130,24 +133,24 @@ export default function StaffMessageEditor({ eventKey, saved, state, mode, onSav
       {status.label === 'Edited since approval' && (
         <p className="text-xs text-brand-text-dim">The approved version is still what gets sent. Resubmit to have the new wording reviewed.</p>
       )}
-      {locked && (
+      {underReview && (
         <p className="flex items-start gap-2 text-xs text-brand-text bg-amber-500/10 border border-amber-500/20 rounded-md p-2.5">
-          <Lock size={14} className="shrink-0 mt-0.5" /> Arattai is reviewing this template, so it can’t be edited or resubmitted until the review is done (usually within a day). Use “Refresh statuses” to check.
+          <Lock size={14} className="shrink-0 mt-0.5" /> Arattai is reviewing this template. Submitting again replaces it with your new wording and restarts the review.
         </p>
       )}
 
       <div className="space-y-2">
         <label htmlFor={`${eventKey}-title`} className="text-xs font-medium text-brand-text">Title</label>
-        <input id={`${eventKey}-title`} ref={titleRef} type="text" disabled={locked} value={title} onFocus={() => { lastField.current = 'title'; }} onChange={e => setTitle(e.target.value)} className={inputClass} />
+        <input id={`${eventKey}-title`} ref={titleRef} type="text" value={title} onFocus={() => { lastField.current = 'title'; }} onChange={e => setTitle(e.target.value)} className={inputClass} />
         <label htmlFor={`${eventKey}-body`} className="text-xs font-medium text-brand-text block">Body</label>
-        <textarea id={`${eventKey}-body`} ref={bodyRef} rows={4} disabled={locked} value={body} onFocus={() => { lastField.current = 'body'; }} onChange={e => setBody(e.target.value)} className={inputClass} />
+        <textarea id={`${eventKey}-body`} ref={bodyRef} rows={4} value={body} onFocus={() => { lastField.current = 'body'; }} onChange={e => setBody(e.target.value)} className={inputClass} />
       </div>
 
       <div>
         <p className="text-xs font-medium text-brand-text mb-1.5">Placeholders (click to insert at the cursor)</p>
         <div className="flex flex-wrap gap-1.5">
           {Object.entries(ev.placeholders).map(([name, help]) => (
-            <button key={name} type="button" title={help} disabled={locked} onClick={() => insert(name)}
+            <button key={name} type="button" title={help} onClick={() => insert(name)}
               className="px-2 py-1 rounded bg-brand-bg border border-brand-card-border text-xs font-mono text-brand-text hover:border-brand-primary disabled:opacity-50">
               {`{${name}}`}
             </button>
@@ -173,21 +176,21 @@ export default function StaffMessageEditor({ eventKey, saved, state, mode, onSav
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={busy || locked || !dirty || !body.trim()} onClick={save}
+        <button type="button" disabled={busy || !dirty || !body.trim()} onClick={save}
           className="flex items-center gap-2 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 text-brand-text px-4 py-2 rounded-md font-medium text-sm transition-colors disabled:opacity-50">
           <Save size={14} /> Save wording
         </button>
-        <button type="button" disabled={busy || locked || !body.trim()} onClick={submit}
+        <button type="button" disabled={busy || !body.trim()} onClick={submit}
           className="flex items-center gap-2 bg-brand-primary hover:bg-brand-primary-hover text-white px-4 py-2 rounded-md font-bold text-sm transition-colors disabled:opacity-50">
           <Send size={14} /> {state?.status ? 'Resubmit' : 'Submit for approval'}
         </button>
         {state?.templateId && (
-          <button type="button" disabled={busy || locked} onClick={remove}
+          <button type="button" disabled={busy} onClick={remove}
             className="flex items-center gap-2 text-red-600 dark:text-red-400 border border-red-500/30 hover:bg-red-500/10 px-4 py-2 rounded-md font-medium text-sm transition-colors disabled:opacity-50">
             <Trash2 size={14} /> Delete template
           </button>
         )}
-        <button type="button" disabled={busy || locked || (isDefault && !saved.custom)} onClick={reset}
+        <button type="button" disabled={busy || (isDefault && !saved.custom)} onClick={reset}
           className="flex items-center gap-1.5 text-brand-text-dim hover:text-brand-text px-2 py-2 text-xs transition-colors disabled:opacity-50">
           <RotateCcw size={12} /> Reset to default
         </button>
