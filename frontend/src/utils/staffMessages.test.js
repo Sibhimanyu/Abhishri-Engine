@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { approvalEvent, prettyDate, requestVars, outcomeVars, decidedVars, accessRequestVars, birthdayVars, outcomeKey, renderMessage, renderStaffMessage, mergeMessages, placeholdersIn, DEFAULT_MESSAGES, EVENTS } from '../../../functions/src/shared/staffMessages.mjs';
+import { approvalEvent, prettyDate, requestVars, outcomeVars, decidedVars, accessRequestVars, birthdayVars, outcomeKey, decidedKey, templateProblems, buildTemplatePayload, renderMessage, renderStaffMessage, mergeMessages, placeholdersIn, DEFAULT_MESSAGES, EVENTS } from '../../../functions/src/shared/staffMessages.mjs';
 
 const ts = (ms) => ({ toMillis: () => ms });
 const doc = (approval) => (approval ? { weekLabel: '28 Sep – 02 Oct 2026', approval } : { weekLabel: 'x' });
@@ -48,26 +48,30 @@ describe('message values', () => {
     expect(classReport.itemTitle).toBe('Daily report: Mon, 28 Sep 2026 · Wonder Wings');
     const msg = renderStaffMessage('approvalRequested', menu);
     expect(msg.title).toBe('Approval requested');
-    expect(msg.text).toBe('Vineetha sent Weekly menu: 28 Sep – 02 Oct 2026 for approval.\nReview it: https://abhishri-academy.web.app/menu-report');
+    expect(msg.text).toBe('New approval request from Vineetha: Weekly menu: 28 Sep – 02 Oct 2026.\nReview it: https://abhishri-academy.web.app/menu-report');
   });
 
   it("tells the teacher the outcome, with the admin's note only when there is one", () => {
     const args = { collection: 'daily_reports', id: '2026-09-28', reviewerName: 'Sathya', appUrl };
     const approved = renderStaffMessage(outcomeKey('approved'), outcomeVars({ ...args, data: doc(pending()), event: 'approved' }));
     expect(approved.title).toBe('Your request was approved');
-    expect(approved.text).toBe('Sathya approved Daily report: Mon, 28 Sep 2026. You can export it now.\nhttps://abhishri-academy.web.app/menu-report?tab=report');
+    expect(approved.text).toBe('Good news! Daily report: Mon, 28 Sep 2026 was approved by Sathya.\nYou can export it now: https://abhishri-academy.web.app/menu-report?tab=report');
     const returned = renderStaffMessage(outcomeKey('returned'), outcomeVars({ ...args, data: { approval: { note: ' Fix the Tamil date ' } }, event: 'returned' }));
-    expect(returned.text).toBe('Sathya sent back Daily report: Mon, 28 Sep 2026.\nNote: Fix the Tamil date\nEdit it: https://abhishri-academy.web.app/menu-report?tab=report');
+    expect(returned.text).toBe('Changes requested: Sathya sent back Daily report: Mon, 28 Sep 2026.\nNote: Fix the Tamil date\nEdit it: https://abhishri-academy.web.app/menu-report?tab=report');
     expect(renderStaffMessage('approvalOutcomeReturned', outcomeVars({ ...args, data: {}, event: 'returned' })).text).toContain('\nNo note added.\n');
   });
 
   it('notes the decision for the admins', () => {
     const args = { collection: 'daily_reports', id: '2026-09-28', reviewerName: 'Sathya', requesterName: 'Vineetha', appUrl };
-    const a = renderStaffMessage('approvalDecided', decidedVars({ ...args, data: {}, event: 'approved' }));
-    expect(a.title).toBe('Approval decided');
-    expect(a.text).toBe('Sathya approved Daily report: Mon, 28 Sep 2026 from Vineetha.\nNo note added.');
-    const r = renderStaffMessage('approvalDecided', decidedVars({ ...args, data: { approval: { note: 'Fix the date' } }, event: 'returned' }));
-    expect(r.text).toBe('Sathya sent back Daily report: Mon, 28 Sep 2026 from Vineetha.\nNote: Fix the date');
+    const a = renderStaffMessage(decidedKey('approved'), decidedVars({ ...args, data: {}, event: 'approved' }));
+    expect(a.title).toBe('Request approved');
+    expect(a.text).toBe('Request approved: Daily report: Mon, 28 Sep 2026 from Vineetha was approved by Sathya.\nSee it: https://abhishri-academy.web.app/menu-report?tab=report');
+    const r = renderStaffMessage(decidedKey('returned'), decidedVars({ ...args, data: { approval: { note: 'Fix the date' } }, event: 'returned' }));
+    expect(r.title).toBe('Request sent back');
+    expect(r.text).toBe('Request sent back: Sathya sent back Daily report: Mon, 28 Sep 2026 from Vineetha.\nOpen it to see the note: https://abhishri-academy.web.app/menu-report?tab=report');
+    expect(decidedKey('approved')).toBe('approvalDecidedApproved');
+    expect(decidedKey('returned')).toBe('approvalDecidedReturned');
+    expect(EVENTS.approvalDecided).toBeUndefined();
     expect(decidedVars({ ...args, requesterName: 'Teachers', data: {}, event: 'approved' }).requesterPossessive).toBe("Teachers'");
   });
 
@@ -78,7 +82,22 @@ describe('message values', () => {
     const v = birthdayVars({ members: [{ name: 'Arun', type: 'student', tamilMonth: 'Purattasi', tamilDay: '19' }], appUrl });
     expect(v.date).toBe('Purattasi 19');
     expect(v.link).toBe('https://abhishri-academy.web.app/students');
-    expect(renderStaffMessage('birthdays', v).text).toBe("• It is Arun's (Student) Tamil Birthday today (Purattasi 19).\nhttps://abhishri-academy.web.app/students");
+    expect(v.names).toBe('Arun');
+    expect(renderStaffMessage('birthdays', v).text).toBe("Today's Tamil birthdays: Arun.\nSee the list: https://abhishri-academy.web.app/students");
+  });
+});
+
+describe('Arattai start/end guard', () => {
+  it('refuses a body that starts or ends with a placeholder, allows {link} last', () => {
+    expect(templateProblems('approvalOutcomeReturned', { title: 'T', body: '{reviewer} did it. {link}' }).join(' ')).toMatch(/starts with a placeholder \(\{reviewer\}\)/);
+    expect(templateProblems('approvalOutcomeReturned', { title: 'T', body: 'Open {itemTitle}' }).join(' ')).toMatch(/ends with a placeholder \(\{itemTitle\}\)/);
+    expect(templateProblems('approvalOutcomeReturned', { title: '{reviewer} asked', body: 'Hi {itemTitle}. {link}\n' })).toHaveLength(1);
+    expect(templateProblems('approvalOutcomeReturned', { title: '', body: 'Hi {itemTitle}. {link}' })).toEqual([]);
+    expect(() => buildTemplatePayload('approvalOutcomeReturned', { title: 'T', body: '{reviewer} x' })).toThrow(/starts with/);
+  });
+
+  it('every default passes', () => {
+    for (const key of Object.keys(EVENTS)) expect(templateProblems(key, DEFAULT_MESSAGES[key])).toEqual([]);
   });
 });
 

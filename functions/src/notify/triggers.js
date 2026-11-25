@@ -63,7 +63,7 @@ function approvalTrigger(collection) {
     const [reviewerName, requesterName] = await Promise.all([displayNameOf(approval.reviewedBy), displayNameOf(approval.requestedBy)]);
     // Each is sent on its own, so one failing doesn't stop the other.
     const sends = [
-      composeStaffMessage("approvalDecided", m.decidedVars({ collection, id, data: after, event: kind, reviewerName, requesterName, appUrl }))
+      composeStaffMessage(m.decidedKey(kind), m.decidedVars({ collection, id, data: after, event: kind, reviewerName, requesterName, appUrl }))
         .then((message) => notifyStaff({ kind: what, audience: { channel: true }, config: cfg, message })),
     ];
     if (approval.requestedBy !== approval.reviewedBy) {
