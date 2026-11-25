@@ -89,23 +89,35 @@ export const EVENTS = {
     },
     sample: { itemTitle: 'Daily report: Fri, 20 Nov 2026 · Sunflowers', kind: 'daily report', Kind: 'Daily report', requester: 'Lakshmi', link: `${DEFAULT_APP_URL}/menu-report?tab=report` },
   },
-  approvalDecided: {
-    label: 'Approval decided',
-    description: 'An admin approved a request or sent it back. Tells the admins it is handled.',
+  approvalDecidedApproved: {
+    label: 'Request approved',
+    description: 'An admin approved a request. Tells the admins the request is handled.',
     audience: 'Admins',
     placeholders: {
       itemTitle: 'What it is, e.g. "Weekly menu: 23 Nov – 27 Nov 2026"',
       kind: '"weekly menu" or "daily report"',
+      Kind: 'Same, with a capital for the start of a title: "Weekly menu"',
       requester: 'Who asked',
       requesterPossessive: 'Who asked, with \'s, e.g. "Lakshmi\'s" ("Teachers\'")',
       reviewer: 'Who decided',
-      decision: '"approved" or "sent back"',
-      Decision: 'Same, with a capital for the start of a title: "Approved" or "Sent back"',
-      note: 'The reviewer\'s note ("-" when there is none)',
-      noteLine: 'A whole line: "Note: ..." or "No note added."',
       link: 'Link to the approval screen in the app',
     },
-    sample: { itemTitle: 'Weekly menu: 23 Nov – 27 Nov 2026', kind: 'weekly menu', requester: 'Lakshmi', requesterPossessive: "Lakshmi's", reviewer: 'Vineetha', decision: 'sent back', Decision: 'Sent back', note: 'Add the Friday snack', noteLine: 'Note: Add the Friday snack', link: `${DEFAULT_APP_URL}/menu-report` },
+    sample: { itemTitle: 'Weekly menu: 23 Nov – 27 Nov 2026', kind: 'weekly menu', Kind: 'Weekly menu', requester: 'Lakshmi', requesterPossessive: "Lakshmi's", reviewer: 'Vineetha', link: `${DEFAULT_APP_URL}/menu-report` },
+  },
+  approvalDecidedReturned: {
+    label: 'Request sent back',
+    description: 'An admin sent a request back for changes. Tells the admins the request is handled.',
+    audience: 'Admins',
+    placeholders: {
+      itemTitle: 'What it is, e.g. "Weekly menu: 23 Nov – 27 Nov 2026"',
+      kind: '"weekly menu" or "daily report"',
+      Kind: 'Same, with a capital for the start of a title: "Weekly menu"',
+      requester: 'Who asked',
+      requesterPossessive: 'Who asked, with \'s, e.g. "Lakshmi\'s" ("Teachers\'")',
+      reviewer: 'Who decided',
+      link: 'Link to the approval screen in the app',
+    },
+    sample: { itemTitle: 'Weekly menu: 23 Nov – 27 Nov 2026', kind: 'weekly menu', Kind: 'Weekly menu', requester: 'Lakshmi', requesterPossessive: "Lakshmi's", reviewer: 'Vineetha', link: `${DEFAULT_APP_URL}/menu-report` },
   },
   approvalOutcomeApproved: {
     label: 'Your request was approved',
@@ -152,12 +164,12 @@ export const EVENTS = {
     description: 'One message each morning at 7:30 listing today\'s Tamil birthdays. Not sent on days without any.',
     audience: 'Admins',
     placeholders: {
-      people: 'One line per birthday',
+      names: 'Today\'s birthday names, e.g. "Arun, Meena"',
       date: 'Today\'s Tamil month and day, e.g. "Purattasi 11"',
       link: 'Link to the students (or staff) list in the app',
     },
     sample: {
-      people: "• It is Arun's (Student) Tamil Birthday today (Purattasi 11).\n• It is Meena's (Staff) Tamil Birthday today (Purattasi 11).",
+      names: 'Arun, Meena',
       date: 'Purattasi 11',
       link: `${DEFAULT_APP_URL}/students`,
     },
@@ -179,27 +191,31 @@ export const EVENTS = {
 export const DEFAULT_MESSAGES = {
   approvalRequested: {
     title: 'Approval requested',
-    body: '{requester} sent {itemTitle} for approval.\nReview it: {link}',
+    body: 'New approval request from {requester}: {itemTitle}.\nReview it: {link}',
   },
-  approvalDecided: {
-    title: 'Approval decided',
-    body: '{reviewer} {decision} {itemTitle} from {requester}.\n{noteLine}',
+  approvalDecidedApproved: {
+    title: 'Request approved',
+    body: 'Request approved: {itemTitle} from {requester} was approved by {reviewer}.\nSee it: {link}',
+  },
+  approvalDecidedReturned: {
+    title: 'Request sent back',
+    body: 'Request sent back: {reviewer} sent back {itemTitle} from {requester}.\nOpen it to see the note: {link}',
   },
   approvalOutcomeApproved: {
     title: 'Your request was approved',
-    body: '{reviewer} approved {itemTitle}. You can export it now.\n{link}',
+    body: 'Good news! {itemTitle} was approved by {reviewer}.\nYou can export it now: {link}',
   },
   approvalOutcomeReturned: {
     title: 'Your request needs changes',
-    body: '{reviewer} sent back {itemTitle}.\n{noteLine}\nEdit it: {link}',
+    body: 'Changes requested: {reviewer} sent back {itemTitle}.\n{noteLine}\nEdit it: {link}',
   },
   accessRequest: {
     title: 'New access request',
-    body: '{who} signed in and is waiting for access.\nSet them up: {link}',
+    body: 'A new user is waiting for access: {who}.\nSet them up: {link}',
   },
   birthdays: {
     title: '🎂 Tamil birthdays today',
-    body: '{people}\n{link}',
+    body: 'Today\'s Tamil birthdays: {names}.\nSee the list: {link}',
   },
   test: {
     title: 'Test from Abhishri Engine',
@@ -269,7 +285,7 @@ export function requestVars({ collection, id, data, requesterName, appUrl }) {
   return { itemTitle: kind.title(id, data), kind: kind.noun, Kind: cap(kind.noun), requester: requesterName, link: `${trimUrl(appUrl)}${kind.path}` };
 }
 
-/** approvalDecided; `event` is 'approved' or 'returned'. */
+/** approvalDecidedApproved / approvalDecidedReturned (the key follows `event`, see decidedKey). */
 export function decidedVars({ collection, id, data, event, reviewerName, requesterName, appUrl }) {
   const kind = KINDS[collection];
   return {
@@ -279,13 +295,11 @@ export function decidedVars({ collection, id, data, event, reviewerName, request
     requester: requesterName,
     requesterPossessive: possessive(requesterName),
     reviewer: reviewerName,
-    decision: event === 'approved' ? 'approved' : 'sent back',
-    Decision: event === 'approved' ? 'Approved' : 'Sent back',
-    note: event === 'approved' ? '' : note(data),
-    noteLine: noteLine(event === 'approved' ? '' : note(data)),
     link: `${trimUrl(appUrl)}${kind.path}`,
   };
 }
+
+export const decidedKey = (event) => (event === 'approved' ? 'approvalDecidedApproved' : 'approvalDecidedReturned');
 
 /** approvalOutcomeApproved / approvalOutcomeReturned (the key follows `event`). */
 export function outcomeVars({ collection, id, data, event, reviewerName, appUrl }) {
@@ -323,7 +337,7 @@ export function birthdayVars({ members, appUrl }) {
   const { tamilMonth, tamilDay } = members[0];
   const types = [...new Set(members.map(m => m.type))];
   return {
-    people: members.map(m => `• ${n.item(m)}`).join('\n'),
+    names: members.map(m => m.name).join(', '),
     date: `${tamilMonth} ${tamilDay}`,
     link: `${trimUrl(appUrl)}${n.path(types.length === 1 ? types[0] : 'student')}`,
   };
@@ -372,6 +386,15 @@ export function templateProblems(eventKey, { title, body }) {
   for (const n of names) if (!Object.prototype.hasOwnProperty.call(ev.placeholders, n)) problems.push(`{${n}} isn't a placeholder for this message.`);
   const unique = new Set(names.map(arattaiName));
   if (unique.size > MAX_TEMPLATE_PLACEHOLDERS) problems.push(`Arattai allows at most ${MAX_TEMPLATE_PLACEHOLDERS} placeholders.`);
+  // Arattai refuses a template that starts or ends with a variable ({link} is fixed text, so it's fine).
+  for (const [part, text] of [['body', body], ['title', title]]) {
+    const t = String(text || '').trim();
+    if (!t) continue;
+    const first = /^\{([A-Za-z][A-Za-z0-9_]*)\}/.exec(t)?.[1];
+    const last = /\{([A-Za-z][A-Za-z0-9_]*)\}$/.exec(t)?.[1];
+    if (first && first !== 'link') problems.push(`Arattai doesn't accept a message that starts with a placeholder ({${first}}) in the ${part}. Start with fixed text.`);
+    if (last && last !== 'link') problems.push(`Arattai doesn't accept a message that ends with a placeholder ({${last}}) in the ${part}. End with fixed text.`);
+  }
   return problems;
 }
 

@@ -27,10 +27,10 @@ test("every default becomes a valid template payload", async () => {
 
 test("curly placeholders become {{snake_case}} and are listed once with samples", async () => {
   const m = await load();
-  const p = m.buildTemplatePayload("approvalOutcomeReturned", { title: "{Kind} sent back", body: "{reviewer} sent back {itemTitle}.\n{noteLine}\nEdit it: {link}\n{reviewer}" });
-  assert.strictEqual(p.message.title, "{{kind_cap}} sent back");
+  const p = m.buildTemplatePayload("approvalOutcomeReturned", { title: "Sent back: {Kind} now", body: "Changes: {reviewer} sent back {itemTitle}.\n{noteLine}\nEdit it: {link}\nFrom {reviewer}, thanks." });
+  assert.strictEqual(p.message.title, "Sent back: {{kind_cap}} now");
   // {link} is fixed template text (Arattai rejects links as samples), so it isn't a placeholder.
-  assert.strictEqual(p.message.body, "{{reviewer}} sent back {{item_title}}.\n{{note_line}}\nEdit it: https://abhishri-academy.web.app/menu-report\n{{reviewer}}");
+  assert.strictEqual(p.message.body, "Changes: {{reviewer}} sent back {{item_title}}.\n{{note_line}}\nEdit it: https://abhishri-academy.web.app/menu-report\nFrom {{reviewer}}, thanks.");
   assert.deepStrictEqual(p.place_holders.map((x) => x.name), ["kind_cap", "reviewer", "item_title", "note_line"]);
   // Arattai accepts only type "string" and samples of letters, digits, spaces, commas and full stops.
   assert.ok(p.place_holders.every((x) => x.type === "string" && /^[A-Za-z0-9 ,.]+$/.test(x.sample_value)));
@@ -40,8 +40,16 @@ test("curly placeholders become {{snake_case}} and are listed once with samples"
 test("a fixed title is allowed, a bad placeholder or empty body is refused", async () => {
   const m = await load();
   assert.strictEqual(m.buildTemplatePayload("test", { title: "", body: "Hello" }).message.title, undefined);
-  assert.throws(() => m.buildTemplatePayload("test", { title: "x", body: "Hi {typo}" }), /typo/);
+  assert.throws(() => m.buildTemplatePayload("test", { title: "x", body: "Hi {typo} there" }), /typo/);
   assert.throws(() => m.buildTemplatePayload("test", { title: "x", body: "  " }), /empty/);
+});
+
+test("a body starting or ending with a placeholder is refused, ending with {link} is fine", async () => {
+  const m = await load();
+  assert.throws(() => m.buildTemplatePayload("approvalOutcomeReturned", { title: "T", body: "{reviewer} sent it. {link}" }), /starts with a placeholder \(\{reviewer\}\)/);
+  assert.throws(() => m.buildTemplatePayload("approvalOutcomeReturned", { title: "T", body: "Review {itemTitle}" }), /ends with a placeholder \(\{itemTitle\}\)/);
+  assert.throws(() => m.buildTemplatePayload("approvalOutcomeReturned", { title: "{reviewer} asked", body: "Hi {itemTitle}. {link}" }), /title/);
+  assert.ok(m.buildTemplatePayload("approvalOutcomeReturned", { title: "", body: "Hi {itemTitle}. {link}" }));
 });
 
 test("values are never empty and stay on one line", async () => {

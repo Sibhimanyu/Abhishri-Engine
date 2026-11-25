@@ -61,18 +61,18 @@ Each send is written to `notification_log`, which is admin-only and kept for 90 
 - **Direct messages** go to the staff member's phone. The number comes from `phoneMap` (`app email = phone`), then the phone on their staff record, then `allowed_users.phone`. Anyone without a number is skipped and listed in the log.
 - **Approvals are reviewed in the app** through the link in the message. There are no in-chat buttons.
 
-**Wording.** Defaults live in `shared/staffMessages.mjs` (`DEFAULT_MESSAGES`, one `{ title, body }` per event: `approvalRequested`, `approvalDecided`, `approvalOutcomeApproved`, `approvalOutcomeReturned`, `accessRequest`, `birthdays`, `test`). Admins override them under "Message wording"; edits are stored in `configs/staff_messages` as `{ [eventKey]: { title, body } }` (admins only in `firestore.rules`) and the server picks them up within 60 seconds. A blank body means the default. The sent text is the rendered title plus body, through the template logic below (one placeholder: title and body together; two: title, then body). Keep wording plain text, a title of 60 characters or fewer, and a body of one to three short lines.
+**Wording.** Defaults live in `shared/staffMessages.mjs` (`DEFAULT_MESSAGES`, one `{ title, body }` per event: `approvalRequested`, `approvalDecidedApproved`, `approvalDecidedReturned`, `approvalOutcomeApproved`, `approvalOutcomeReturned`, `accessRequest`, `birthdays`, `test`). Admins override them under "Message wording"; edits are stored in `configs/staff_messages` as `{ [eventKey]: { title, body } }` (admins only in `firestore.rules`) and the server picks them up within 60 seconds. A blank body means the default. The sent text is the rendered title plus body, through the template logic below (one placeholder: title and body together; two: title, then body). Arattai refuses a template that starts or ends with a placeholder other than `{link}` (start and end with fixed text) and one where a placeholder carries the main message. Keep wording plain text, a title of 60 characters or fewer, and a body of one to three short lines.
 
 Placeholders are `{curly}` names. Unknown names are left as written, empty values become nothing, and a line whose placeholders are all empty is dropped (so `Note: {note}` vanishes when there is no note).
 
 | Event | Placeholders |
 | --- | --- |
 | approvalRequested | `{itemTitle}` (e.g. "Daily report: Fri, 20 Nov 2026 · Sunflowers"), `{kind}` ("daily report"), `{Kind}` ("Daily report"), `{requester}`, `{link}` |
-| approvalDecided | `{itemTitle}`, `{kind}`, `{requester}`, `{requesterPossessive}`, `{reviewer}`, `{decision}` ("approved" / "sent back"), `{Decision}`, `{note}`, `{link}` |
+| approvalDecidedApproved, approvalDecidedReturned | `{itemTitle}`, `{kind}`, `{Kind}`, `{requester}`, `{requesterPossessive}`, `{reviewer}`, `{link}` |
 | approvalOutcomeApproved | `{itemTitle}`, `{kind}`, `{Kind}`, `{reviewer}`, `{link}` |
 | approvalOutcomeReturned | `{itemTitle}`, `{kind}`, `{Kind}`, `{reviewer}`, `{note}`, `{link}` |
 | accessRequest | `{who}` (name and email), `{name}`, `{email}`, `{link}` |
-| birthdays | `{people}` (one line each), `{date}` (Tamil month and day), `{link}` |
+| birthdays | `{names}` (e.g. "Arun, Meena"), `{date}` (Tamil month and day), `{link}` |
 | test | `{where}`, `{link}` |
 
 The `configs/cliq` document from the old bot is no longer read and can be deleted.

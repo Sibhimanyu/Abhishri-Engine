@@ -55,7 +55,7 @@ describe('bell and staff messages match', () => {
     ];
     const bell = bellEntries({ birthdays: members });
     const vars = birthdayVars({ members, appUrl });
-    expect(vars.people).toBe(bell.map(e => `• ${e.text}`).join('\n'));
+    expect(vars.names).toBe('Arun, Meena');
     expect(vars.date).toBe('Purattasi 11');
     expect(bell[0].text).toBe("It is Arun's (Student) Tamil Birthday today (Purattasi 11).");
     expect(birthdayVars({ members: [], appUrl })).toBe(null);
