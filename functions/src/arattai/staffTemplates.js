@@ -6,6 +6,8 @@
 //     templateId, status, rejectedReason?, submittedAt, approvedAt?, submittedText: { title, body }, lastError } } }
 // status: draft | under_review | approved | rejected | update_required (no state = not submitted).
 // Only the server writes `arattai` (Admin SDK); the doc is admin-only in firestore.rules.
+// Submitting again while a template is under review deletes it at Arattai and creates a
+// fresh one (Arattai refuses edits during review), which restarts the review.
 // Sandbox mode simulates: submitting marks the template approved straight away.
 const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
@@ -57,7 +59,6 @@ const submitStaffTemplate = onCall(async (request) => {
   const { m, doc, config, provider } = await context();
   checkKey(m, key);
   const state = doc[key]?.arattai || {};
-  if (state.status === "under_review") throw new HttpsError("failed-precondition", "Arattai is reviewing this template. It can be changed once the review is done.");
   const wording = m.mergeMessages(doc)[key];
   let payload;
   try {
@@ -78,6 +79,14 @@ const submitStaffTemplate = onCall(async (request) => {
   liveReady(config);
   try {
     let id = state.templateId;
+    if (id && state.status === "under_review") {
+      // Arattai refuses edits while a template is under review, but allows deleting it
+      // and creating a new one with the same name: replace it and restart the review.
+      await live.deleteTemplate(config, id);
+      // Forget the deleted ID straight away, so a failed create is retried as a create.
+      await setState(key, { templateId: FieldValue.delete(), status: "draft" });
+      id = null;
+    }
     if (id) await live.updateTemplate(config, id, payload);
     else id = (await live.createTemplate(config, payload)).id;
     if (!id) throw new HttpsError("internal", "Arattai didn't return a template ID.");
