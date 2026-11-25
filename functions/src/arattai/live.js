@@ -245,8 +245,10 @@ function parseTemplate(res) {
   const d = res?.data && typeof res.data === "object" && !Array.isArray(res.data) ? res.data : res || {};
   const translations = Array.isArray(d.translations) ? d.translations : [];
   const tr = translations.find((t) => t.language === "en") || translations[0] || {};
-  const status = String(tr.status || d.translation_status || "draft");
-  const reason = tr.rejection_reason || tr.rejected_reason || tr.reason || d.rejection_reason || d.reason || null;
+  // Arattai keeps the review status on the translation's draft: translations[].draft.status.
+  const dr = tr.draft && typeof tr.draft === "object" ? tr.draft : {};
+  const status = String(dr.status || tr.status || d.translation_status || "draft");
+  const reason = dr.rejection_reason || dr.rejected_reason || dr.reason || tr.rejection_reason || tr.rejected_reason || tr.reason || d.rejection_reason || d.reason || null;
   return { id: d.id != null ? String(d.id) : "", status, reason: reason ? String(reason) : null, enabled: d.status ? d.status === "enabled" : null };
 }
 

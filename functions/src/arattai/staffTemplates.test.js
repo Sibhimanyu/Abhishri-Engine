@@ -79,4 +79,7 @@ test("messagetemplate.approval.updated webhook parsing", () => {
 test("template responses are read from data or the top level", () => {
   assert.deepStrictEqual(parseTemplate({ data: { id: 7, status: "enabled", translations: [{ language: "en", status: "under_review" }] } }), { id: "7", status: "under_review", reason: null, enabled: true });
   assert.strictEqual(parseTemplate({ id: "8" }).status, "draft");
+  // The real shape: the status sits on the translation's draft.
+  assert.deepStrictEqual(parseTemplate({ data: { id: "9", status: "enabled", translations: [{ language: "en", draft: { status: "approved" }, published: {} }] } }), { id: "9", status: "approved", reason: null, enabled: true });
+  assert.strictEqual(parseTemplate({ data: { id: "9", translations: [{ language: "en", draft: { status: "rejected", rejection_reason: "Starts with a variable" } }] } }).reason, "Starts with a variable");
 });
