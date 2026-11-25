@@ -265,9 +265,9 @@ function createTemplate(config, payload) {
   return templateCall(async () => parseTemplate(await call(config, "POST", `/api/v1/businesses/${encodeURIComponent(config.businessId)}/messagetemplates`, { body: payload })));
 }
 
-/** Send a template for Arattai's review (English). */
-function submitTemplate(config, id) {
-  return templateCall(() => call(config, "POST", `/api/v1/messagetemplates/${encodeURIComponent(id)}/submit`, { body: { languages: ["en"] } }));
+/** Send a template for Arattai's review (English unless another language is given). */
+function submitTemplate(config, id, language = "en") {
+  return templateCall(() => call(config, "POST", `/api/v1/messagetemplates/${encodeURIComponent(id)}/submit`, { body: { languages: [language] } }));
 }
 
 /** Edit a template. Arattai refuses while a translation is under review. */
