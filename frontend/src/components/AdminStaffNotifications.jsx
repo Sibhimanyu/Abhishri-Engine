@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { doc, setDoc, deleteField, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { getDoc } from '../utils/firestoreRead';
 import { httpsCallable } from 'firebase/functions';
 import { firestore, functions } from '../firebase';
-import StaffMessageEditor, { StatusDot, templateStatus, recipientOf } from './StaffMessageWording';
-import { EVENTS, mergeMessages } from '../../../functions/src/shared/staffMessages.mjs';
-import { BellRing, Save, Send, Users, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { StatusBadge, templateStatus } from './StaffMessageWording';
+import { EVENTS, mergeMessages, renderMessage } from '../../../functions/src/shared/staffMessages.mjs';
+import { BellRing, Save, Send, Users, CheckCircle, AlertCircle, RefreshCw, SquarePen } from 'lucide-react';
 
 // Settings > Staff Notifications: the approval, access-request and birthday messages staff
 // get on Arattai (configs/arattai_notify, read by functions/src/arattai/notify.js), and
-// the wording and Arattai template of each (StaffMessageEditor). Layout: a status bar, then
-// the event list on the left and, on the right, Messages | Recipients | Log.
+// a compact card per message (its wording is edited in the Templates builder). Layout: a
+// status bar, then Messages | Recipients | Log.
 
 const inputClass = 'w-full bg-brand-bg border border-brand-card-border rounded-md py-2 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/20 focus:border-brand-primary text-brand-text';
 
@@ -130,7 +131,6 @@ export default function AdminStaffNotifications() {
   const [log, setLog] = useState([]);
   const [overrides, setOverrides] = useState(null);
   const [tab, setTab] = useState('messages');
-  const [selected, setSelected] = useState(Object.keys(EVENTS)[0]);
   const [busy, setBusy] = useState(null);
 
   const say = (text, ok = true) => setMessage({ text, ok });
@@ -210,13 +210,6 @@ export default function AdminStaffNotifications() {
     }
   };
 
-  // Wording is merged field by field so the server's `arattai` state is never overwritten.
-  const saveWording = async (key, next) => {
-    const value = next ? { title: next.title, body: next.body } : { title: deleteField(), body: deleteField() };
-    await setDoc(doc(firestore, 'configs', 'staff_messages'), { [key]: value }, { merge: true });
-  };
-  const submitTemplate = async (key) => { await callable('submitStaffTemplate')({ key }); };
-  const deleteTemplate = async (key) => { await callable('deleteStaffTemplate')({ key }); };
   const refresh = async () => {
     setBusy('refresh');
     setMessage(null);
@@ -264,51 +257,40 @@ export default function AdminStaffNotifications() {
         <div className={`p-3 rounded-md text-sm font-medium border ${message.ok ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'}`}>{message.text}</div>
       )}
 
-      <div className="flex flex-col md:flex-row gap-5">
-        {/* Event list (desktop) / dropdown (mobile) */}
-        <nav aria-label="Notifications" className="md:w-60 shrink-0">
-          <label htmlFor="staff-event-select" className="sr-only">Notification</label>
-          <select id="staff-event-select" value={selected} onChange={e => { setSelected(e.target.value); setTab('messages'); }} className={`md:hidden ${inputClass}`}>
-            {keys.map(k => <option key={k} value={k}>{EVENTS[k].label} · {recipientOf(k)} · {statusOf(k).label}</option>)}
-          </select>
-          <ul className="hidden md:block space-y-1">
-            {keys.map(k => {
-              const st = statusOf(k);
-              const active = tab === 'messages' && selected === k;
-              return (
-                <li key={k}>
-                  <button type="button" onClick={() => { setSelected(k); setTab('messages'); }} title={st.label}
-                    className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-md border transition-colors ${active ? 'bg-brand-primary/10 border-brand-primary/30' : 'border-transparent hover:bg-black/5 dark:hover:bg-white/5'}`}>
-                    <StatusDot tone={st.tone} />
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium text-brand-text truncate">{EVENTS[k].label}</span>
-                      <span className="block text-[11px] text-brand-text-dim">{recipientOf(k)}</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="hidden md:block text-[11px] text-brand-text-dim mt-3 px-1">Each message is an Arattai template. Arattai reviews every change (usually within a day); until it’s approved, this notification isn’t sent.</p>
-        </nav>
+      <div className="space-y-4">
+        <div role="tablist" className="inline-flex rounded-md border border-brand-card-border bg-brand-bg p-0.5">
+          {TABS.map(([id, label]) => (
+            <button key={id} role="tab" type="button" aria-selected={tab === id} onClick={() => setTab(id)}
+              className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${tab === id ? 'bg-brand-primary text-white' : 'text-brand-text-dim hover:text-brand-text'}`}>{label}</button>
+          ))}
+        </div>
 
-        {/* Right pane */}
-        <div className="flex-1 min-w-0 space-y-4">
-          <div role="tablist" className="inline-flex rounded-md border border-brand-card-border bg-brand-bg p-0.5">
-            {TABS.map(([id, label]) => (
-              <button key={id} role="tab" type="button" aria-selected={tab === id} onClick={() => setTab(id)}
-                className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${tab === id ? 'bg-brand-primary text-white' : 'text-brand-text-dim hover:text-brand-text'}`}>{label}</button>
-            ))}
-          </div>
-
+        <div className="min-w-0 space-y-4">
           {tab === 'messages' && (
-            <div className="border border-brand-card-border rounded-lg p-4 sm:p-5">
-              <p className="md:hidden text-[11px] text-brand-text-dim mb-3">Each message is an Arattai template. Arattai reviews every change (usually within a day); until it’s approved, this notification isn’t sent.</p>
+            <div className="space-y-3">
+              <p className="text-[11px] text-brand-text-dim">Each message is an Arattai template. Arattai reviews every change (usually within a day); until it’s approved, this notification isn’t sent. Edit the wording in the template builder.</p>
               {overrides === null ? <p className="text-sm text-brand-text-dim">Loading…</p> : (
-                <StaffMessageEditor key={selected} eventKey={selected}
-                  saved={{ ...merged[selected], custom: typeof overrides[selected]?.title === 'string' || typeof overrides[selected]?.body === 'string' }}
-                  state={overrides[selected]?.arattai} mode={mode}
-                  onSave={saveWording} onSubmit={submitTemplate} onDelete={deleteTemplate} />
+                <ul className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {keys.map(k => {
+                    const st = statusOf(k);
+                    const preview = renderMessage(merged[k].body, EVENTS[k].sample).replace(/\s*\n\s*/g, ' ');
+                    return (
+                      <li key={k} className="border border-brand-card-border rounded-lg p-4 flex flex-col gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-brand-text">{EVENTS[k].label}</p>
+                            <p className="text-[11px] text-brand-text-dim">Goes to: {EVENTS[k].audience}</p>
+                          </div>
+                          <StatusBadge status={st} />
+                        </div>
+                        <p className="text-xs text-brand-text-dim truncate" title={preview}>{preview}</p>
+                        <Link to={`/settings/templates/staff/${k}`} className="self-start flex items-center gap-2 bg-brand-bg border border-brand-card-border hover:bg-black/5 dark:hover:bg-white/5 text-brand-text px-3 py-1.5 rounded-md font-medium text-sm transition-colors">
+                          <SquarePen size={14} /> Open in builder
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
           )}

@@ -1,12 +1,13 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Shield, ShieldCheck, MapPin, MessageCircle, MessagesSquare, LayoutGrid, ScrollText, BellRing } from 'lucide-react';
+import { Shield, ShieldCheck, MapPin, MessageCircle, MessagesSquare, LayoutGrid, ScrollText, BellRing, FileText } from 'lucide-react';
 import AdminUserPermissions from './AdminUserPermissions';
 import AdminAttendanceSetup from './AdminAttendanceSetup';
 import AdminWhatsAppConfig from './AdminWhatsAppConfig';
 import AdminArattaiConfig from './AdminArattaiConfig';
 import AdminStaffNotifications from './AdminStaffNotifications';
+import AdminTemplates from './AdminTemplates';
 import AdminEntities from './AdminEntities';
 import AdminAuditLog from './AdminAuditLog';
 import PageTabs from './PageTabs';
@@ -45,6 +46,7 @@ export default function SettingsAdmin() {
     { id: 'whatsapp', label: 'WhatsApp Config', icon: MessageCircle, show: isMaster },
     { id: 'arattai', label: 'Arattai Config', icon: MessagesSquare, show: isMaster },
     { id: 'staff-notifications', label: 'Staff Notifications', icon: BellRing, show: isMaster },
+    { id: 'templates', label: 'Templates', icon: FileText, show: isMaster },
     { id: 'audit', label: 'Audit Log', icon: ScrollText, show: isMaster },
   ];
   const tabs = allTabs.filter(t => t.show);
@@ -69,6 +71,7 @@ export default function SettingsAdmin() {
         {activeTab === 'whatsapp' && isMaster && <AdminWhatsAppConfig />}
         {activeTab === 'arattai' && isMaster && <AdminArattaiConfig />}
         {activeTab === 'staff-notifications' && isMaster && <AdminStaffNotifications />}
+        {activeTab === 'templates' && isMaster && <AdminTemplates />}
         {activeTab === 'audit' && isMaster && <AdminAuditLog />}
       </div>
     </div>
